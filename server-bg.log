@@ -1,0 +1,137 @@
+﻿[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +27ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDomainEventModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPassportModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +10ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuditLogsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mEventEmitterModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTerminusModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mRedisModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCommonModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mThrottlerModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTenantsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mUsersModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mRestaurantsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mBranchesModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mFloorsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiningAreasModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTablesModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mProductImagesModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mProductAvailabilityModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mSessionsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mInvitationsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mHealthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMenuCategoriesModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mProductsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[33m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [33m   WARN[39m [38;5;3m[LegacyRouteConverter] [39m[33mUnsupported route path: "/api/*". In previous versions, the symbols ?, *, and + were used to denote optional or repeating path parameters. The latest version of "path-to-regexp" now requires the use of named parameters. For example, instead of using a route like /users/* to capture all routes starting with "/users", you should use /users/*path. For more details, refer to the migration guide. Attempting to auto-convert to "/api/{*path}"...[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHealthController {/api/health} (version: 1):[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/health, GET} (version: 1) route[39m[38;5;3m +2ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/auth} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/register, POST} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/login, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/refresh, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/logout, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/logout-all, POST} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/forgot-password, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/reset-password, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/change-password, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/verify-email/:token, GET} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/resend-verification, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mTenantsController {/api/tenants} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/tenants, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/tenants, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/tenants/:id, GET} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/tenants/:id, PUT} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/tenants/:id, DELETE} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/tenants/:id/restore, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mUsersController {/api/users} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users, POST} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/:id, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/:id, PUT} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/:id, DELETE} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/:id/restore, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mSessionsController {/api/sessions} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/sessions, GET} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/sessions/:id, DELETE} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/sessions/revoke-all, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mInvitationsController {/api/invitations} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/invitations, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/invitations, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/invitations/token/:token, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/invitations/accept, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/invitations/:id/revoke, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mRestaurantsController {/api/restaurants} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants, POST} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:id, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:id, PUT} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:id, DELETE} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:id/restore, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mBranchesController {/api/restaurants/:restaurantId/branches} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches, GET} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:id, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:id, PUT} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:id, DELETE} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:id/restore, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mFloorsController {/api/restaurants/:restaurantId/branches/:branchId/floors} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/floors, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/floors, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/floors/:id, GET} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/floors/:id, PUT} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/floors/:id, DELETE} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/floors/:id/restore, POST} (version: 1) route[39m[38;5;3m +2ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDiningAreasController {/api/restaurants/:restaurantId/branches/:branchId/areas} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/areas, POST} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/areas, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/areas/:id, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/areas/:id, PUT} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/areas/:id, DELETE} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/areas/:id/restore, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mTablesController {/api/restaurants/:restaurantId/branches/:branchId/tables} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/tables, POST} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/tables, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/tables/:id, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/tables/:id, PUT} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/tables/:id/status, PUT} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/tables/:id/qr-regenerate, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/tables/:id, DELETE} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/branches/:branchId/tables/:id/restore, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mMenuCategoriesController {/api/restaurants/:restaurantId/menu-categories} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/menu-categories, POST} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/menu-categories, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/menu-categories/:id, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/menu-categories/:id, PUT} (version: 1) route[39m[38;5;3m +5ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/menu-categories/:id, DELETE} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/menu-categories/:id/restore, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mProductsController {/api/restaurants/:restaurantId/products} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:id, GET} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:id, PUT} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:id, DELETE} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:id/restore, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mProductImagesController {/api/restaurants/:restaurantId/products/:productId/images} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:productId/images, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:productId/images, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:productId/images/:id, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:productId/images/:id, PUT} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:productId/images/:id, DELETE} (version: 1) route[39m[38;5;3m +1ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mProductAvailabilityController {/api/restaurants/:restaurantId/products/:productId/availability} (version: 1):[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:productId/availability, POST} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:productId/availability, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:productId/availability/:id, GET} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:productId/availability/:id, PUT} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/restaurants/:restaurantId/products/:productId/availability/:id, DELETE} (version: 1) route[39m[38;5;3m +0ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[PrismaService] [39m[32mDatabase connected successfully[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +5ms[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[Bootstrap] [39m[32mApplication is running on: http://localhost:3000/api/v1[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[Bootstrap] [39m[32mSwagger docs available at: http://localhost:3000/docs[39m
+[32m[Nest] 22276  - [39m07/28/2026, 4:08:11 AM [32m    LOG[39m [38;5;3m[RedisService] [39m[32mRedis connected successfully[39m

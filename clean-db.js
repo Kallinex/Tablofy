@@ -1,0 +1,26 @@
+const { PrismaClient } = require('@prisma/client');
+const Redis = require('ioredis');
+(async () => {
+  const p = new PrismaClient();
+  await p.productAvailability.deleteMany();
+  await p.productImage.deleteMany();
+  await p.product.deleteMany();
+  await p.menuCategory.deleteMany();
+  await p.table.deleteMany();
+  await p.diningArea.deleteMany();
+  await p.floor.deleteMany();
+  await p.branch.deleteMany();
+  await p.restaurant.deleteMany();
+  await p.auditLog.deleteMany();
+  await p.session.deleteMany();
+  await p.invitation.deleteMany();
+  await p.user.deleteMany();
+  await p.subscription.deleteMany();
+  await p.tenant.deleteMany();
+  console.log('All tenant-scoped data cleaned');
+  await p.$disconnect();
+  const r = new Redis({ host: 'localhost', port: 6379, maxRetriesPerRequest: 1 });
+  await r.flushdb();
+  await r.quit();
+  console.log('Redis flushed');
+})();

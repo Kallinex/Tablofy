@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tablofy-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tablofy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tablofy_prod}
+      POSTGRES_DB: tablofy_prod
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - tablofy-network
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U tablofy -d tablofy_prod']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: tablofy-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - tablofy-network
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: tablofy-api
+    restart: unless-stopped
+    ports:
+      - '${PORT:-3000}:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://tablofy:${POSTGRES_PASSWORD:-tablofy_prod}@postgres:5432/tablofy_prod?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-15m}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4200}
+      CORS_CREDENTIALS: 'true'
+      THROTTLE_TTL: '60'
+      THROTTLE_LIMIT: '120'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - tablofy-network
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:3000/api/v1/health']
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  tablofy-network:
+    driver: bridge

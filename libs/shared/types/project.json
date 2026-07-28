@@ -1,0 +1,22 @@
+{
+  "name": "@tablofy/shared-types",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/shared/types/src",
+  "projectType": "library",
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint libs/shared/types"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc --project libs/shared/types/tsconfig.json"
+      },
+      "outputs": ["{workspaceRoot}/dist/out-tsc"]
+    }
+  },
+  "tags": ["scope:shared", "type:types"]
+}
