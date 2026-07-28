@@ -155,7 +155,7 @@ export class OrdersService {
   async findAll(query: QueryOrderDto, tenantId: string) {
     const { page = 1, limit = 20, search, status, orderType, branchId, tableId, source, startDate, endDate } = query;
 
-    const listKey = `list:${page}:${limit}:${status || ''}:${orderType || ''}:${branchId || ''}`;
+    const listKey = `list:${page}:${limit}:${status || ''}:${orderType || ''}:${branchId || ''}:${tableId || ''}:${source || ''}:${search || ''}:${startDate || ''}:${endDate || ''}`;
     const cached = await this.cacheService.get<{ data: unknown[]; meta: unknown }>(tenantId, listKey);
     if (cached) return cached;
 
@@ -1256,17 +1256,25 @@ export class OrdersService {
       if (!table) throw new NotFoundException('Table not found');
     }
 
+    const productIds = dto.items.map(i => i.productId);
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds }, tenantId, deletedAt: null },
+    });
+    const productMap = new Map(products.map(p => [p.id, p]));
     for (const item of dto.items) {
-      const product = await this.prisma.product.findFirst({
-        where: { id: item.productId, tenantId, deletedAt: null },
-      });
-      if (!product) throw new NotFoundException(`Product ${item.productId} not found`);
+      if (!productMap.has(item.productId)) throw new NotFoundException(`Product ${item.productId} not found`);
+    }
 
-      if (item.variantId) {
-        const variant = await this.prisma.productVariant.findFirst({
-          where: { id: item.variantId, tenantId, deletedAt: null },
-        });
-        if (!variant) throw new NotFoundException(`Variant ${item.variantId} not found`);
+    const variantIds = dto.items.filter(i => i.variantId).map(i => i.variantId!);
+    if (variantIds.length) {
+      const variants = await this.prisma.productVariant.findMany({
+        where: { id: { in: variantIds }, tenantId, deletedAt: null },
+      });
+      const variantMap = new Map(variants.map(v => [v.id, v]));
+      for (const item of dto.items) {
+        if (item.variantId && !variantMap.has(item.variantId)) {
+          throw new NotFoundException(`Variant ${item.variantId} not found`);
+        }
       }
     }
   }
