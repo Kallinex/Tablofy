@@ -61,3 +61,21 @@ generated/prisma
 # Docker volumes
 docker/postgres_data
 docker/redis_data
+# Logs
+*.log
+logs/
+
+# Build artifacts
+dist/
+.tmp/
+.cache/
+
+# Prisma local database
+prisma/*.db
+prisma/*.db-journal
+
+# Test coverage
+coverage/
+
+# OS files
+*.DS_Store
