@@ -211,6 +211,7 @@ model Tenant {
   invitations  Invitation[]
   auditLogs    AuditLog[]
   restaurants  Restaurant[]
+  customers    Customer[]
 
   @@index([status])
   @@index([deletedAt])
@@ -425,6 +426,7 @@ model Restaurant {
   TaxRate           TaxRate[]
   ServiceCharge     ServiceCharge[]
   KitchenStation    KitchenStation[]
+  Customer          Customer[]
 
   @@unique([tenantId, slug])
   @@index([tenantId])
@@ -1389,4 +1391,469 @@ model KitchenTicketItem {
   @@index([status])
   @@index([startedAt])
   @@map("kitchen_ticket_items")
+}
+
+// ============================================
+// ENUMS (Phase 4 M1 — 8 new)
+// ============================================
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum MembershipTier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+  DIAMOND
+}
+
+enum RewardType {
+  COUPON
+  DISCOUNT
+  FREE_PRODUCT
+  FREE_DRINK
+  BIRTHDAY
+  ANNIVERSARY
+  REFERRAL
+  PROMOTIONAL
+}
+
+enum RewardStatus {
+  ACTIVE
+  REDEEMED
+  EXPIRED
+  CANCELLED
+}
+
+enum WalletTransactionType {
+  RECHARGE
+  SPEND
+  REFUND
+  ADJUSTMENT
+}
+
+enum LoyaltyTransactionType {
+  EARNED
+  REDEEMED
+  EXPIRED
+  ADJUSTED
+}
+
+enum ReferralStatus {
+  PENDING
+  REWARDED
+  EXPIRED
+}
+
+enum SegmentType {
+  VIP
+  INACTIVE
+  HIGH_SPENDER
+  FREQUENT_VISITOR
+  NEW_CUSTOMER
+  LOST_CUSTOMER
+  CUSTOM
+}
+
+// ============================================
+// MODELS (Phase 4 M1 — 17 new)
+// ============================================
+
+model Customer {
+  id                String         @id @default(uuid())
+  tenantId          String
+  restaurantId      String?
+  email             String?
+  phone             String?
+  firstName         String
+  lastName          String
+  avatarUrl         String?
+  gender            String?
+  dateOfBirth       DateTime?
+  anniversary       DateTime?
+  language          String         @default("en")
+  notes             String?
+  status            CustomerStatus @default(ACTIVE)
+  preferredBranchId String?
+  preferredTableId  String?
+  tags              String[]
+  source            String?
+  metadata          Json?
+  version           Int            @default(1)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  deletedAt         DateTime?
+
+  tenant            Tenant                      @relation(fields: [tenantId], references: [id])
+  restaurant        Restaurant?                 @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
+  addresses         CustomerAddress[]
+  preferences       CustomerPreference[]
+  visitHistory      VisitHistory[]
+  loyaltyTransactions LoyaltyPointsTransaction[]
+  memberships       Membership[]
+  rewards           Reward[]
+  wallets           Wallet[]
+  referralsMade     Referral[]                  @relation("ReferralMade")
+  referralsUsed     Referral[]                  @relation("ReferralUsed")
+  segmentAssignments CustomerSegmentAssignment[]
+  analytics         CustomerAnalytics?
+
+  @@unique([tenantId, email])
+  @@index([tenantId, status])
+  @@index([tenantId, restaurantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@map("customers")
+}
+
+model CustomerAddress {
+  id         String   @id @default(uuid())
+  customerId String
+  tenantId   String
+  label      String?
+  address    String
+  city       String?
+  state      String?
+  zipCode    String?
+  country    String?
+  isDefault  Boolean  @default(false)
+  latitude   Float?
+  longitude  Float?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([tenantId])
+  @@map("customer_addresses")
+}
+
+model CustomerPreference {
+  id         String   @id @default(uuid())
+  customerId String
+  tenantId   String
+  key        String
+  value      String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, key])
+  @@index([tenantId])
+  @@map("customer_preferences")
+}
+
+model VisitHistory {
+  id         String     @id @default(uuid())
+  customerId String
+  tenantId   String
+  restaurantId String?
+  branchId   String?
+  orderId    String?
+  visitedAt  DateTime   @default(now())
+  totalSpent Decimal?   @default(0)
+  itemsCount Int?       @default(0)
+  createdAt  DateTime   @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([tenantId])
+  @@index([visitedAt])
+  @@index([customerId, visitedAt])
+  @@map("visit_history")
+}
+
+model LoyaltyProgram {
+  id                 String   @id @default(uuid())
+  tenantId           String   @unique
+  pointsPerCurrency  Decimal  @default(10)
+  currencyPerPoint   Decimal  @default(0.1)
+  minPointsRedeem    Int      @default(100)
+  maxPointsRedeem    Int?
+  pointsExpireDays   Int      @default(365)
+  earnEnabled        Boolean  @default(true)
+  redeemEnabled      Boolean  @default(true)
+  welcomeBonusPoints Int      @default(0)
+  referrerPoints     Int      @default(50)
+  referredPoints     Int      @default(25)
+  birthdayPoints     Int      @default(100)
+  anniversaryPoints  Int      @default(50)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tiers LoyaltyTier[]
+
+  @@map("loyalty_programs")
+}
+
+model LoyaltyTier {
+  id              String         @id @default(uuid())
+  programId       String
+  tenantId        String
+  tier            MembershipTier
+  minPoints       Int            @default(0)
+  maxPoints       Int            @default(1000)
+  multiplier      Decimal        @default(1)
+  discountPercent Decimal        @default(0)
+  priorityService Boolean        @default(false)
+  freeDelivery    Boolean        @default(false)
+  birthdayReward  Boolean        @default(true)
+  anniversaryReward Boolean      @default(true)
+  metadata        Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  program LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, tier])
+  @@index([tenantId])
+  @@map("loyalty_tiers")
+}
+
+model LoyaltyPointsTransaction {
+  id          String                 @id @default(uuid())
+  customerId  String
+  tenantId    String
+  restaurantId String?
+  points      Int
+  type        LoyaltyTransactionType
+  description String?
+  referenceId String?
+  referenceType String?
+  balanceAfter Int
+  expiresAt   DateTime?
+  metadata    Json?
+  createdAt   DateTime               @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([tenantId])
+  @@index([customerId, createdAt])
+  @@index([expiresAt])
+  @@map("loyalty_points_transactions")
+}
+
+model Membership {
+  id              String         @id @default(uuid())
+  customerId      String
+  tenantId        String
+  tier            MembershipTier @default(BRONZE)
+  points          Int            @default(0)
+  lifetimePoints  Int            @default(0)
+  totalVisits     Int            @default(0)
+  totalSpent      Decimal        @default(0)
+  joinedAt        DateTime       @default(now())
+  lastActivityAt  DateTime?
+  tierUpgradedAt  DateTime?
+  tierDowngradedAt DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, tenantId])
+  @@index([tenantId])
+  @@index([tier])
+  @@index([points])
+  @@map("memberships")
+}
+
+model MembershipHistory {
+  id          String         @id @default(uuid())
+  customerId  String
+  tenantId    String
+  fromTier    MembershipTier
+  toTier      MembershipTier
+  reason      String?
+  pointsAtTime Int           @default(0)
+  changedAt   DateTime       @default(now())
+  createdAt   DateTime       @default(now())
+
+  @@index([customerId])
+  @@index([tenantId])
+  @@index([changedAt])
+  @@map("membership_history")
+}
+
+model Reward {
+  id              String       @id @default(uuid())
+  customerId      String
+  tenantId        String
+  restaurantId    String?
+  type            RewardType
+  status          RewardStatus @default(ACTIVE)
+  title           String
+  description     String?
+  code            String?
+  discountPercent Decimal?
+  discountAmount  Decimal?
+  freeProductId   String?
+  freeProductName String?
+  minOrderAmount  Decimal?
+  issuedAt        DateTime     @default(now())
+  redeemedAt      DateTime?
+  expiredAt       DateTime?
+  metadata        Json?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([tenantId])
+  @@index([status])
+  @@index([type])
+  @@index([expiredAt])
+  @@map("rewards")
+}
+
+model Wallet {
+  id         String   @id @default(uuid())
+  customerId String
+  tenantId   String
+  balance    Decimal  @default(0)
+  currency   Currency @default(USD)
+  isActive   Boolean  @default(true)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer     Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+
+  @@unique([customerId, tenantId])
+  @@index([tenantId])
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id          String                @id @default(uuid())
+  walletId    String
+  tenantId    String
+  customerId  String
+  type        WalletTransactionType
+  amount      Decimal
+  balanceBefore Decimal
+  balanceAfter  Decimal
+  description String?
+  referenceId String?
+  referenceType String?
+  currency    Currency              @default(USD)
+  metadata    Json?
+  createdAt   DateTime              @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+  @@index([customerId])
+  @@index([type])
+  @@index([tenantId])
+  @@index([createdAt])
+  @@map("wallet_transactions")
+}
+
+model Referral {
+  id              String         @id @default(uuid())
+  referrerId      String
+  referredId      String?
+  tenantId        String
+  code            String
+  status          ReferralStatus @default(PENDING)
+  referredEmail   String?
+  referredPhone   String?
+  rewardPoints    Int            @default(0)
+  rewardGiven     Boolean        @default(false)
+  referredAt      DateTime?
+  rewardExpiresAt DateTime?
+  metadata        Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  referrer Customer @relation("ReferralMade", fields: [referrerId], references: [id], onDelete: Cascade)
+  referred Customer? @relation("ReferralUsed", fields: [referredId], references: [id], onDelete: SetNull)
+
+  @@unique([code])
+  @@index([referrerId])
+  @@index([referredId])
+  @@index([tenantId])
+  @@index([status])
+  @@map("referrals")
+}
+
+model CustomerSegment {
+  id          String      @id @default(uuid())
+  tenantId    String
+  name        String
+  type        SegmentType @default(CUSTOM)
+  description String?
+  rules       Json?
+  isDynamic   Boolean     @default(false)
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  assignments CustomerSegmentAssignment[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([type])
+  @@map("customer_segments")
+}
+
+model CustomerSegmentAssignment {
+  id          String   @id @default(uuid())
+  customerId  String
+  segmentId   String
+  tenantId    String
+  assignedAt  DateTime @default(now())
+  expiresAt   DateTime?
+
+  customer Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  segment  CustomerSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, segmentId])
+  @@index([segmentId])
+  @@index([tenantId])
+  @@map("customer_segment_assignments")
+}
+
+model CustomerAnalytics {
+  id                 String   @id @default(uuid())
+  customerId         String   @unique
+  tenantId           String
+  lifetimeValue      Decimal  @default(0)
+  averageOrderValue  Decimal  @default(0)
+  visitFrequency     Int      @default(0)
+  totalVisits        Int      @default(0)
+  totalSpend         Decimal  @default(0)
+  totalOrders        Int      @default(0)
+  favoriteProductId  String?
+  favoriteCategoryId String?
+  favoriteProductName String?
+  favoriteCategoryName String?
+  lastVisitAt        DateTime?
+  lastOrderAt        DateTime?
+  rewardUsageCount   Int      @default(0)
+  rewardPointsEarned Int      @default(0)
+  rewardPointsRedeemed Int    @default(0)
+  daysSinceLastVisit Int      @default(0)
+  metadata           Json?
+  computedAt         DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([lifetimeValue])
+  @@index([totalVisits])
+  @@map("customer_analytics")
 }

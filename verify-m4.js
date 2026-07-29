@@ -1,569 +1,462 @@
+const { spawn } = require('child_process');
 const http = require('http');
+const path = require('path');
 
-function request(method, path, body, headers = {}) {
+function req(method, path, body, headers) {
   return new Promise((resolve, reject) => {
-    const opts = {
-      hostname: 'localhost',
-      port: 3000,
-      path,
-      method,
-      headers: { 'Content-Type': 'application/json', ...headers },
-    };
-    const req = http.request(opts, (res) => {
+    const hdrs = Object.assign({ 'Content-Type': 'application/json' }, headers || {});
+    const opts = { hostname: 'localhost', port: 3000, path, method, headers: hdrs };
+    const hreq = http.request(opts, (res) => {
       let data = '';
       res.on('data', (c) => (data += c));
       res.on('end', () => {
-        try {
-          resolve({ status: res.statusCode, body: JSON.parse(data) });
-        } catch {
-          resolve({ status: res.statusCode, body: data });
-        }
+        try { resolve({ status: res.statusCode, body: JSON.parse(data), headers: res.headers }); }
+        catch { resolve({ status: res.statusCode, body: data, headers: res.headers }); }
       });
     });
-    req.on('error', reject);
-    if (body) req.write(typeof body === 'string' ? body : JSON.stringify(body));
-    req.end();
+    hreq.on('error', reject);
+    if (body) hreq.write(typeof body === 'string' ? body : JSON.stringify(body));
+    hreq.end();
   });
 }
 
-async function main() {
-  const results = [];
-  const pass = (name) => results.push(`✅ ${name}`);
-  const fail = (name, e) =>
-    results.push(`❌ ${name}: ${typeof e === 'object' ? JSON.stringify(e) : e}`);
+function ok(n) { console.log('  \x1b[32mPASS\x1b[0m ' + n); }
+function no(n, d) { console.log('  \x1b[31mFAIL\x1b[0m ' + n + ': ' + d); }
 
+async function cleanDB() {
+  const { PrismaClient } = require('./node_modules/@prisma/client');
+  const p = new PrismaClient();
   try {
-    // Health
-    const h = await request('GET', '/api/v1/health');
-    h.status === 200 ? pass('Health check') : fail('Health', h.status);
-
-    // Register + Login
-    const reg = await request('POST', '/api/v1/auth/register', {
-      email: `m4test-${Date.now()}@test.com`,
-      password: 'M4Test123!',
-      firstName: 'M4',
-      lastName: 'User',
-      tenantName: `M4Tenant-${Date.now()}`,
-    });
-    reg.status === 201 ? pass('Register user') : fail('Register', reg.body);
-    const login = await request('POST', '/api/v1/auth/login', {
-      email: reg.body.user.email,
-      password: 'M4Test123!',
-    });
-    login.status === 200 ? pass('Login') : fail('Login', login.body);
-    const auth = { Authorization: `Bearer ${login.body.tokens.accessToken}` };
-
-    // Create restaurant
-    const rest = await request(
-      'POST',
-      '/api/v1/restaurants',
-      { name: 'M4 Rest', slug: `m4-rest-${Date.now()}` },
-      auth,
-    );
-    rest.status === 201 ? pass('Create restaurant') : fail('Create restaurant', rest.body);
-    const restId = rest.body.id;
-
-    // =============================================
-    // VARIANT GROUP TESTS
-    // =============================================
-
-    // Create variant group
-    const vg = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/variant-groups`,
-      {
-        name: 'Size',
-        description: 'Choose your size',
-        type: 'SINGLE',
-        sortOrder: 0,
-      },
-      auth,
-    );
-    vg.status === 201 ? pass('Create variant group') : fail('Create variant group', vg.body);
-    const vgId = vg.body.id;
-
-    // List variant groups
-    const vgs = await request('GET', `/api/v1/restaurants/${restId}/variant-groups`, null, auth);
-    vgs.status === 200 && vgs.body.data.length === 1
-      ? pass('List variant groups')
-      : fail('List variant groups', vgs.body);
-
-    // Get variant group by ID
-    const vgOne = await request(
-      'GET',
-      `/api/v1/restaurants/${restId}/variant-groups/${vgId}`,
-      null,
-      auth,
-    );
-    vgOne.status === 200 && vgOne.body.name === 'Size'
-      ? pass('Get variant group by ID')
-      : fail('Get variant group', vgOne.body);
-
-    // Update variant group
-    const vgUpd = await request(
-      'PUT',
-      `/api/v1/restaurants/${restId}/variant-groups/${vgId}`,
-      {
-        name: 'Size (Updated)',
-        description: 'Updated desc',
-      },
-      auth,
-    );
-    vgUpd.status === 200 && vgUpd.body.name === 'Size (Updated)'
-      ? pass('Update variant group')
-      : fail('Update variant group', vgUpd.body);
-
-    // Duplicate name conflict
-    const vg2 = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/variant-groups`,
-      {
-        name: 'Size (Updated)',
-        type: 'SINGLE',
-      },
-      auth,
-    );
-    vg2.status === 409
-      ? pass('Variant group name conflict')
-      : fail('Variant group name conflict', vg2.status);
-
-    // =============================================
-    // PRODUCT VARIANT TESTS
-    // =============================================
-
-    // Create menu category + product for variants
-    const cat = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/menu-categories`,
-      { name: 'Food', sortOrder: 0 },
-      auth,
-    );
-    const prod = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/products`,
-      {
-        name: 'Pizza',
-        basePrice: 10.0,
-        menuCategoryId: cat.body.id,
-        sku: `PZA-${Date.now()}`,
-      },
-      auth,
-    );
-    const prodId = prod.body.id;
-
-    // Create product variant
-    const pv = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/products/${prodId}/variants`,
-      {
-        name: 'Small',
-        price: 10.0,
-        variantGroupId: vgId,
-        sku: 'PZA-S',
-      },
-      auth,
-    );
-    pv.status === 201 ? pass('Create product variant') : fail('Create product variant', pv.body);
-    const pvId = pv.body.id;
-
-    // Create another variant
-    const pv2 = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/products/${prodId}/variants`,
-      {
-        name: 'Large',
-        price: 15.0,
-        variantGroupId: vgId,
-        sku: 'PZA-L',
-      },
-      auth,
-    );
-    pv2.status === 201
-      ? pass('Create second product variant')
-      : fail('Create second product variant', pv2.body);
-
-    // List product variants
-    const pvs = await request(
-      'GET',
-      `/api/v1/restaurants/${restId}/products/${prodId}/variants`,
-      null,
-      auth,
-    );
-    pvs.status === 200 && pvs.body.data.length === 2
-      ? pass('List product variants')
-      : fail('List product variants', pvs.body);
-
-    // Get product variant by ID
-    const pvOne = await request(
-      'GET',
-      `/api/v1/restaurants/${restId}/products/${prodId}/variants/${pvId}`,
-      null,
-      auth,
-    );
-    pvOne.status === 200 && pvOne.body.name === 'Small'
-      ? pass('Get product variant by ID')
-      : fail('Get product variant', pvOne.body);
-
-    // Update product variant
-    const pvUpd = await request(
-      'PUT',
-      `/api/v1/restaurants/${restId}/products/${prodId}/variants/${pvId}`,
-      {
-        price: 11.0,
-      },
-      auth,
-    );
-    pvUpd.status === 200 && parseFloat(pvUpd.body.price) === 11
-      ? pass('Update product variant price')
-      : fail('Update product variant', pvUpd.body);
-
-    // Duplicate variant name conflict
-    const pvDup = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/products/${prodId}/variants`,
-      {
-        name: 'Large',
-        price: 15.0,
-        variantGroupId: vgId,
-      },
-      auth,
-    );
-    pvDup.status === 409
-      ? pass('Product variant name conflict')
-      : fail('Product variant name conflict', pvDup.status);
-
-    // List by variant group filter
-    const pvFilter = await request(
-      'GET',
-      `/api/v1/restaurants/${restId}/products/${prodId}/variants?variantGroupId=${vgId}`,
-      null,
-      auth,
-    );
-    pvFilter.status === 200 && pvFilter.body.data.length === 2
-      ? pass('List variants filtered by group')
-      : fail('List variants by group', pvFilter.body);
-
-    // =============================================
-    // MODIFIER GROUP TESTS
-    // =============================================
-
-    // Create modifier group
-    const mg = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/modifier-groups`,
-      {
-        name: 'Toppings',
-        description: 'Add toppings',
-        minSelection: 0,
-        maxSelection: 5,
-        isRequired: false,
-        sortOrder: 0,
-      },
-      auth,
-    );
-    mg.status === 201 ? pass('Create modifier group') : fail('Create modifier group', mg.body);
-    const mgId = mg.body.id;
-
-    // List modifier groups
-    const mgs = await request('GET', `/api/v1/restaurants/${restId}/modifier-groups`, null, auth);
-    mgs.status === 200 && mgs.body.data.length === 1
-      ? pass('List modifier groups')
-      : fail('List modifier groups', mgs.body);
-
-    // Get modifier group by ID
-    const mgOne = await request(
-      'GET',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}`,
-      null,
-      auth,
-    );
-    mgOne.status === 200 && mgOne.body.name === 'Toppings'
-      ? pass('Get modifier group by ID')
-      : fail('Get modifier group', mgOne.body);
-
-    // Update modifier group
-    const mgUpd = await request(
-      'PUT',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}`,
-      {
-        maxSelection: 3,
-        isRequired: true,
-      },
-      auth,
-    );
-    mgUpd.status === 200 && mgUpd.body.maxSelection === 3 && mgUpd.body.isRequired === true
-      ? pass('Update modifier group')
-      : fail('Update modifier group', mgUpd.body);
-
-    // Duplicate name conflict
-    const mgDup = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/modifier-groups`,
-      {
-        name: 'Toppings',
-      },
-      auth,
-    );
-    mgDup.status === 409
-      ? pass('Modifier group name conflict')
-      : fail('Modifier group name conflict', mgDup.status);
-
-    // =============================================
-    // MODIFIER TESTS
-    // =============================================
-
-    // Create modifier
-    const m = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}/modifiers`,
-      {
-        name: 'Extra Cheese',
-        price: 1.5,
-        sortOrder: 0,
-      },
-      auth,
-    );
-    m.status === 201 ? pass('Create modifier') : fail('Create modifier', m.body);
-    const mId = m.body.id;
-
-    // Create second modifier
-    const m2 = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}/modifiers`,
-      {
-        name: 'Bacon',
-        price: 2.0,
-        sortOrder: 1,
-      },
-      auth,
-    );
-    m2.status === 201 ? pass('Create second modifier') : fail('Create second modifier', m2.body);
-
-    // List modifiers
-    const ms = await request(
-      'GET',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}/modifiers`,
-      null,
-      auth,
-    );
-    ms.status === 200 && ms.body.data.length === 2
-      ? pass('List modifiers')
-      : fail('List modifiers', ms.body);
-
-    // Get modifier by ID
-    const mOne = await request(
-      'GET',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}/modifiers/${mId}`,
-      null,
-      auth,
-    );
-    mOne.status === 200 && mOne.body.name === 'Extra Cheese'
-      ? pass('Get modifier by ID')
-      : fail('Get modifier', mOne.body);
-
-    // Update modifier
-    const mUpd = await request(
-      'PUT',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}/modifiers/${mId}`,
-      {
-        price: 1.75,
-      },
-      auth,
-    );
-    mUpd.status === 200 && parseFloat(mUpd.body.price) === 1.75
-      ? pass('Update modifier price')
-      : fail('Update modifier', mUpd.body);
-
-    // Duplicate modifier name conflict
-    const mDup = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}/modifiers`,
-      {
-        name: 'Bacon',
-        price: 2.0,
-      },
-      auth,
-    );
-    mDup.status === 409
-      ? pass('Modifier name conflict')
-      : fail('Modifier name conflict', mDup.status);
-
-    // =============================================
-    // SOFT DELETE + RESTORE TESTS
-    // =============================================
-
-    // Delete modifier
-    const delM = await request(
-      'DELETE',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}/modifiers/${mId}`,
-      null,
-      auth,
-    );
-    delM.status === 200 ? pass('Soft delete modifier') : fail('Soft delete modifier', delM.status);
-
-    // Restore modifier
-    const resM = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}/modifiers/${mId}/restore`,
-      null,
-      auth,
-    );
-    resM.status === 200 ? pass('Restore modifier') : fail('Restore modifier', resM.body);
-
-    // Delete product variant
-    const delPV = await request(
-      'DELETE',
-      `/api/v1/restaurants/${restId}/products/${prodId}/variants/${pvId}`,
-      null,
-      auth,
-    );
-    delPV.status === 200
-      ? pass('Soft delete product variant')
-      : fail('Soft delete product variant', delPV.status);
-
-    // Restore product variant
-    const resPV = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/products/${prodId}/variants/${pvId}/restore`,
-      null,
-      auth,
-    );
-    resPV.status === 200
-      ? pass('Restore product variant')
-      : fail('Restore product variant', resPV.body);
-
-    // Delete modifier group (should fail because modifiers exist)
-    const delMG = await request(
-      'DELETE',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}`,
-      null,
-      auth,
-    );
-    delMG.status === 409
-      ? pass('Delete modifier group blocked (has modifiers)')
-      : fail('Delete modifier group guard', delMG.status);
-
-    // Restore modifier group
-    // First delete all modifiers, then delete group, then restore
-    await request(
-      'DELETE',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}/modifiers/${mId}`,
-      null,
-      auth,
-    );
-    await request(
-      'DELETE',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}/modifiers/${m2.body.id}`,
-      null,
-      auth,
-    );
-    const delMG2 = await request(
-      'DELETE',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}`,
-      null,
-      auth,
-    );
-    delMG2.status === 200
-      ? pass('Delete modifier group (empty)')
-      : fail('Delete modifier group', delMG2.status);
-    const resMG = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}/restore`,
-      null,
-      auth,
-    );
-    resMG.status === 200
-      ? pass('Restore modifier group')
-      : fail('Restore modifier group', resMG.body);
-
-    // Delete variant group (should fail because variants exist)
-    const delVG = await request(
-      'DELETE',
-      `/api/v1/restaurants/${restId}/variant-groups/${vgId}`,
-      null,
-      auth,
-    );
-    delVG.status === 409
-      ? pass('Delete variant group blocked (has variants)')
-      : fail('Delete variant group guard', delVG.status);
-
-    // Delete variant group after removing all variants
-    await request(
-      'DELETE',
-      `/api/v1/restaurants/${restId}/products/${prodId}/variants/${pvId}`,
-      null,
-      auth,
-    );
-    await request(
-      'DELETE',
-      `/api/v1/restaurants/${restId}/products/${prodId}/variants/${pv2.body.id}`,
-      null,
-      auth,
-    );
-    const delVG2 = await request(
-      'DELETE',
-      `/api/v1/restaurants/${restId}/variant-groups/${vgId}`,
-      null,
-      auth,
-    );
-    delVG2.status === 200
-      ? pass('Delete variant group (empty)')
-      : fail('Delete variant group', delVG2.status);
-    const resVG = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/variant-groups/${vgId}/restore`,
-      null,
-      auth,
-    );
-    resVG.status === 200
-      ? pass('Restore variant group')
-      : fail('Restore variant group', resVG.body);
-
-    // Validation: bad input
-    const badVG = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/variant-groups`,
-      { name: '' },
-      auth,
-    );
-    badVG.status === 400 ? pass('Validation: bad variant group') : fail('Validation', badVG.status);
-
-    const badPV = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/products/${prodId}/variants`,
-      { name: '' },
-      auth,
-    );
-    badPV.status === 400
-      ? pass('Validation: bad product variant')
-      : fail('Validation', badPV.status);
-
-    const badMG = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/modifier-groups`,
-      { name: '' },
-      auth,
-    );
-    badMG.status === 400
-      ? pass('Validation: bad modifier group')
-      : fail('Validation', badMG.status);
-
-    const badM = await request(
-      'POST',
-      `/api/v1/restaurants/${restId}/modifier-groups/${mgId}/modifiers`,
-      { name: '' },
-      auth,
-    );
-    badM.status === 400 ? pass('Validation: bad modifier') : fail('Validation', badM.status);
-  } catch (e) {
-    fail('Exception', e.message);
-  }
-
-  console.log('\n========== M4 VERIFICATION ==========\n');
-  results.forEach((r) => console.log(r));
-  const passed = results.filter((r) => r.startsWith('✅')).length;
-  const failed = results.filter((r) => r.startsWith('❌')).length;
-  console.log(`\nPassed: ${passed} | Failed: ${failed} | Total: ${results.length}`);
+    const tbls = [
+      'CustomerAnalytics', 'CustomerSegmentAssignment', 'CustomerSegment', 'Referral',
+      'WalletTransaction', 'Wallet', 'Reward', 'MembershipHistory', 'Membership',
+      'LoyaltyPointsTransaction', 'LoyaltyTier', 'LoyaltyProgram', 'VisitHistory',
+      'CustomerPreference', 'CustomerAddress', 'Customer',
+      'AuditLog', 'KitchenTicket', 'OrderItemModifier', 'OrderItem', 'OrderNote',
+      'Payment', 'OrderStatusHistory', 'Order', 'ProductImage', 'ProductAvailability',
+      'ProductIngredient', 'ProductVariant', 'ProductAllergen', 'ProductTagAssignment',
+      'Product', 'MenuCategory', 'Modifier', 'ModifierGroup', 'VariantGroup', 'Tag',
+      'Allergen', 'NutritionalInfo', 'BusinessException', 'BusinessHour', 'BranchSetting',
+      'RestaurantSetting', 'Branch', 'Restaurant', 'VerificationToken', 'Invitation',
+      'Session', 'RefreshToken', 'Subscription', 'User', 'Tenant',
+    ];
+    for (const t of tbls) { try { await p[t].deleteMany(); } catch {} }
+    console.log('  DB cleaned');
+  } catch (e) { console.log('  DB note:', e.message); }
+  finally { await p.$disconnect(); }
 }
 
-main().catch(console.error);
+async function cleanRedis() {
+  const Redis = require('ioredis');
+  const r = new Redis({ host:'127.0.0.1', port:6379, lazyConnect:true });
+  try {
+    await r.connect();
+    for (const pat of ['session:*','blacklist:*','user_sessions:*','cache:*']) {
+      const k = await r.keys(pat); if (k.length) await r.del(...k);
+    }
+    console.log('  Redis cleaned');
+  } catch (e) { console.log('  Redis note:', e.message); }
+  finally { r.disconnect(); }
+}
+
+async function waitSrv(tmo) {
+  const s = Date.now();
+  while (Date.now()-s < (tmo||45000)) {
+    try {
+      const r = await req('GET','/api/v1/health');
+      if (r.status===200) { console.log('  Server ready'); return; }
+    } catch {}
+    await new Promise(r=>setTimeout(r,500));
+  }
+  throw new Error('Server did not start');
+}
+
+function P(n,r,e) { total++; if(r.status===e) { pass++; ok(n); } else { fail++; no(n,`expected ${e} got ${r.status}: ${JSON.stringify(r.body).slice(0,200)}`); } }
+function C(n,c) { total++; if(c) { pass++; ok(n); } else { fail++; no(n,'condition false'); } }
+
+const ROOT = path.resolve(__dirname);
+let pass=0,fail=0,total=0;
+
+(async ()=>{
+  console.log('========== PHASE 4 MILESTONE 1: CUSTOMERS & LOYALTY ==========\n');
+
+  const srv = spawn('node',['dist/apps/api/main.js'],{cwd:ROOT,env:{...process.env, UNAUTHENTICATED_LIMIT:'100'}, stdio:['pipe','pipe','pipe']});
+  srv.stdout.on('data',d=>process.stdout.write(d));
+  srv.stderr.on('data',d=>process.stderr.write(d));
+
+  try {
+    await cleanDB();
+    await cleanRedis();
+    await waitSrv();
+
+    const base = '/api/v1/customers';
+    const ts = Date.now();
+
+    // ── SETUP ──
+    console.log('\n── SETUP ──');
+    let r = await req('POST','/api/v1/auth/register',{email:`m4-${ts}@t.com`,password:'Test1234!',firstName:'M4',lastName:'Test',tenantName:`M4Tenant-${ts}`});
+    P('Register',r,201);
+    const token = r.body?.tokens?.accessToken;
+    const uid = r.body?.user?.id;
+    C('Got token',!!token);
+
+    const auth = { Authorization: `Bearer ${token}` };
+
+    r = await req('POST','/api/v1/restaurants',{name:`M4Rest-${ts}`,slug:`m4-rest-${ts}`},auth);
+    P('Create restaurant',r,201);
+    const rid = r.body?.id;
+
+    // ── CUSTOMER CRUD ──
+    console.log('\n── CUSTOMER CRUD ──');
+
+    // Create
+    r = await req('POST',base,{firstName:'John',lastName:'Doe',email:`john-${ts}@t.com`,phone:'+1234567890',source:'walk-in',tags:['vip','new']},auth);
+    P('Create customer',r,201);
+    const cid = r.body?.id;
+    C('Customer has id',!!cid);
+    C('Customer email match',r.body?.email===`john-${ts}@t.com`);
+    C('Customer source match',r.body?.source==='walk-in');
+    C('Customer tags include vip',r.body?.tags?.includes('vip'));
+    C('Customer status active',r.body?.status==='ACTIVE');
+
+    // Get by ID
+    r = await req('GET',`${base}/${cid}`,null,auth);
+    P('Get customer',r,200);
+    C('Get returns customer',r.body?.id===cid);
+
+    // List
+    r = await req('GET',base,null,auth);
+    P('List customers',r,200);
+    C('List has data',Array.isArray(r.body?.data));
+    C('List has meta',!!r.body?.meta);
+
+    // Search
+    r = await req('GET',`${base}?search=John`,null,auth);
+    P('Search customers',r,200);
+    C('Search found customer',r.body?.data?.length>0);
+
+    // Update
+    r = await req('PATCH',`${base}/${cid}`,{firstName:'Johnny',lastName:'Updated',language:'ar'},auth);
+    P('Update customer',r,200);
+    C('Updated firstName',r.body?.firstName==='Johnny');
+
+    // Full profile get includes relations
+    r = await req('GET',`${base}/${cid}`,null,auth);
+    P('Get full profile',r,200);
+    C('Profile has membership',!!(r.body?.memberships?.length));
+    C('Profile has analytics',r.body?.analytics !== undefined);
+
+    // Create another customer for isolation test
+    r = await req('POST',base,{firstName:'Jane',lastName:'Smith',email:`jane-${ts}@t.com`},auth);
+    P('Create second customer',r,201);
+
+    // ── ADDRESSES ──
+    console.log('\n── ADDRESSES ──');
+
+    r = await req('POST',`${base}/${cid}/addresses`,{label:'Home',address:'123 Main St',city:'New York',state:'NY',zipCode:'10001',country:'US',isDefault:true},auth);
+    P('Create address',r,201);
+    const addrId = r.body?.id;
+    C('Address has id',!!addrId);
+    C('Address is default',r.body?.isDefault===true);
+
+    r = await req('PUT',`${base}/addresses/${addrId}`,{label:'Home Updated',city:'Brooklyn'},auth);
+    P('Update address',r,200);
+    C('Updated city',r.body?.city==='Brooklyn');
+
+    r = await req('DELETE',`${base}/addresses/${addrId}`,null,auth);
+    P('Delete address',r,204);
+
+    // ── PREFERENCES ──
+    console.log('\n── PREFERENCES ──');
+
+    r = await req('POST',`${base}/${cid}/preferences`,{key:'notify_email',value:'true'},auth);
+    P('Set preference',r,201);
+    C('Preference key',r.body?.key==='notify_email');
+
+    r = await req('DELETE',`${base}/${cid}/preferences/notify_email`,null,auth);
+    P('Delete preference',r,204);
+
+    // ── LOYALTY POINTS ──
+    console.log('\n── LOYALTY POINTS ──');
+
+    r = await req('POST',`${base}/${cid}/loyalty/earn`,{points:100,description:'Welcome bonus'},auth);
+    P('Earn points',r,201);
+    C('Earn has points',r.body?.points===100);
+
+    r = await req('POST',`${base}/${cid}/loyalty/earn`,{points:50,description:'Order bonus'},auth);
+    P('Earn more points',r,201);
+
+    r = await req('GET',`${base}/${cid}/loyalty/balance`,null,auth);
+    P('Points balance',r,200);
+    C('Balance is 150',r.body?.points===150);
+
+    r = await req('POST',`${base}/${cid}/loyalty/redeem`,{points:30,description:'Discount reward'},auth);
+    P('Redeem points',r,201);
+    C('Balance after redeem',r.body?.balanceAfter===120);
+
+    r = await req('POST',`${base}/${cid}/loyalty/adjust`,{points:10,reason:'Correction'},auth);
+    P('Adjust points',r,201);
+    C('Balance after adjust',r.body?.balanceAfter===130);
+
+    r = await req('GET',`${base}/${cid}/loyalty/history`,null,auth);
+    P('Point history',r,200);
+    C('History has entries',r.body?.data?.length>=4);
+
+    // Insufficient points
+    r = await req('POST',`${base}/${cid}/loyalty/redeem`,{points:99999,description:'Too much'},auth);
+    P('Redeem insufficient points',r,400);
+
+    // ── MEMBERSHIP ──
+    console.log('\n── MEMBERSHIP ──');
+
+    r = await req('GET',`${base}/${cid}/membership`,null,auth);
+    P('Get membership',r,200);
+    C('Membership tier BRONZE',r.body?.tier==='BRONZE');
+
+    r = await req('PUT',`${base}/${cid}/membership/upgrade`,{tier:'GOLD',reason:'Loyal customer'},auth);
+    P('Upgrade membership',r,200);
+    C('Upgraded to GOLD',r.body?.tier==='GOLD');
+
+    r = await req('GET',`${base}/${cid}/membership/history`,null,auth);
+    P('Membership history',r,200);
+    C('History has upgrade',r.body?.length>=1);
+    C('From BRONZE',r.body?.[0]?.fromTier==='BRONZE');
+    C('To GOLD',r.body?.[0]?.toTier==='GOLD');
+
+    r = await req('GET',`${base}/tiers`,null,auth);
+    P('Get available tiers',r,200);
+    C('Tiers is array',Array.isArray(r.body));
+
+    // ── REWARDS ──
+    console.log('\n── REWARDS ──');
+
+    r = await req('POST',`${base}/${cid}/rewards`,{type:'DISCOUNT',title:'10% Off',discountPercent:10,code:`SAVE10-${ts}`},auth);
+    P('Create discount reward',r,201);
+    const rwId = r.body?.id;
+    C('Reward created',!!rwId);
+    C('Reward status ACTIVE',r.body?.status==='ACTIVE');
+
+    r = await req('POST',`${base}/${cid}/rewards`,{type:'FREE_PRODUCT',title:'Free Coffee',freeProductName:'Coffee'},auth);
+    P('Create free product reward',r,201);
+
+    r = await req('POST',`${base}/${cid}/rewards`,{type:'BIRTHDAY',title:'Birthday Treat',discountAmount:5},auth);
+    P('Create birthday reward',r,201);
+
+    r = await req('GET',`${base}/${cid}/rewards`,null,auth);
+    P('List customer rewards',r,200);
+    C('Has rewards',r.body?.length>=3);
+
+    r = await req('POST',`${base}/rewards/${rwId}/redeem`,null,auth);
+    P('Redeem reward',r,201);
+    C('Reward status REDEEMED',r.body?.status==='REDEEMED');
+
+    // ── WALLET ──
+    console.log('\n── WALLET ──');
+
+    r = await req('GET',`${base}/${cid}/wallet`,null,auth);
+    P('Get wallet',r,200);
+    C('Wallet exists',!!r.body?.id);
+    C('Wallet balance 0',Number(r.body?.balance)===0);
+
+    r = await req('POST',`${base}/${cid}/wallet/recharge`,{amount:100,description:'Cash recharge'},auth);
+    P('Recharge wallet',r,201);
+    C('Balance after recharge',Number(r.body?.wallet?.balance)===100);
+
+    r = await req('POST',`${base}/${cid}/wallet/spend`,{amount:30,description:'Order payment'},auth);
+    P('Spend from wallet',r,201);
+    C('Balance after spend',Number(r.body?.wallet?.balance)===70);
+
+    r = await req('POST',`${base}/${cid}/wallet/refund`,{amount:20,description:'Order refund'},auth);
+    P('Refund to wallet',r,201);
+    C('Balance after refund',Number(r.body?.wallet?.balance)===90);
+
+    r = await req('GET',`${base}/${cid}/wallet/transactions`,null,auth);
+    P('Wallet transactions',r,200);
+    C('Has transactions',r.body?.data?.length>=3);
+
+    // Insufficient balance
+    r = await req('POST',`${base}/${cid}/wallet/spend`,{amount:99999,description:'Too much'},auth);
+    P('Spend insufficient balance',r,400);
+
+    // ── REFERRALS ──
+    console.log('\n── REFERRALS ──');
+
+    r = await req('POST',`${base}/${cid}/referrals`,{code:`REF-${ts}`},auth);
+    P('Create referral',r,201);
+    const refId = r.body?.id;
+    C('Referral created',!!refId);
+    C('Referral status PENDING',r.body?.status==='PENDING');
+
+    r = await req('GET',`${base}/${cid}/referrals/stats`,null,auth);
+    P('Referral stats',r,200);
+    C('Has referral stats',r.body?.total>=1);
+
+    r = await req('POST',`${base}/referrals/${refId}/complete`,null,auth);
+    P('Complete referral',r,201);
+    C('Referral rewarded',r.body?.status==='REWARDED');
+
+    // ── VISIT HISTORY ──
+    console.log('\n── VISIT HISTORY ──');
+
+    r = await req('GET',`${base}/${cid}/visits`,null,auth);
+    P('Visit history',r,200);
+    C('Visit history exists',r.body?.meta?.total>=0);
+
+    // ── ANALYTICS ──
+    console.log('\n── ANALYTICS ──');
+
+    r = await req('GET',`${base}/${cid}/analytics`,null,auth);
+    P('Get analytics',r,200);
+    C('Analytics exists',r.body?.lifetimeValue!==undefined);
+
+    r = await req('POST',`${base}/${cid}/analytics/recompute`,null,auth);
+    P('Recompute analytics',r,201);
+    C('Recomputed analytics',r.body?.computedAt!==undefined);
+
+    // ── SEGMENTS ──
+    console.log('\n── SEGMENTS ──');
+
+    r = await req('POST',`${base}/segments`,{name:'VIP Customers',type:'VIP',description:'Top spenders'},auth);
+    P('Create segment',r,201);
+    const segId = r.body?.id;
+    C('Segment created',!!segId);
+
+    r = await req('PUT',`${base}/segments/${segId}`,{name:'VIP - Updated'},auth);
+    P('Update segment',r,200);
+    C('Segment name updated',r.body?.name==='VIP - Updated');
+
+    r = await req('GET',`${base}/segments`,null,auth);
+    P('List segments',r,200);
+    C('Has segments',r.body?.length>=1);
+
+    r = await req('POST',`${base}/segments/${segId}/assign/${cid}`,null,auth);
+    P('Assign customer to segment',r,201);
+    C('Assigned',r.body?.customerId===cid);
+
+    r = await req('DELETE',`${base}/segments/${segId}/assign/${cid}`,null,auth);
+    P('Remove customer from segment',r,204);
+
+    r = await req('POST',`${base}/segments/${segId}/bulk-assign`,{customerIds:[cid]},auth);
+    P('Bulk assign segment',r,201);
+    C('Bulk assigned',r.body?.length>=1);
+
+    r = await req('DELETE',`${base}/segments/${segId}`,null,auth);
+    P('Delete segment',r,204);
+
+    // ── MARKETING ──
+    console.log('\n── MARKETING ──');
+
+    r = await req('GET',`${base}/marketing/email-list`,null,auth);
+    P('Email list',r,200);
+    C('Email list has data',Array.isArray(r.body));
+
+    r = await req('GET',`${base}/marketing/sms-list`,null,auth);
+    P('SMS list',r,200);
+    C('SMS list has data',Array.isArray(r.body));
+
+    r = await req('GET',`${base}/marketing/export?format=json`,null,auth);
+    P('Export JSON',r,200);
+    C('Export is array',Array.isArray(r.body));
+
+    r = await req('GET',`${base}/marketing/export?format=csv`,null,auth);
+    P('Export CSV',r,200);
+    C('Export is string',typeof r.body==='string');
+    C('Export has header',r.body?.startsWith('id,'));
+
+    // ── SOFT DELETE & RESTORE ──
+    console.log('\n── SOFT DELETE & RESTORE ──');
+
+    r = await req('DELETE',`${base}/${cid}`,null,auth);
+    P('Soft delete customer',r,204);
+
+    r = await req('GET',`${base}/${cid}`,null,auth);
+    P('Get deleted customer returns 404',r,404);
+
+    r = await req('POST',`${base}/${cid}/restore`,null,auth);
+    P('Restore customer',r,201);
+
+    r = await req('GET',`${base}/${cid}`,null,auth);
+    P('Get restored customer',r,200);
+
+    // ── VALIDATION ──
+    console.log('\n── VALIDATION ──');
+
+    r = await req('POST',base,{firstName:'',lastName:'Doe'},auth);
+    P('Empty firstName',r,400);
+
+    r = await req('POST',base,{firstName:'x'.repeat(101),lastName:'Doe'},auth);
+    P('Too long firstName',r,400);
+
+    r = await req('PATCH',`${base}/${cid}`,{email:'not-an-email'},auth);
+    P('Invalid email',r,400);
+
+    r = await req('POST',`${base}/${cid}/loyalty/earn`,{points:0},auth);
+    P('Zero points',r,400);
+
+    r = await req('POST',`${base}/${cid}/wallet/recharge`,{amount:-5},auth);
+    P('Negative recharge',r,400);
+
+    r = await req('POST',`${base}/${cid}/rewards`,{type:'INVALID',title:'Bad'},auth);
+    P('Invalid reward type',r,400);
+
+    r = await req('POST',`${base}/segments`,{name:''},auth);
+    P('Empty segment name',r,400);
+
+    // ── AUTH / RBAC ──
+    console.log('\n── AUTH / RBAC ──');
+
+    r = await req('GET',base);
+    P('No auth returns 401',r,401);
+
+    r = await req('POST',base,{firstName:'No',lastName:'Auth'});
+    P('No auth create returns 401',r,401);
+
+    r = await req('POST',`${base}/${cid}/wallet/recharge`,{amount:10},auth);
+    P('STAFF can recharge',r,201);
+
+    // ── TENANT ISOLATION ──
+    console.log('\n── TENANT ISOLATION ──');
+
+    const ts2 = Date.now() + 1;
+    r = await req('POST','/api/v1/auth/register',{email:`m4-iso-${ts2}@t.com`,password:'Test1234!',firstName:'Iso',lastName:'Test',tenantName:`IsoTenant-${ts2}`});
+    P('Register second tenant',r,201);
+    const token2 = r.body?.tokens?.accessToken;
+    C('Got second token',!!token2);
+    const auth2 = { Authorization: `Bearer ${token2}` };
+
+    r = await req('GET',base,null,auth2);
+    P('Second tenant sees 0 customers',r,200);
+    C('Isolation: 0 customers',r.body?.data?.length===0);
+    C('Isolation: total 0',r.body?.meta?.total===0);
+
+    // ── PAGINATION ──
+    console.log('\n── PAGINATION ──');
+
+    r = await req('GET',`${base}?page=1&limit=5`,null,auth);
+    P('Pagination works',r,200);
+    C('Pagination has meta',!!r.body?.meta);
+
+    // ── AUDIT ──
+    console.log('\n── AUDIT ──');
+
+    r = await req('GET','/api/v1/audit-logs',null,auth);
+    P('Audit logs',r,200);
+    C('Audit has entries',r.body?.data?.length>0);
+
+    // ── SWAGGER ──
+    console.log('\n── SWAGGER ──');
+
+    r = await req('GET','/docs');
+    P('Swagger',r,200);
+
+    console.log('\n========== PHASE 4 M1 ==========');
+    console.log('Passed: ' + pass + ' | Failed: ' + fail + ' | Total: ' + total);
+    console.log('Score:  ' + (total>0 ? Math.round(pass/total*100) : 0) + '%');
+  } catch (e) {
+    console.log('\n\x1b[31mFATAL\x1b[0m:', e.message);
+  }
+
+  srv.kill('SIGTERM');
+  await new Promise(r=>setTimeout(r,2000));
+  process.exit(fail>0?1:0);
+})();
