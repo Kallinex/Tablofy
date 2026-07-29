@@ -46,6 +46,10 @@ import { CustomersModule } from '../modules/customers/customers.module';
 import { CrmModule } from '../modules/crm/crm.module';
 import { CampaignsModule } from '../modules/campaigns/campaigns.module';
 import { KdsModule } from '../modules/kds/kds.module';
+import { InventoryModule } from '../modules/inventory/inventory.module';
+import { PurchasingModule } from '../modules/purchasing/purchasing.module';
+import { TransfersModule } from '../modules/transfers/transfers.module';
+import { RecipesModule } from '../modules/recipes/recipes.module';
 import { DomainEventModule } from '../common/event-emitter/domain-event.module';
 import { CommonModule } from '../common/common.module';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -129,6 +133,10 @@ import {
     CrmModule,
     CampaignsModule,
     KdsModule,
+    InventoryModule,
+    PurchasingModule,
+    TransfersModule,
+    RecipesModule,
   ],
   providers: [
     {

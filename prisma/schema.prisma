@@ -456,11 +456,16 @@ model Branch {
   updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?
 
-  restaurant Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  floors     Floor[]
-  areas      DiningArea[]
-  tables     Table[]
-  orders     Order[]
+  restaurant       Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  floors           Floor[]
+  areas            DiningArea[]
+  tables           Table[]
+  orders           Order[]
+  inventoryLocations InventoryLocation[]
+  purchaseOrders   PurchaseOrder[]
+  goodsReceipts    GoodsReceipt[]
+  transfersFrom    BranchTransfer[]    @relation("TransferFromBranch")
+  transfersTo      BranchTransfer[]    @relation("TransferToBranch")
 
   @@unique([restaurantId, slug])
   @@index([restaurantId])
@@ -597,6 +602,7 @@ model Product {
   allergenAssignments ProductAllergenAssignment[]
   orderItems          OrderItem[]
   NutritionalInfo     NutritionalInfo?
+  recipes             Recipe[]
 
   stationId String?
 
@@ -1114,7 +1120,9 @@ model Ingredient {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  products ProductIngredient[]
+  products      ProductIngredient[]
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  inventoryItemId String?
 
   @@unique([tenantId, name, deletedAt])
   @@index([tenantId])
@@ -1138,6 +1146,7 @@ model Supplier {
   deletedAt   DateTime?
 
   products ProductIngredient[]
+  detail   SupplierDetail?
 
   @@index([tenantId])
   @@index([isActive])
@@ -2244,4 +2253,744 @@ model EventLog {
   @@index([ruleId])
   @@index([processedAt])
   @@map("event_logs")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PHASE 5 — MILESTONE 1: INVENTORY & PROCUREMENT
+// ═══════════════════════════════════════════════════════════════
+
+enum StockMovementType {
+  PURCHASE
+  CONSUMPTION
+  TRANSFER_IN
+  TRANSFER_OUT
+  WASTE
+  ADJUSTMENT
+  RETURN
+  MANUAL
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CLOSED
+  CANCELLED
+}
+
+enum GoodsReceiptStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum TransferStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED
+}
+
+enum AdjustmentType {
+  INCREASE
+  DECREASE
+}
+
+enum AdjustmentReason {
+  SPOILAGE
+  DAMAGE
+  CYCLE_COUNT
+  PHYSICAL_COUNT
+  MANUAL
+  RETURN
+  OTHER
+}
+
+enum WasteType {
+  SPOILAGE
+  KITCHEN_WASTE
+  EXPIRED
+  DAMAGED
+  EMPLOYEE_MISTAKE
+  OTHER
+}
+
+enum CountType {
+  CYCLE
+  PHYSICAL
+  SPOT
+}
+
+enum InventoryLocationType {
+  STORAGE
+  FRIDGE
+  FREEZER
+  SHELF
+  DRY_STORAGE
+  COLD_STORAGE
+  OTHER
+}
+
+enum InventoryUnitType {
+  VOLUME
+  WEIGHT
+  UNIT
+  LENGTH
+}
+
+// ── INVENTORY CATEGORY ──
+
+model InventoryCategory {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  parentId    String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  parent   InventoryCategory?  @relation("InventoryCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children InventoryCategory[] @relation("InventoryCategoryTree")
+  items    InventoryItem[]
+
+  @@unique([tenantId, name, deletedAt])
+  @@index([tenantId])
+  @@index([parentId])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("inventory_categories")
+}
+
+// ── INVENTORY UNIT ──
+
+model InventoryUnit {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  abbreviation String
+  type        InventoryUnitType @default(UNIT)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  items InventoryItem[]
+
+  @@unique([tenantId, name, deletedAt])
+  @@index([tenantId])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("inventory_units")
+}
+
+// ── INVENTORY LOCATION ──
+
+model InventoryLocation {
+  id          String               @id @default(uuid())
+  tenantId    String
+  branchId    String?
+  name        String
+  type        InventoryLocationType @default(STORAGE)
+  description String?
+  isActive    Boolean               @default(true)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  deletedAt   DateTime?
+
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  items  InventoryItem[]
+
+  @@unique([tenantId, name, branchId, deletedAt])
+  @@index([tenantId])
+  @@index([branchId])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("inventory_locations")
+}
+
+// ── INVENTORY ITEM ──
+
+model InventoryItem {
+  id             String    @id @default(uuid())
+  tenantId       String
+  name           String
+  description    String?
+  sku            String?
+  barcode        String?
+  internalCode   String?
+  categoryId     String?
+  unitId         String?
+  locationId     String?
+  currentQuantity Decimal  @default(0) @db.Decimal(12, 4)
+  reservedQuantity Decimal @default(0) @db.Decimal(12, 4)
+  availableQuantity Decimal @default(0) @db.Decimal(12, 4)
+  minStock       Decimal?  @db.Decimal(12, 4)
+  maxStock       Decimal?  @db.Decimal(12, 4)
+  reorderLevel   Decimal?  @db.Decimal(12, 4)
+  unitCost       Decimal?  @db.Decimal(12, 4)
+  averageCost    Decimal?  @db.Decimal(12, 4)
+  lastCost       Decimal?  @db.Decimal(12, 4)
+  isActive       Boolean   @default(true)
+  isPurchasable  Boolean   @default(true)
+  isManufactured Boolean   @default(false)
+  image          String?
+  metadata       Json?
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  category   InventoryCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  unit       InventoryUnit?      @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  location   InventoryLocation?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  batches    InventoryBatch[]
+  movements  StockMovement[]
+  adjustments StockAdjustment[]
+  waste      WasteEntry[]
+  counts     InventoryCount[]
+  alerts     ExpirationAlert[]
+  poItems    PurchaseOrderItem[]
+  grItems    GoodsReceiptItem[]
+  transferItems BranchTransferItem[]
+  recipeItems   RecipeItem[]
+  ingredients   Ingredient[]
+
+  @@unique([tenantId, sku, deletedAt])
+  @@index([tenantId])
+  @@index([categoryId])
+  @@index([unitId])
+  @@index([locationId])
+  @@index([sku])
+  @@index([barcode])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("inventory_items")
+}
+
+// ── INVENTORY BATCH (Expiration Tracking) ──
+
+model InventoryBatch {
+  id             String   @id @default(uuid())
+  inventoryItemId String
+  tenantId       String
+  batchNumber    String?
+  lotNumber      String?
+  expiryDate     DateTime?
+  quantity       Decimal  @db.Decimal(12, 4)
+  unitCost       Decimal? @db.Decimal(12, 4)
+  receivedAt     DateTime @default(now())
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@index([tenantId])
+  @@index([expiryDate])
+  @@index([batchNumber])
+  @@index([lotNumber])
+  @@map("inventory_batches")
+}
+
+// ── SUPPLIER EXTENSION (new fields on existing model) ──
+// Supplier model at line 1126 is extended with additional fields via the new SupplierDetail model
+// to maintain backward compatibility with Phase 3 modules.
+
+model SupplierDetail {
+  id           String    @id @default(uuid())
+  supplierId   String    @unique
+  tenantId     String
+  code         String?
+  taxId        String?
+  paymentTerms String?
+  creditLimit  Decimal?  @db.Decimal(12, 2)
+  currency     String    @default("USD")
+  notes        String?
+  rating       Int?
+  isPreferred  Boolean   @default(false)
+  website      String?
+  status       String    @default("ACTIVE")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  supplier   Supplier           @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  contacts   SupplierContact[]
+  documents  SupplierDocument[]
+  orders     PurchaseOrder[]
+
+  @@index([tenantId])
+  @@index([supplierId])
+  @@index([code])
+  @@index([isPreferred])
+  @@map("supplier_details")
+}
+
+// ── SUPPLIER CONTACT ──
+
+model SupplierContact {
+  id         String   @id @default(uuid())
+  supplierDetailId String
+  tenantId   String
+  name       String
+  email      String?
+  phone      String?
+  role       String?
+  isPrimary  Boolean  @default(false)
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  supplierDetail SupplierDetail @relation(fields: [supplierDetailId], references: [id], onDelete: Cascade)
+
+  @@index([supplierDetailId])
+  @@index([tenantId])
+  @@index([isPrimary])
+  @@map("supplier_contacts")
+}
+
+// ── SUPPLIER DOCUMENT ──
+
+model SupplierDocument {
+  id         String   @id @default(uuid())
+  supplierDetailId String
+  tenantId   String
+  name       String
+  fileUrl    String
+  type       String?
+  expiryDate DateTime?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  supplierDetail SupplierDetail @relation(fields: [supplierDetailId], references: [id], onDelete: Cascade)
+
+  @@index([supplierDetailId])
+  @@index([tenantId])
+  @@index([expiryDate])
+  @@map("supplier_documents")
+}
+
+// ── PURCHASE ORDER ──
+
+model PurchaseOrder {
+  id                String              @id @default(uuid())
+  poNumber          String
+  tenantId          String
+  branchId          String?
+  supplierDetailId  String?
+  status            PurchaseOrderStatus @default(DRAFT)
+  orderDate         DateTime            @default(now())
+  expectedDate      DateTime?
+  deliveredDate     DateTime?
+  supplierReference String?
+  notes             String?
+  subtotal          Decimal?            @db.Decimal(12, 2)
+  tax               Decimal?            @db.Decimal(12, 2)
+  total             Decimal?            @db.Decimal(12, 2)
+  metadata          Json?
+  version           Int                 @default(1)
+  createdById       String?
+  approvedById      String?
+  approvedAt        DateTime?
+  cancelledById     String?
+  cancelledAt       DateTime?
+  cancelReason      String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  deletedAt         DateTime?
+
+  supplierDetail    SupplierDetail?     @relation(fields: [supplierDetailId], references: [id], onDelete: SetNull)
+  branch            Branch?             @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  items             PurchaseOrderItem[]
+  goodsReceipts     GoodsReceipt[]
+  approval          PurchaseOrderApproval?
+
+  @@unique([tenantId, poNumber, deletedAt])
+  @@index([tenantId])
+  @@index([supplierDetailId])
+  @@index([branchId])
+  @@index([status])
+  @@index([orderDate])
+  @@index([expectedDate])
+  @@index([deletedAt])
+  @@map("purchase_orders")
+}
+
+// ── PURCHASE ORDER ITEM ──
+
+model PurchaseOrderItem {
+  id               String   @id @default(uuid())
+  purchaseOrderId  String
+  inventoryItemId  String?
+  tenantId         String
+  description      String?
+  quantity         Decimal  @db.Decimal(12, 4)
+  unitPrice        Decimal  @db.Decimal(12, 4)
+  receivedQuantity Decimal  @default(0) @db.Decimal(12, 4)
+  lineTotal        Decimal? @db.Decimal(12, 4)
+  notes            String?
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  receipts      GoodsReceiptItem[]
+
+  @@index([purchaseOrderId])
+  @@index([inventoryItemId])
+  @@index([tenantId])
+  @@map("purchase_order_items")
+}
+
+// ── PURCHASE ORDER APPROVAL ──
+
+model PurchaseOrderApproval {
+  id              String   @id @default(uuid())
+  purchaseOrderId String   @unique
+  tenantId        String
+  approvedById    String?
+  approvedAt      DateTime?
+  rejectedById    String?
+  rejectedAt      DateTime?
+  reason          String?
+  status          String   @default("PENDING")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+  @@index([tenantId])
+  @@map("purchase_order_approvals")
+}
+
+// ── GOODS RECEIPT ──
+
+model GoodsReceipt {
+  id               String             @id @default(uuid())
+  grnNumber        String
+  purchaseOrderId  String
+  tenantId         String
+  branchId         String?
+  receivedDate     DateTime           @default(now())
+  status           GoodsReceiptStatus @default(PENDING)
+  notes            String?
+  receivedById     String?
+  metadata         Json?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  deletedAt        DateTime?
+
+  purchaseOrder PurchaseOrder    @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  branch        Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  items         GoodsReceiptItem[]
+
+  @@unique([tenantId, grnNumber, deletedAt])
+  @@index([tenantId])
+  @@index([purchaseOrderId])
+  @@index([branchId])
+  @@index([receivedDate])
+  @@index([deletedAt])
+  @@map("goods_receipts")
+}
+
+// ── GOODS RECEIPT ITEM ──
+
+model GoodsReceiptItem {
+  id               String   @id @default(uuid())
+  goodsReceiptId   String
+  purchaseOrderItemId String?
+  inventoryItemId  String?
+  tenantId         String
+  quantityReceived Decimal  @db.Decimal(12, 4)
+  unitPrice        Decimal? @db.Decimal(12, 4)
+  batchNumber      String?
+  lotNumber        String?
+  expiryDate       DateTime?
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  goodsReceipt    GoodsReceipt      @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  purchaseOrderItem PurchaseOrderItem? @relation(fields: [purchaseOrderItemId], references: [id], onDelete: SetNull)
+  inventoryItem   InventoryItem?    @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+
+  @@index([goodsReceiptId])
+  @@index([purchaseOrderItemId])
+  @@index([inventoryItemId])
+  @@index([tenantId])
+  @@map("goods_receipt_items")
+}
+
+// ── STOCK MOVEMENT ──
+
+model StockMovement {
+  id               String            @id @default(uuid())
+  inventoryItemId  String
+  tenantId         String
+  branchId         String?
+  type             StockMovementType
+  quantity         Decimal           @db.Decimal(12, 4)
+  unitCost         Decimal?          @db.Decimal(12, 4)
+  totalCost        Decimal?          @db.Decimal(12, 4)
+  referenceType    String?
+  referenceId      String?
+  batchNumber      String?
+  lotNumber        String?
+  notes            String?
+  recordedById     String?
+  createdAt        DateTime          @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@index([tenantId])
+  @@index([branchId])
+  @@index([type])
+  @@index([referenceType, referenceId])
+  @@index([createdAt])
+  @@map("stock_movements")
+}
+
+// ── BRANCH TRANSFER ──
+
+model BranchTransfer {
+  id              String         @id @default(uuid())
+  transferNumber  String
+  tenantId        String
+  fromBranchId    String
+  toBranchId      String
+  status          TransferStatus @default(DRAFT)
+  requestedById   String?
+  approvedById    String?
+  approvedAt      DateTime?
+  receivedById    String?
+  receivedAt      DateTime?
+  cancelledById   String?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  notes           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  deletedAt       DateTime?
+
+  fromBranch Branch @relation("TransferFromBranch", fields: [fromBranchId], references: [id], onDelete: Cascade)
+  toBranch   Branch @relation("TransferToBranch", fields: [toBranchId], references: [id], onDelete: Cascade)
+  items      BranchTransferItem[]
+
+  @@unique([tenantId, transferNumber, deletedAt])
+  @@index([tenantId])
+  @@index([fromBranchId])
+  @@index([toBranchId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("branch_transfers")
+}
+
+// ── BRANCH TRANSFER ITEM ──
+
+model BranchTransferItem {
+  id                String   @id @default(uuid())
+  branchTransferId  String
+  inventoryItemId   String?
+  tenantId          String
+  quantity          Decimal  @db.Decimal(12, 4)
+  receivedQuantity  Decimal  @default(0) @db.Decimal(12, 4)
+  unitCost          Decimal? @db.Decimal(12, 4)
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  branchTransfer BranchTransfer @relation(fields: [branchTransferId], references: [id], onDelete: Cascade)
+  inventoryItem  InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+
+  @@index([branchTransferId])
+  @@index([inventoryItemId])
+  @@index([tenantId])
+  @@map("branch_transfer_items")
+}
+
+// ── RECIPE ──
+
+model Recipe {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  name               String
+  description        String?
+  productId          String?
+  yield              Decimal? @db.Decimal(10, 2)
+  servingUnit        String?
+  preparationTime    Int?
+  cookingTime        Int?
+  instructions       String?
+  version            Int      @default(1)
+  cost               Decimal? @db.Decimal(12, 4)
+  foodCostPercentage Decimal? @db.Decimal(5, 2)
+  isActive           Boolean  @default(true)
+  metadata           Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  deletedAt          DateTime?
+
+  product Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  items   RecipeItem[]
+
+  @@unique([tenantId, name, deletedAt])
+  @@index([tenantId])
+  @@index([productId])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("recipes")
+}
+
+// ── RECIPE ITEM ──
+
+model RecipeItem {
+  id              String  @id @default(uuid())
+  recipeId        String
+  inventoryItemId String?
+  tenantId        String
+  quantity        Decimal @db.Decimal(12, 4)
+  unit            String?
+  wastePercentage Decimal? @db.Decimal(5, 2)
+  notes           String?
+  sortOrder       Int     @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  recipe        Recipe        @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+
+  @@index([recipeId])
+  @@index([inventoryItemId])
+  @@index([tenantId])
+  @@map("recipe_items")
+}
+
+// ── STOCK ADJUSTMENT ──
+
+model StockAdjustment {
+  id               String           @id @default(uuid())
+  inventoryItemId  String
+  tenantId         String
+  branchId         String?
+  type             AdjustmentType
+  reason           AdjustmentReason
+  quantity         Decimal          @db.Decimal(12, 4)
+  unitCost         Decimal?         @db.Decimal(12, 4)
+  totalCost        Decimal?         @db.Decimal(12, 4)
+  referenceNumber  String?
+  notes            String?
+  status           String           @default("PENDING")
+  approvedById     String?
+  approvedAt       DateTime?
+  createdById      String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@index([tenantId])
+  @@index([branchId])
+  @@index([type])
+  @@index([reason])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("stock_adjustments")
+}
+
+// ── WASTE ENTRY ──
+
+model WasteEntry {
+  id              String    @id @default(uuid())
+  inventoryItemId String
+  tenantId        String
+  branchId        String?
+  type            WasteType
+  quantity        Decimal   @db.Decimal(12, 4)
+  unitCost        Decimal?  @db.Decimal(12, 4)
+  totalCost       Decimal?  @db.Decimal(12, 4)
+  reason          String?
+  referenceNumber String?
+  notes           String?
+  recordedById    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@index([tenantId])
+  @@index([branchId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("waste_entries")
+}
+
+// ── INVENTORY COUNT ──
+
+model InventoryCount {
+  id               String    @id @default(uuid())
+  inventoryItemId  String
+  tenantId         String
+  branchId         String?
+  countType        CountType
+  expectedQuantity Decimal   @db.Decimal(12, 4)
+  actualQuantity   Decimal   @db.Decimal(12, 4)
+  variance         Decimal   @db.Decimal(12, 4)
+  unitCost         Decimal?  @db.Decimal(12, 4)
+  varianceCost     Decimal?  @db.Decimal(12, 4)
+  notes            String?
+  countedById      String?
+  countedAt        DateTime  @default(now())
+  status           String    @default("PENDING")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@index([tenantId])
+  @@index([branchId])
+  @@index([countType])
+  @@index([countedAt])
+  @@map("inventory_counts")
+}
+
+// ── EXPIRATION ALERT ──
+
+model ExpirationAlert {
+  id              String    @id @default(uuid())
+  inventoryItemId String
+  tenantId        String
+  batchNumber     String?
+  expiryDate      DateTime
+  alertType       String    @default("WARNING")
+  message         String?
+  sentAt          DateTime  @default(now())
+  resolvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@index([tenantId])
+  @@index([expiryDate])
+  @@index([alertType])
+  @@index([resolvedAt])
+  @@map("expiration_alerts")
 }
