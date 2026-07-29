@@ -50,6 +50,13 @@ import { InventoryModule } from '../modules/inventory/inventory.module';
 import { PurchasingModule } from '../modules/purchasing/purchasing.module';
 import { TransfersModule } from '../modules/transfers/transfers.module';
 import { RecipesModule } from '../modules/recipes/recipes.module';
+import { WarehousesModule } from '../modules/warehouses/warehouse.module';
+import { BarcodeModule } from '../modules/barcodes/barcode.module';
+import { ForecastingModule } from '../modules/forecasting/forecasting.module';
+import { CycleCountModule } from '../modules/cycle-counts/cycle-count.module';
+import { SupplierPerformanceModule } from '../modules/supplier-performance/supplier-performance.module';
+import { CostingModule } from '../modules/costing/costing.module';
+import { DashboardModule } from '../modules/dashboard/dashboard.module';
 import { DomainEventModule } from '../common/event-emitter/domain-event.module';
 import { CommonModule } from '../common/common.module';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -137,6 +144,13 @@ import {
     PurchasingModule,
     TransfersModule,
     RecipesModule,
+    WarehousesModule,
+    BarcodeModule,
+    ForecastingModule,
+    CycleCountModule,
+    SupplierPerformanceModule,
+    CostingModule,
+    DashboardModule,
   ],
   providers: [
     {

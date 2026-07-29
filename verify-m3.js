@@ -1,4 +1,6 @@
 const http = require('http');
+const { spawn } = require('child_process');
+const path = require('path');
 
 function request(method, path, body, headers = {}) {
   return new Promise((resolve, reject) => {
@@ -26,6 +28,17 @@ function request(method, path, body, headers = {}) {
   });
 }
 
+async function waitForServer(url, maxRetries = 80) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const r = await request('GET', url);
+      if (r.status === 200) return true;
+    } catch { }
+    await new Promise(r => setTimeout(r, 500));
+  }
+  return false;
+}
+
 async function main() {
   const results = [];
   const pass = (name) => {
@@ -34,6 +47,24 @@ async function main() {
   const fail = (name, e) => {
     results.push(`❌ ${name}: ${e}`);
   };
+
+  console.log('Starting server...');
+  const mainFile = path.join(__dirname, 'dist', 'apps', 'api', 'main.js');
+  const server = spawn('node', [mainFile], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: __dirname,
+    env: { ...process.env, PORT: '3000', NODE_ENV: 'testing' },
+  });
+  let serverOutput = '';
+  server.stdout.on('data', (d) => { serverOutput += d.toString(); });
+  server.stderr.on('data', (d) => { serverOutput += d.toString(); });
+  const started = await waitForServer('/api/v1/health');
+  if (!started) {
+    console.log('Server output:', serverOutput.substring(0, 2000));
+    console.log('Server failed to start');
+    process.exit(1);
+  }
+  console.log('  Server ready\n');
 
   try {
     // 1. Health
@@ -256,6 +287,9 @@ async function main() {
   const passed = results.filter((r) => r.startsWith('✅')).length;
   const failed = results.filter((r) => r.startsWith('❌')).length;
   console.log(`\nPassed: ${passed} | Failed: ${failed} | Total: ${results.length}`);
+
+  server.kill();
+  process.exit(failed > 0 ? 1 : 0);
 }
 
-main().catch(console.error);
+main().catch((e) => { console.error('Fatal:', e); process.exit(1); });
