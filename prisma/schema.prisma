@@ -1324,6 +1324,11 @@ model Campaign {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
+  templates    CampaignTemplate[]
+  recipients   CampaignRecipient[]
+  analytics    CampaignAnalytics?
+  approval     CampaignApproval?
+
   @@index([tenantId])
   @@index([type])
   @@index([status])
@@ -1501,6 +1506,10 @@ model Customer {
   referralsUsed     Referral[]                  @relation("ReferralUsed")
   segmentAssignments CustomerSegmentAssignment[]
   analytics         CustomerAnalytics?
+  timelineEntries   CrmTimelineEntry[]
+  communicationLogs CommunicationLog[]
+  campaignRecipients CampaignRecipient[]
+  promotionUsages   PromotionUsage[]
 
   @@unique([tenantId, email])
   @@index([tenantId, status])
@@ -1856,4 +1865,383 @@ model CustomerAnalytics {
   @@index([lifetimeValue])
   @@index([totalVisits])
   @@map("customer_analytics")
+}
+
+// ============================================
+// ENUMS (Phase 4 M2 — 7 new)
+// ============================================
+
+enum TimelineEventType {
+  ORDER_CREATED
+  PAYMENT_COMPLETED
+  REFUND_ISSUED
+  REWARD_REDEEMED
+  WALLET_CHANGED
+  MEMBERSHIP_CHANGED
+  REFERRAL_COMPLETED
+  CAMPAIGN_SENT
+  POINTS_EARNED
+  POINTS_REDEEMED
+  PROMOTION_USED
+  NOTE_ADDED
+  SUPPORT_INTERACTION
+  SYSTEM_EVENT
+}
+
+enum CommunicationChannel {
+  EMAIL
+  SMS
+  PUSH
+  WHATSAPP
+}
+
+enum CommunicationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  BOUNCED
+  OPENED
+  CLICKED
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum CampaignType {
+  EMAIL
+  SMS
+  PUSH
+  WHATSAPP
+}
+
+enum PromotionType {
+  PERCENTAGE
+  FIXED
+  BUY_X_GET_Y
+  FREE_DELIVERY
+  HAPPY_HOUR
+}
+
+enum PromotionStatus {
+  ACTIVE
+  INACTIVE
+  EXPIRED
+  SCHEDULED
+}
+
+// ============================================
+// MODELS (Phase 4 M2 — 14 new)
+// ============================================
+
+model CrmTimelineEntry {
+  id          String             @id @default(uuid())
+  tenantId    String
+  customerId  String
+  type        TimelineEventType
+  title       String
+  description String?
+  metadata    Json?
+  referenceId String?
+  referenceType String?
+  createdAt   DateTime           @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, createdAt])
+  @@index([tenantId, customerId])
+  @@index([tenantId, type])
+  @@index([createdAt])
+  @@map("crm_timeline_entries")
+}
+
+model CommunicationTemplate {
+  id          String             @id @default(uuid())
+  tenantId    String
+  name        String
+  channel     CommunicationChannel @default(EMAIL)
+  subject     String?
+  body        String
+  variables   Json?
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([channel])
+  @@index([deletedAt])
+  @@map("communication_templates")
+}
+
+model CommunicationLog {
+  id            String              @id @default(uuid())
+  tenantId      String
+  customerId    String?
+  campaignId    String?
+  channel       CommunicationChannel
+  recipient     String
+  subject       String?
+  body          String?
+  status        CommunicationStatus @default(PENDING)
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  openedAt      DateTime?
+  clickedAt     DateTime?
+  errorMessage  String?
+  retryCount    Int                 @default(0)
+  metadata      Json?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([campaignId])
+  @@index([channel])
+  @@index([status])
+  @@index([createdAt])
+  @@map("communication_logs")
+}
+
+model CampaignTemplate {
+  id             String         @id @default(uuid())
+  campaignId     String
+  tenantId       String
+  channel        CampaignType   @default(EMAIL)
+  subject        String?
+  body           String
+  variables      Json?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([tenantId])
+  @@map("campaign_templates")
+}
+
+model CampaignRecipient {
+  id              String           @id @default(uuid())
+  campaignId      String
+  tenantId        String
+  customerId      String?
+  recipient       String
+  channel         CampaignType     @default(EMAIL)
+  status          CommunicationStatus @default(PENDING)
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  openedAt        DateTime?
+  clickedAt       DateTime?
+  errorMessage    String?
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId])
+  @@index([customerId])
+  @@index([tenantId])
+  @@index([status])
+  @@map("campaign_recipients")
+}
+
+model CampaignAnalytics {
+  id             String   @id @default(uuid())
+  campaignId     String   @unique
+  tenantId       String
+  totalRecipients Int     @default(0)
+  sentCount      Int      @default(0)
+  deliveredCount Int      @default(0)
+  openedCount    Int      @default(0)
+  clickedCount   Int      @default(0)
+  bouncedCount   Int      @default(0)
+  failedCount    Int      @default(0)
+  conversionCount Int     @default(0)
+  revenueGenerated Decimal? @db.Decimal(10, 2)
+  metadata       Json?
+  computedAt     DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("campaign_analytics")
+}
+
+model CampaignApproval {
+  id         String   @id @default(uuid())
+  campaignId String
+  tenantId   String
+  approvedBy String?
+  approvedAt DateTime?
+  rejectedBy String?
+  rejectedAt DateTime?
+  reason     String?
+  status     String   @default("PENDING")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId])
+  @@index([tenantId])
+  @@map("campaign_approvals")
+}
+
+model Promotion {
+  id               String          @id @default(uuid())
+  tenantId         String
+  name             String
+  description      String?
+  type             PromotionType   @default(PERCENTAGE)
+  status           PromotionStatus @default(ACTIVE)
+  value            Decimal         @db.Decimal(10, 2)
+  maxDiscount      Decimal?        @db.Decimal(10, 2)
+  minOrderAmount   Decimal?        @db.Decimal(10, 2)
+  buyQuantity      Int?
+  getQuantity      Int?
+  freeProductId    String?
+  freeProductName  String?
+  code             String?
+  usageLimit       Int?
+  usagePerCustomer Int?
+  usagePerTenant   Int?
+  usedCount        Int             @default(0)
+  startsAt         DateTime?
+  endsAt           DateTime?
+  isStackable      Boolean         @default(false)
+  metadata         Json?
+  version          Int             @default(1)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deletedAt        DateTime?
+
+  branchRestrictions  PromotionBranchRestriction[]
+  productRestrictions PromotionProductRestriction[]
+  categoryRestrictions PromotionCategoryRestriction[]
+  usages              PromotionUsage[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([type])
+  @@index([status])
+  @@index([code])
+  @@index([startsAt, endsAt])
+  @@index([deletedAt])
+  @@map("promotions")
+}
+
+model PromotionBranchRestriction {
+  id           String @id @default(uuid())
+  promotionId  String
+  branchId     String
+  tenantId     String
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@unique([promotionId, branchId])
+  @@index([promotionId])
+  @@index([tenantId])
+  @@map("promotion_branch_restrictions")
+}
+
+model PromotionProductRestriction {
+  id           String @id @default(uuid())
+  promotionId  String
+  productId    String
+  tenantId     String
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@unique([promotionId, productId])
+  @@index([promotionId])
+  @@index([tenantId])
+  @@map("promotion_product_restrictions")
+}
+
+model PromotionCategoryRestriction {
+  id           String @id @default(uuid())
+  promotionId  String
+  categoryId   String
+  tenantId     String
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@unique([promotionId, categoryId])
+  @@index([promotionId])
+  @@index([tenantId])
+  @@map("promotion_category_restrictions")
+}
+
+model PromotionUsage {
+  id          String   @id @default(uuid())
+  promotionId String
+  customerId  String
+  orderId     String?
+  tenantId    String
+  discountAmount Decimal @db.Decimal(10, 2)
+  usedAt      DateTime @default(now())
+  metadata    Json?
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  customer  Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([promotionId, customerId, orderId])
+  @@index([promotionId])
+  @@index([customerId])
+  @@index([tenantId])
+  @@index([usedAt])
+  @@map("promotion_usages")
+}
+
+model EventRule {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  event       String
+  condition   Json?
+  action      Json?
+  isActive    Boolean  @default(true)
+  description String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([event])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("event_rules")
+}
+
+model EventLog {
+  id          String   @id @default(uuid())
+  tenantId    String
+  event       String
+  ruleId      String?
+  ruleName    String?
+  payload     Json?
+  result      String?
+  error       String?
+  processedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([event])
+  @@index([ruleId])
+  @@index([processedAt])
+  @@map("event_logs")
 }

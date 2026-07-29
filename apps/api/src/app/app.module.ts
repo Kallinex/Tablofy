@@ -43,6 +43,8 @@ import { ProductIngredientsModule } from '../modules/product-ingredients/product
 import { UsageModule } from '../modules/usage/usage.module';
 import { OrdersModule } from '../modules/orders/orders.module';
 import { CustomersModule } from '../modules/customers/customers.module';
+import { CrmModule } from '../modules/crm/crm.module';
+import { CampaignsModule } from '../modules/campaigns/campaigns.module';
 import { KdsModule } from '../modules/kds/kds.module';
 import { DomainEventModule } from '../common/event-emitter/domain-event.module';
 import { CommonModule } from '../common/common.module';
@@ -124,6 +126,8 @@ import {
     UsageModule,
     OrdersModule,
     CustomersModule,
+    CrmModule,
+    CampaignsModule,
     KdsModule,
   ],
   providers: [
