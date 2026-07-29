@@ -19,7 +19,7 @@ const PLAN_RATE_LIMITS: Record<string, { requests: number; windowSeconds: number
   ENTERPRISE: { requests: 1000, windowSeconds: 60 },
 };
 
-const UNAUTHENTICATED_LIMIT = 20;
+const UNAUTHENTICATED_LIMIT = 100;
 const UNAUTHENTICATED_WINDOW_SECONDS = 60;
 
 export const PLAN_THROTTLE_KEY = 'planThrottle';

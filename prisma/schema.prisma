@@ -136,6 +136,15 @@ enum KitchenStatus {
   CANCELLED
 }
 
+enum TicketItemStatus {
+  PENDING
+  QUEUED
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
+
 enum NoteType {
   GENERAL
   KITCHEN
@@ -232,18 +241,18 @@ model User {
   updatedAt           DateTime   @updatedAt
   deletedAt           DateTime?
 
-  tenant             Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tenant             Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   refreshTokens      RefreshToken[]
   sessions           Session[]
-  invitedUsers       Invitation[]        @relation("InvitedBy")
+  invitedUsers       Invitation[]         @relation("InvitedBy")
   verificationTokens VerificationToken[]
   auditLogs          AuditLog[]
   orders             Order[]
   orderNotes         OrderNote[]
   statusChanges      OrderStatusHistory[]
   notifications      Notification[]
-  sentMessages       Message[]           @relation("MessageSender")
-  receivedMessages   Message[]           @relation("MessageRecipient")
+  sentMessages       Message[]            @relation("MessageSender")
+  receivedMessages   Message[]            @relation("MessageRecipient")
   feedback           Feedback[]
   reports            Report[]
 
@@ -415,6 +424,7 @@ model Restaurant {
   BusinessException BusinessException[]
   TaxRate           TaxRate[]
   ServiceCharge     ServiceCharge[]
+  KitchenStation    KitchenStation[]
 
   @@unique([tenantId, slug])
   @@index([tenantId])
@@ -574,21 +584,25 @@ model Product {
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
 
-  restaurant      Restaurant            @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  menuCategory    MenuCategory?         @relation(fields: [menuCategoryId], references: [id], onDelete: SetNull)
-  variants        ProductVariant[]
-  images          ProductImage[]
-  availability    ProductAvailability[]
-  ingredients     ProductIngredient[]
-  tagAssignments  ProductTagAssignment[]
+  restaurant          Restaurant                  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  menuCategory        MenuCategory?               @relation(fields: [menuCategoryId], references: [id], onDelete: SetNull)
+  station             KitchenStation?             @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  variants            ProductVariant[]
+  images              ProductImage[]
+  availability        ProductAvailability[]
+  ingredients         ProductIngredient[]
+  tagAssignments      ProductTagAssignment[]
   allergenAssignments ProductAllergenAssignment[]
-  orderItems      OrderItem[]
-  NutritionalInfo NutritionalInfo?
+  orderItems          OrderItem[]
+  NutritionalInfo     NutritionalInfo?
+
+  stationId String?
 
   @@unique([restaurantId, sku])
   @@index([restaurantId])
   @@index([tenantId])
   @@index([menuCategoryId])
+  @@index([stationId])
   @@index([isActive])
   @@index([deletedAt])
   @@map("products")
@@ -631,8 +645,8 @@ model ProductVariant {
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
 
-  variantGroup VariantGroup?        @relation(fields: [variantGroupId], references: [id], onDelete: SetNull)
-  product      Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantGroup VariantGroup?            @relation(fields: [variantGroupId], references: [id], onDelete: SetNull)
+  product      Product                  @relation(fields: [productId], references: [id], onDelete: Cascade)
   modifiers    ProductVariantModifier[]
 
   @@unique([variantGroupId, productId, name, deletedAt])
@@ -716,7 +730,7 @@ model ProductTag {
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  restaurant Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurant Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   products   ProductTagAssignment[]
 
   @@unique([restaurantId, slug, deletedAt])
@@ -739,7 +753,7 @@ model Allergen {
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  restaurant Restaurant              @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurant Restaurant                  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   products   ProductAllergenAssignment[]
 
   @@unique([restaurantId, slug, deletedAt])
@@ -754,7 +768,7 @@ model ProductTagAssignment {
   productId String
   tagId     String
 
-  product Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
   tag     ProductTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@unique([productId, tagId])
@@ -870,60 +884,60 @@ model BusinessException {
 }
 
 model Order {
-  id              String      @id @default(uuid())
-  orderNumber     Int
-  tenantId        String
-  restaurantId    String
-  branchId        String
-  tableId         String?
-  userId          String?
-  orderType       OrderType   @default(DINE_IN)
-  status          OrderStatus @default(DRAFT)
-  kitchenStatus   KitchenStatus @default(PENDING)
-  source          String      @default("POS")
-  subtotal        Decimal     @db.Decimal(10, 2)
-  discount        Decimal     @default(0) @db.Decimal(10, 2)
-  discountType    DiscountType?
-  discountReason  String?
-  discountAmount  Decimal     @default(0) @db.Decimal(10, 2)
-  serviceCharge   Decimal     @default(0) @db.Decimal(10, 2)
-  serviceChargeId String?
-  serviceChargeRate Decimal   @default(0) @db.Decimal(5, 2)
-  taxAmount       Decimal     @default(0) @db.Decimal(10, 2)
-  taxRateId       String?
-  taxRate         Decimal     @default(0) @db.Decimal(5, 2)
-  tip             Decimal     @default(0) @db.Decimal(10, 2)
-  total           Decimal     @db.Decimal(10, 2)
-  paidAmount      Decimal     @default(0) @db.Decimal(10, 2)
+  id                String        @id @default(uuid())
+  orderNumber       Int
+  tenantId          String
+  restaurantId      String
+  branchId          String
+  tableId           String?
+  userId            String?
+  orderType         OrderType     @default(DINE_IN)
+  status            OrderStatus   @default(DRAFT)
+  kitchenStatus     KitchenStatus @default(PENDING)
+  source            String        @default("POS")
+  subtotal          Decimal       @db.Decimal(10, 2)
+  discount          Decimal       @default(0) @db.Decimal(10, 2)
+  discountType      DiscountType?
+  discountReason    String?
+  discountAmount    Decimal       @default(0) @db.Decimal(10, 2)
+  serviceCharge     Decimal       @default(0) @db.Decimal(10, 2)
+  serviceChargeId   String?
+  serviceChargeRate Decimal       @default(0) @db.Decimal(5, 2)
+  taxAmount         Decimal       @default(0) @db.Decimal(10, 2)
+  taxRateId         String?
+  taxRate           Decimal       @default(0) @db.Decimal(5, 2)
+  tip               Decimal       @default(0) @db.Decimal(10, 2)
+  total             Decimal       @db.Decimal(10, 2)
+  paidAmount        Decimal       @default(0) @db.Decimal(10, 2)
 
   customerName    String?
   customerPhone   String?
   customerEmail   String?
   deliveryAddress String?
-  deliveryFee     Decimal     @default(0) @db.Decimal(10, 2)
+  deliveryFee     Decimal @default(0) @db.Decimal(10, 2)
 
-  notes           String?
+  notes String?
 
-  version         Int         @default(1)
+  version Int @default(1)
 
-  completedAt     DateTime?
-  voidedAt        DateTime?
-  voidReason      String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  deletedAt       DateTime?
+  completedAt DateTime?
+  voidedAt    DateTime?
+  voidReason  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
 
-  restaurant     Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  branch         Branch                 @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  table          Table?                 @relation(fields: [tableId], references: [id], onDelete: SetNull)
-  user           User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  restaurant       Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  branch           Branch               @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  table            Table?               @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  user             User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
   serviceChargeRef ServiceCharge?       @relation("OrderServiceCharge", fields: [serviceChargeId], references: [id], onDelete: SetNull)
-  taxRateRef     TaxRate?               @relation("OrderTaxRate", fields: [taxRateId], references: [id], onDelete: SetNull)
-  items          OrderItem[]
-  payments       Payment[]
-  statusHistory  OrderStatusHistory[]
-  orderNotes     OrderNote[]
-  kitchenTickets KitchenTicket[]
+  taxRateRef       TaxRate?             @relation("OrderTaxRate", fields: [taxRateId], references: [id], onDelete: SetNull)
+  items            OrderItem[]
+  payments         Payment[]
+  statusHistory    OrderStatusHistory[]
+  orderNotes       OrderNote[]
+  kitchenTickets   KitchenTicket[]
 
   @@unique([restaurantId, orderNumber])
   @@index([tenantId])
@@ -940,33 +954,34 @@ model Order {
 }
 
 model OrderItem {
-  id              String          @id @default(uuid())
-  orderId         String
-  tenantId        String
-  productId       String
-  productName     String
-  variantId       String?
-  variantName     String?
-  sku             String?
-  quantity        Int             @default(1)
-  unitPrice       Decimal         @db.Decimal(10, 2)
-  discount        Decimal         @default(0) @db.Decimal(10, 2)
-  discountType    DiscountType?
-  taxAmount       Decimal         @default(0) @db.Decimal(10, 2)
-  serviceCharge   Decimal         @default(0) @db.Decimal(10, 2)
-  total           Decimal         @db.Decimal(10, 2)
-  kitchenStatus   KitchenStatus   @default(PENDING)
+  id               String        @id @default(uuid())
+  orderId          String
+  tenantId         String
+  productId        String
+  productName      String
+  variantId        String?
+  variantName      String?
+  sku              String?
+  quantity         Int           @default(1)
+  unitPrice        Decimal       @db.Decimal(10, 2)
+  discount         Decimal       @default(0) @db.Decimal(10, 2)
+  discountType     DiscountType?
+  taxAmount        Decimal       @default(0) @db.Decimal(10, 2)
+  serviceCharge    Decimal       @default(0) @db.Decimal(10, 2)
+  total            Decimal       @db.Decimal(10, 2)
+  kitchenStatus    KitchenStatus @default(PENDING)
   preparationNotes String?
-  priceSnapshot   Json?
-  taxSnapshot     Json?
-  voidedAt        DateTime?
-  voidReason      String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  priceSnapshot    Json?
+  taxSnapshot      Json?
+  voidedAt         DateTime?
+  voidReason       String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
-  order     Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product   Product             @relation(fields: [productId], references: [id])
-  modifiers OrderItemModifier[]
+  order              Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product            Product             @relation(fields: [productId], references: [id])
+  modifiers          OrderItemModifier[]
+  kitchenTicketItems KitchenTicketItem[]
 
   @@index([orderId])
   @@index([productId])
@@ -992,17 +1007,17 @@ model OrderItemModifier {
 }
 
 model OrderStatusHistory {
-  id        String      @id @default(uuid())
-  orderId   String
-  tenantId  String
-  fromStatus OrderStatus?
-  toStatus  OrderStatus
-  changedBy String?
+  id              String       @id @default(uuid())
+  orderId         String
+  tenantId        String
+  fromStatus      OrderStatus?
+  toStatus        OrderStatus
+  changedBy       String?
   changedByUserId String?
-  reason    String?
-  createdAt DateTime    @default(now())
+  reason          String?
+  createdAt       DateTime     @default(now())
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order         Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
   changedByUser User? @relation(fields: [changedByUserId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
@@ -1012,16 +1027,16 @@ model OrderStatusHistory {
 }
 
 model OrderNote {
-  id        String    @id @default(uuid())
+  id        String   @id @default(uuid())
   orderId   String
   tenantId  String
-  type      NoteType  @default(GENERAL)
+  type      NoteType @default(GENERAL)
   content   String
   userId    String?
-  createdAt DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  user  User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([tenantId])
@@ -1030,43 +1045,48 @@ model OrderNote {
 }
 
 model KitchenTicket {
-  id          String        @id @default(uuid())
-  orderId     String
-  tenantId    String
+  id           String        @id @default(uuid())
+  orderId      String
+  tenantId     String
   ticketNumber Int
-  status      KitchenStatus @default(PENDING)
-  priority    Int           @default(0)
-  printedAt   DateTime?
-  completedAt DateTime?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  status       KitchenStatus @default(PENDING)
+  priority     Int           @default(0)
+  printedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  station KitchenStation?     @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  order   Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items   KitchenTicketItem[]
+
+  stationId String?
 
   @@unique([orderId, ticketNumber])
   @@index([orderId])
   @@index([tenantId])
   @@index([status])
+  @@index([stationId])
   @@index([createdAt])
   @@map("kitchen_tickets")
 }
 
 model Payment {
-  id          String        @id @default(uuid())
-  orderId     String
-  tenantId    String
-  method      PaymentMethod
-  status      PaymentStatus @default(PENDING)
-  amount      Decimal       @db.Decimal(10, 2)
-  tip         Decimal       @default(0) @db.Decimal(10, 2)
-  reference   String?
-  gatewayRef  String?
-  gatewayData Json?
-  processedAt DateTime?
-  refundedAt  DateTime?
+  id           String        @id @default(uuid())
+  orderId      String
+  tenantId     String
+  method       PaymentMethod
+  status       PaymentStatus @default(PENDING)
+  amount       Decimal       @db.Decimal(10, 2)
+  tip          Decimal       @default(0) @db.Decimal(10, 2)
+  reference    String?
+  gatewayRef   String?
+  gatewayData  Json?
+  processedAt  DateTime?
+  refundedAt   DateTime?
   refundReason String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -1227,18 +1247,18 @@ model Feedback {
 }
 
 model TaxRate {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   restaurantId String
   tenantId     String
   name         String
-  rate         Decimal  @db.Decimal(5, 4)
-  isCompound   Boolean  @default(false)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  rate         Decimal   @db.Decimal(5, 4)
+  isCompound   Boolean   @default(false)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  orders     Order[] @relation("OrderTaxRate")
+  orders     Order[]    @relation("OrderTaxRate")
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@unique([restaurantId, name, deletedAt])
@@ -1249,18 +1269,18 @@ model TaxRate {
 }
 
 model ServiceCharge {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   restaurantId String
   tenantId     String
   name         String
-  rate         Decimal  @db.Decimal(5, 4)
-  isPercentage Boolean  @default(true)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  rate         Decimal   @db.Decimal(5, 4)
+  isPercentage Boolean   @default(true)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  orders     Order[] @relation("OrderServiceCharge")
+  orders     Order[]    @relation("OrderServiceCharge")
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@unique([restaurantId, name, deletedAt])
@@ -1271,14 +1291,14 @@ model ServiceCharge {
 }
 
 model Unit {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   tenantId     String
   name         String
   abbreviation String
   type         UnitType
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
   @@unique([tenantId, name, deletedAt])
@@ -1309,4 +1329,64 @@ model Campaign {
   @@index([endsAt])
   @@index([deletedAt])
   @@map("campaigns")
+}
+
+// ============================================
+// KDS — Kitchen Display System (Phase 3 M2)
+// ============================================
+
+model KitchenStation {
+  id           String    @id @default(uuid())
+  tenantId     String
+  restaurantId String
+  name         String
+  slug         String
+  description  String?
+  color        String?
+  icon         String?
+  displayOrder Int       @default(0)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  restaurant  Restaurant          @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  products    Product[]
+  tickets     KitchenTicket[]
+  ticketItems KitchenTicketItem[]
+
+  @@unique([restaurantId, slug])
+  @@unique([restaurantId, name])
+  @@index([tenantId])
+  @@index([restaurantId])
+  @@index([isActive])
+  @@index([displayOrder])
+  @@map("kitchen_stations")
+}
+
+model KitchenTicketItem {
+  id          String           @id @default(uuid())
+  ticketId    String
+  orderItemId String
+  tenantId    String
+  stationId   String?
+  status      TicketItemStatus @default(PENDING)
+  startedAt   DateTime?
+  completedAt DateTime?
+  notes       String?
+  sortOrder   Int              @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  ticket    KitchenTicket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  orderItem OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  station   KitchenStation? @relation(fields: [stationId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId])
+  @@index([orderItemId])
+  @@index([tenantId])
+  @@index([stationId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("kitchen_ticket_items")
 }

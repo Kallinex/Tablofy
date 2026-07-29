@@ -42,6 +42,7 @@ import { SuppliersModule } from '../modules/suppliers/suppliers.module';
 import { ProductIngredientsModule } from '../modules/product-ingredients/product-ingredients.module';
 import { UsageModule } from '../modules/usage/usage.module';
 import { OrdersModule } from '../modules/orders/orders.module';
+import { KdsModule } from '../modules/kds/kds.module';
 import { DomainEventModule } from '../common/event-emitter/domain-event.module';
 import { CommonModule } from '../common/common.module';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -121,6 +122,7 @@ import {
     ProductIngredientsModule,
     UsageModule,
     OrdersModule,
+    KdsModule,
   ],
   providers: [
     {
