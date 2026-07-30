@@ -72,7 +72,25 @@ jobs:
         env:
           DATABASE_URL: postgresql://tablofy:tablofy_dev@localhost:5432/tablofy_dev?schema=public
 
-      - name: Run tests
+      - name: Unit & integration tests
+        run: npx nx test api --configuration=coverage
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://tablofy:tablofy_dev@localhost:5432/tablofy_dev?schema=public
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-jwt-secret-must-be-at-least-32characters
+          JWT_REFRESH_SECRET: test-refresh-secret-must-be-at-least-32ch
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+      - name: Run E2E tests
         run: |
           npm run start:api &
           sleep 10

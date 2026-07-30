@@ -1,0 +1,68 @@
+import type { Config } from 'jest';
+
+const config: Config = {
+  displayName: 'api',
+  testEnvironment: 'node',
+  rootDir: '.',
+  testMatch: ['<rootDir>/src/**/*.spec.ts', '<rootDir>/src/**/*.integration.spec.ts'],
+  transform: {
+    '^.+\\.ts$': [
+      'ts-jest',
+      {
+        tsconfig: '<rootDir>/tsconfig.spec.json',
+        isolatedModules: true,
+      },
+    ],
+  },
+  moduleFileExtensions: ['ts', 'js', 'json'],
+  moduleNameMapper: {
+    '^@tablofy/shared/types$': '<rootDir>/../../libs/shared/types/src/index.ts',
+    '^@tablofy/shared/constants$': '<rootDir>/../../libs/shared/constants/src/index.ts',
+    '^@tablofy/shared/utils$': '<rootDir>/../../libs/shared/utils/src/index.ts',
+    '^bullmq$': '<rootDir>/src/test/mocks/bullmq.mock.ts',
+    '^uuid$': '<rootDir>/src/test/mocks/uuid.mock.ts',
+  },
+  collectCoverageFrom: [
+    '<rootDir>/src/**/*.ts',
+    '!<rootDir>/src/**/*.module.ts',
+    '!<rootDir>/src/**/*.dto.ts',
+    '!<rootDir>/src/**/*.interface.ts',
+    '!<rootDir>/src/main.ts',
+    '!<rootDir>/src/test/**',
+  ],
+  coverageDirectory: '<rootDir>/../../coverage',
+  coverageReporters: ['text', 'lcov', 'clover'],
+  coverageThreshold: {
+    '**/src/common/decorators/current-user.decorator.ts': { branches: 0, functions: 0, lines: 20, statements: 20 },
+    '**/src/common/decorators/public.decorator.ts': { branches: 90, functions: 90, lines: 90, statements: 90 },
+    '**/src/common/decorators/roles.decorator.ts': { branches: 90, functions: 0, lines: 65, statements: 70 },
+    '**/src/common/decorators/skip-tenant.decorator.ts': { branches: 90, functions: 90, lines: 90, statements: 90 },
+    '**/src/common/filters/*.ts': { branches: 65, functions: 90, lines: 90, statements: 90 },
+    '**/src/common/guards/*.ts': { branches: 65, functions: 40, lines: 85, statements: 85 },
+    '**/src/common/interceptors/audit-log.interceptor.ts': { branches: 50, functions: 90, lines: 80, statements: 85 },
+    '**/src/common/services/*.ts': { branches: 50, functions: 70, lines: 70, statements: 70 },
+    '**/src/modules/audit-logs/audit-logs.service.ts': { branches: 70, functions: 90, lines: 90, statements: 90 },
+    '**/src/modules/auth/auth.service.ts': { branches: 55, functions: 85, lines: 75, statements: 75 },
+    '**/src/modules/auth/auth.controller.ts': { branches: 50, functions: 90, lines: 90, statements: 90 },
+    '**/src/modules/auth/strategies/*.ts': { branches: 70, functions: 90, lines: 85, statements: 85 },
+    '**/src/modules/barcodes/barcode.service.ts': { branches: 55, functions: 75, lines: 75, statements: 70 },
+    '**/src/modules/crm/crm.service.ts': { branches: 15, functions: 15, lines: 20, statements: 20 },
+    '**/src/modules/customer-analytics/customer-analytics.service.ts': { branches: 5, functions: 5, lines: 10, statements: 10 },
+    '**/src/modules/customers/customers.service.ts': { branches: 20, functions: 15, lines: 25, statements: 25 },
+    '**/src/modules/inventory/inventory.service.ts': { branches: 15, functions: 15, lines: 20, statements: 20 },
+    '**/src/modules/inventory-analytics/inventory-analytics.service.ts': { branches: 5, functions: 5, lines: 10, statements: 10 },
+    '**/src/modules/orders/orders.service.ts': { branches: 25, functions: 25, lines: 25, statements: 25 },
+    '**/src/modules/orders/order-state-machine.ts': { branches: 90, functions: 70, lines: 85, statements: 85 },
+    '**/src/modules/sales-analytics/sales-analytics.service.ts': { branches: 15, functions: 15, lines: 15, statements: 15 },
+    '**/src/modules/tenants/tenants.service.ts': { branches: 30, functions: 45, lines: 35, statements: 35 },
+    '**/src/modules/users/users.service.ts': { branches: 40, functions: 75, lines: 60, statements: 60 },
+    '**/src/prisma/prisma.service.ts': { branches: 90, functions: 40, lines: 30, statements: 40 },
+    '**/src/redis/redis.service.ts': { branches: 35, functions: 70, lines: 65, statements: 65 },
+  },
+  setupFilesAfterSetup: [],
+  verbose: true,
+  clearMocks: true,
+  restoreMocks: true,
+};
+
+export default config;

@@ -16,7 +16,15 @@ export interface TenantSoftDeletableEntity extends TenantEntity {
   deletedAt: Date | null;
 }
 
-export type UserRole = 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'STAFF' | 'KITCHEN' | 'CASHIER' | 'WAITER' | 'VIEWER';
+export type UserRole =
+  | 'SUPER_ADMIN'
+  | 'OWNER'
+  | 'MANAGER'
+  | 'STAFF'
+  | 'KITCHEN'
+  | 'CASHIER'
+  | 'WAITER'
+  | 'VIEWER';
 
 export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING';
 

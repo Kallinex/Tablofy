@@ -25,6 +25,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   softDeleteWhere(where: Record<string, unknown> = {}): Record<string, unknown> {
+    if (where.deletedAt !== undefined) return where;
     return { ...where, deletedAt: null };
   }
 }

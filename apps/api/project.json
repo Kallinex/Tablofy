@@ -78,6 +78,28 @@
           "buildTarget": "api:build:production"
         }
       }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "jest --config jest.config.ts",
+        "cwd": "apps/api"
+      },
+      "configurations": {
+        "coverage": {
+          "command": "jest --config jest.config.ts --coverage"
+        },
+        "watch": {
+          "command": "jest --config jest.config.ts --watch"
+        }
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint . --ext .ts",
+        "cwd": "apps/api"
+      }
     }
   },
   "tags": []
