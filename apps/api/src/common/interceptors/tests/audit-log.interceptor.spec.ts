@@ -2,13 +2,32 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ExecutionContext, CallHandler } from '@nestjs/common';
 import { of, throwError } from 'rxjs';
 import { AuditLogInterceptor } from '../audit-log.interceptor';
+import { AppLoggerService } from '../../logger/logger.service';
+import { AuditLogsService } from '../../../modules/audit-logs/audit-logs.service';
 
 describe('AuditLogInterceptor', () => {
   let interceptor: AuditLogInterceptor;
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [AuditLogInterceptor],
+      providers: [
+        AuditLogInterceptor,
+        {
+          provide: AppLoggerService,
+          useValue: {
+            setContext: jest.fn(),
+            log: jest.fn(),
+            error: jest.fn(),
+            warn: jest.fn(),
+          },
+        },
+        {
+          provide: AuditLogsService,
+          useValue: {
+            log: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+      ],
     }).compile();
 
     interceptor = module.get<AuditLogInterceptor>(AuditLogInterceptor);

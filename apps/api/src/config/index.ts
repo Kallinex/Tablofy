@@ -3,4 +3,8 @@ export { databaseConfig } from './database.config';
 export { redisConfig } from './redis.config';
 export { jwtConfig } from './jwt.config';
 export { throttleConfig } from './throttle.config';
+export { default as loggingConfig } from './logging.config';
+export { default as monitoringConfig } from './monitoring.config';
+export { default as metricsConfig } from './metrics.config';
+export { default as sentryConfig } from './sentry.config';
 export { validate } from './env.validation';

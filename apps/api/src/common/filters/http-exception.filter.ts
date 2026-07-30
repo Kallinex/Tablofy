@@ -1,13 +1,9 @@
-import {
-  ExceptionFilter,
-  Catch,
-  ArgumentsHost,
-  HttpException,
-  HttpStatus,
-  Logger,
-} from '@nestjs/common';
+import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { randomBytes } from 'crypto';
+import { AppLoggerService } from '../logger/logger.service';
+import { CorrelationService } from '../correlation/correlation.service';
+import { ConfigService } from '@nestjs/config';
+import * as Sentry from '@sentry/node';
 
 interface ErrorResponse {
   statusCode: number;
@@ -16,11 +12,18 @@ interface ErrorResponse {
   timestamp: string;
   path: string;
   correlationId: string;
+  requestId?: string;
 }
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger(HttpExceptionFilter.name);
+  constructor(
+    private readonly logger: AppLoggerService,
+    private readonly correlationService: CorrelationService,
+    private readonly configService: ConfigService,
+  ) {
+    this.logger.setContext('HttpException');
+  }
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -28,7 +31,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const request = ctx.getRequest<Request>();
 
     const correlationId =
-      (request.headers['x-correlation-id'] as string) || randomBytes(16).toString('hex');
+      this.correlationService.correlationId ||
+      (request.headers['x-correlation-id'] as string) ||
+      'unknown';
+    const requestId =
+      this.correlationService.requestId || (request.headers['x-request-id'] as string) || 'unknown';
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string | string[] = 'Internal server error';
@@ -55,20 +62,40 @@ export class HttpExceptionFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       path: request.url,
       correlationId,
+      requestId,
     };
 
     if (status >= 500) {
-      this.logger.error(
-        `[${correlationId}] ${request.method} ${request.url}`,
-        exception instanceof Error ? exception.stack : String(exception),
-      );
+      this.logger.error(`[${correlationId}] ${request.method} ${request.url}`, {
+        statusCode: status,
+        error: exception instanceof Error ? exception.message : String(exception),
+        stack: exception instanceof Error ? exception.stack : undefined,
+      });
     } else {
-      this.logger.warn(
-        `[${correlationId}] ${request.method} ${request.url} - ${status} - ${JSON.stringify(message)}`,
-      );
+      this.logger.warn(`[${correlationId}] ${request.method} ${request.url} - ${status}`, {
+        statusCode: status,
+        message,
+      });
+    }
+
+    if (status >= 500 && this.configService.get<boolean>('sentry.enabled', false)) {
+      Sentry.withScope((scope) => {
+        scope.setExtra('requestId', requestId);
+        scope.setExtra('correlationId', correlationId);
+        scope.setTag('method', request.method);
+        scope.setTag('url', request.url);
+        const req = request as Request & { tenantId?: string };
+        if (req.tenantId) {
+          scope.setTag('tenant_id', req.tenantId);
+        }
+        if (exception instanceof Error) {
+          Sentry.captureException(exception);
+        }
+      });
     }
 
     response.setHeader('X-Correlation-Id', correlationId);
+    response.setHeader('X-Request-ID', requestId);
     response.status(status).json(errorResponse);
   }
 }

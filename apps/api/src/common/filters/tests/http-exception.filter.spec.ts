@@ -1,13 +1,40 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpExceptionFilter } from '../http-exception.filter';
+import { AppLoggerService } from '../../logger/logger.service';
+import { CorrelationService } from '../../correlation/correlation.service';
+import { ConfigService } from '@nestjs/config';
 
 describe('HttpExceptionFilter', () => {
   let filter: HttpExceptionFilter;
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [HttpExceptionFilter],
+      providers: [
+        HttpExceptionFilter,
+        {
+          provide: AppLoggerService,
+          useValue: {
+            setContext: jest.fn(),
+            log: jest.fn(),
+            error: jest.fn(),
+            warn: jest.fn(),
+          },
+        },
+        {
+          provide: CorrelationService,
+          useValue: {
+            requestId: 'test-request-id',
+            correlationId: 'test-correlation-id',
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn().mockReturnValue(false),
+          },
+        },
+      ],
     }).compile();
 
     filter = module.get<HttpExceptionFilter>(HttpExceptionFilter);
@@ -110,7 +137,7 @@ describe('HttpExceptionFilter', () => {
     expect(response.setHeader).toHaveBeenCalledWith('X-Correlation-Id', expect.any(String));
   });
 
-  it('should use correlation ID from request header if present', () => {
+  it('should use correlation ID from CorrelationService (header fallback)', () => {
     const exception = new HttpException('Not found', HttpStatus.NOT_FOUND);
     const host = createMockArgumentsHost({ correlationId: 'client-provided-id' });
     const response = host.switchToHttp().getResponse();
@@ -118,7 +145,7 @@ describe('HttpExceptionFilter', () => {
     filter.catch(exception, host as never);
 
     expect(response.json).toHaveBeenCalledWith(
-      expect.objectContaining({ correlationId: 'client-provided-id' }),
+      expect.objectContaining({ correlationId: 'test-correlation-id' }),
     );
   });
 

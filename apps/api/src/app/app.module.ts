@@ -2,7 +2,7 @@ import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR, APP_FILTER } from '@nestjs/core';
 import { HealthModule } from '../health/health.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RedisModule } from '../redis/redis.module';
@@ -71,12 +71,22 @@ import { ScheduledReportsModule } from '../modules/scheduled-reports/scheduled-r
 import { LiveAnalyticsModule } from '../modules/live-analytics/live-analytics.module';
 import { DomainEventModule } from '../common/event-emitter/domain-event.module';
 import { CommonModule } from '../common/common.module';
+import { CorrelationModule } from '../common/correlation/correlation.module';
+import { LoggerModule } from '../common/logger/logger.module';
+import { MetricsModule } from '../common/metrics/metrics.module';
+import { SentryModule } from '../common/sentry/sentry.module';
+import { MonitoringModule } from '../common/monitoring/monitoring.module';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { PlanThrottleGuard } from '../common/guards/plan-throttle.guard';
 import { AuditLogInterceptor } from '../common/interceptors/audit-log.interceptor';
+import { PerformanceMonitorInterceptor } from '../common/monitoring/performance-monitor.interceptor';
+import { HttpExceptionFilter } from '../common/filters/http-exception.filter';
 import { TenantMiddleware } from '../common/middleware/tenant.middleware';
+import { CorrelationMiddleware } from '../common/correlation/correlation.middleware';
+import { HttpLoggingMiddleware } from '../common/logger/http-logging.middleware';
+import { PrometheusMiddleware } from '../common/metrics/prometheus.middleware';
 import {
   validate,
   appConfig,
@@ -84,6 +94,10 @@ import {
   redisConfig,
   jwtConfig,
   throttleConfig,
+  loggingConfig,
+  monitoringConfig,
+  metricsConfig,
+  sentryConfig,
 } from '../config';
 
 @Module({
@@ -91,7 +105,17 @@ import {
     ConfigModule.forRoot({
       isGlobal: true,
       validate,
-      load: [appConfig, databaseConfig, redisConfig, jwtConfig, throttleConfig],
+      load: [
+        appConfig,
+        databaseConfig,
+        redisConfig,
+        jwtConfig,
+        throttleConfig,
+        loggingConfig,
+        monitoringConfig,
+        metricsConfig,
+        sentryConfig,
+      ],
       envFilePath: '.env',
     }),
     ThrottlerModule.forRootAsync({
@@ -107,6 +131,11 @@ import {
       }),
     }),
     ScheduleModule.forRoot(),
+    CorrelationModule,
+    LoggerModule,
+    MetricsModule,
+    SentryModule,
+    MonitoringModule,
     PrismaModule,
     RedisModule,
     DomainEventModule,
@@ -197,10 +226,20 @@ import {
       provide: APP_INTERCEPTOR,
       useClass: AuditLogInterceptor,
     },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: PerformanceMonitorInterceptor,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: HttpExceptionFilter,
+    },
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(TenantMiddleware).forRoutes('*');
+    consumer
+      .apply(CorrelationMiddleware, HttpLoggingMiddleware, PrometheusMiddleware, TenantMiddleware)
+      .forRoutes('*');
   }
 }

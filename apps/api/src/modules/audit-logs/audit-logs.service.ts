@@ -12,6 +12,11 @@ export interface AuditLogEntry {
   newValues?: Record<string, unknown>;
   ipAddress?: string;
   userAgent?: string;
+  requestId?: string;
+  correlationId?: string;
+  executionDuration?: number;
+  browser?: string;
+  device?: string;
 }
 
 @Injectable()

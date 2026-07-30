@@ -1,16 +1,21 @@
 import { NestFactory } from '@nestjs/core';
-import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
+import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app/app.module';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { AppLoggerService } from './common/logger/logger.service';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   const configService = app.get(ConfigService);
+  const logger = app.get(AppLoggerService);
+  logger.setContext('Bootstrap');
+
+  app.useLogger(logger);
+
   const port = configService.get<number>('app.port') ?? 3000;
   const apiPrefix = configService.get<string>('app.apiPrefix') ?? 'api';
   const corsOrigins = configService.get<string[]>('app.corsOrigins') ?? ['http://localhost:4200'];
@@ -79,8 +84,6 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  app.useGlobalFilters(new HttpExceptionFilter());
-
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Tablofy API')
     .setDescription('Enterprise Identity & Multi-Tenant Platform API')
@@ -120,6 +123,7 @@ async function bootstrap(): Promise<void> {
     .addTag('product-ingredients', 'Product-Ingredient Cost Tracking')
     .addTag('usage', 'Usage Tracking & Analytics')
     .addTag('health', 'Health Checks')
+    .addTag('metrics', 'Prometheus Metrics')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
@@ -127,7 +131,6 @@ async function bootstrap(): Promise<void> {
 
   await app.listen(port);
 
-  const logger = new Logger('Bootstrap');
   logger.log(`Application is running on: http://localhost:${port}/${apiPrefix}/v1`);
   logger.log(`Swagger docs available at: http://localhost:${port}/docs`);
 

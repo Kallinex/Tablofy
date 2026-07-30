@@ -3,6 +3,8 @@ import { HealthCheckService, MemoryHealthIndicator } from '@nestjs/terminus';
 import { HealthController } from '../health.controller';
 import { PrismaHealthIndicator } from '../prisma-health.indicator';
 import { RedisHealthIndicator } from '../redis-health.indicator';
+import { BullHealthIndicator } from '../bull-health.indicator';
+import { DiskHealthIndicator } from '../disk-health.indicator';
 
 describe('HealthController', () => {
   let controller: HealthController;
@@ -21,6 +23,8 @@ describe('HealthController', () => {
                 database: { status: 'up' },
                 redis: { status: 'up' },
                 memory: { status: 'up' },
+                bullmq: { status: 'up' },
+                disk: { status: 'up' },
               },
             }),
           },
@@ -36,6 +40,14 @@ describe('HealthController', () => {
         {
           provide: MemoryHealthIndicator,
           useValue: { checkRSS: jest.fn() },
+        },
+        {
+          provide: BullHealthIndicator,
+          useValue: { isHealthy: jest.fn() },
+        },
+        {
+          provide: DiskHealthIndicator,
+          useValue: { isHealthy: jest.fn() },
         },
       ],
     }).compile();
@@ -54,10 +66,10 @@ describe('HealthController', () => {
     );
   });
 
-  it('should include database, redis and memory checks', async () => {
+  it('should include database, redis, memory, bullmq and disk checks', async () => {
     await controller.check();
 
     const checkCall = healthCheckService.check.mock.calls[0][0];
-    expect(checkCall).toHaveLength(3);
+    expect(checkCall).toHaveLength(5);
   });
 });
