@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { PaymentsService } from '../payments/payments.service';
 import {
   Prisma,
   OrderStatus as PrismaOrderStatus,
@@ -57,6 +58,7 @@ export class OrdersService {
     private readonly auditLogsService: AuditLogsService,
     private readonly cacheService: CacheService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   async create(
@@ -594,81 +596,19 @@ export class OrdersService {
     userId: string,
     meta?: { ipAddress?: string; userAgent?: string },
   ) {
-    const existing = await this.findOne(id, tenantId);
-    const currentStatus = existing.status;
-
-    if (!isPayableStatus(currentStatus as string)) {
-      throw new BadRequestException(`Cannot add payment to order in ${currentStatus} status`);
-    }
-
-    const totalPaid = Number(existing.paidAmount) + dto.amount;
-    const orderTotal = Number(existing.total);
-
-    if (totalPaid > orderTotal) {
-      throw new BadRequestException('Payment amount exceeds remaining balance');
-    }
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      const verResult = await tx.order.updateMany({
-        where: { id, version: existing.version },
-        data: { version: { increment: 1 } },
-      });
-      if (verResult.count === 0) {
-        throw new ConflictException('Order was modified by another user. Please retry.');
-      }
-
-      const payment = await tx.payment.create({
-        data: {
-          orderId: id,
-          tenantId,
-          method: dto.method,
-          amount: dto.amount,
-          tip: dto.tip || 0,
-          reference: dto.reference,
-          gatewayRef: dto.gatewayRef,
-          status: PaymentStatus.COMPLETED,
-          processedAt: new Date(),
-        },
-      });
-
-      await tx.order.update({
-        where: { id },
-        data: {
-          paidAmount: totalPaid,
-          tip: { increment: dto.tip || 0 },
-          ...(totalPaid >= orderTotal
-            ? { status: PrismaOrderStatus.COMPLETED, completedAt: new Date() }
-            : {}),
-        },
-      });
-
-      if (totalPaid >= orderTotal) {
-        await tx.orderStatusHistory.create({
-          data: {
-            orderId: id,
-            tenantId,
-            fromStatus: currentStatus as PrismaOrderStatus,
-            toStatus: PrismaOrderStatus.COMPLETED,
-            changedByUserId: userId,
-            reason: 'Payment completed',
-          },
-        });
-      }
-
-      return payment;
-    });
-
-    await this.auditLogsService.log({
-      action: 'PAYMENT_ADDED',
-      resource: 'Payment',
-      resourceId: result.id,
-      userId,
+    const result = await this.paymentsService.charge(
+      id,
+      {
+        orderId: id,
+        method: dto.method,
+        amount: dto.amount,
+        tip: dto.tip,
+        reference: dto.reference,
+      },
       tenantId,
-      newValues: { method: dto.method, amount: dto.amount, tip: dto.tip },
-      ...meta,
-    });
+      userId,
+    );
 
-    this.eventEmitter.emit('payment.completed', { tenantId, orderId: id, paymentId: result.id });
     await this.cacheService.delete(tenantId, `one:${id}`);
     await this.cacheService.deletePattern(tenantId, 'list:*');
 
@@ -683,51 +623,8 @@ export class OrdersService {
     reason?: string,
     meta?: { ipAddress?: string; userAgent?: string },
   ) {
-    const payment = await this.prisma.payment.findFirst({
-      where: { id: paymentId, orderId: id, tenantId },
-    });
+    const result = await this.paymentsService.refund(paymentId, tenantId, userId, reason);
 
-    if (!payment) {
-      throw new NotFoundException('Payment not found');
-    }
-
-    if (payment.status === PaymentStatus.REFUNDED) {
-      throw new ConflictException('Payment already refunded');
-    }
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      const refunded = await tx.payment.update({
-        where: { id: paymentId },
-        data: {
-          status: PaymentStatus.REFUNDED,
-          refundedAt: new Date(),
-          refundReason: reason || null,
-        },
-      });
-
-      await tx.order.update({
-        where: { id },
-        data: {
-          paidAmount: { decrement: payment.amount },
-          tip: { decrement: payment.tip || 0 },
-        },
-      });
-
-      return refunded;
-    });
-
-    await this.auditLogsService.log({
-      action: 'PAYMENT_REFUNDED',
-      resource: 'Payment',
-      resourceId: paymentId,
-      userId,
-      tenantId,
-      oldValues: { status: payment.status },
-      newValues: { status: PaymentStatus.REFUNDED, reason },
-      ...meta,
-    });
-
-    this.eventEmitter.emit('payment.refunded', { tenantId, orderId: id, paymentId });
     await this.cacheService.delete(tenantId, `one:${id}`);
     await this.cacheService.deletePattern(tenantId, 'list:*');
 

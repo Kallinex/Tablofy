@@ -6,6 +6,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
 import { CacheService } from '../../../common/services/cache.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { PaymentsService } from '../../payments/payments.service';
 import { createMockPrisma, MockPrisma } from '../../../test/mocks/prisma.mock';
 import { createMockCache, MockCache } from '../../../test/mocks/cache.mock';
 import { createMockAuditLogs, MockAuditLogs } from '../../../test/mocks/audit-log.mock';
@@ -28,6 +29,19 @@ describe('OrdersService', () => {
         { provide: AuditLogsService, useValue: createMockAuditLogs() },
         { provide: CacheService, useValue: createMockCache() },
         { provide: EventEmitter2, useValue: createMockEventEmitter() },
+        {
+          provide: PaymentsService,
+          useValue: {
+            charge: jest.fn(),
+            refund: jest.fn(),
+            partialRefund: jest.fn(),
+            voidPayment: jest.fn(),
+            splitPayment: jest.fn(),
+            findAll: jest.fn(),
+            findOne: jest.fn(),
+            reconcile: jest.fn(),
+          },
+        },
       ],
     }).compile();
 

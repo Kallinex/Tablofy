@@ -18,6 +18,9 @@ export class MetricsService implements OnModuleInit {
   revenue: promClient.Counter<string>;
   inventoryMovements: promClient.Counter<string>;
   kitchenTickets: promClient.Counter<string>;
+  paymentsCompleted: promClient.Counter<string>;
+  paymentsFailed: promClient.Counter<string>;
+  paymentsRefunded: promClient.Counter<string>;
   eventLoopDelay: promClient.Gauge<string>;
   memoryUsage: promClient.Gauge<string>;
   cpuUsage: promClient.Gauge<string>;
@@ -93,6 +96,21 @@ export class MetricsService implements OnModuleInit {
     this.kitchenTickets = new promClient.Counter({
       name: 'kitchen_tickets_total',
       help: 'Total kitchen tickets created',
+    });
+
+    this.paymentsCompleted = new promClient.Counter({
+      name: 'payments_completed_total',
+      help: 'Total payments completed',
+    });
+
+    this.paymentsFailed = new promClient.Counter({
+      name: 'payments_failed_total',
+      help: 'Total payments failed',
+    });
+
+    this.paymentsRefunded = new promClient.Counter({
+      name: 'payments_refunded_total',
+      help: 'Total payments refunded',
     });
 
     this.eventLoopDelay = new promClient.Gauge({
@@ -171,6 +189,18 @@ export class MetricsService implements OnModuleInit {
 
   incrementKitchenTickets() {
     this.kitchenTickets.inc();
+  }
+
+  incrementPaymentsCompleted() {
+    this.paymentsCompleted.inc();
+  }
+
+  incrementPaymentsFailed() {
+    this.paymentsFailed.inc();
+  }
+
+  incrementPaymentsRefunded() {
+    this.paymentsRefunded.inc();
   }
 
   async getMetrics(): Promise<string> {

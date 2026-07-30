@@ -72,6 +72,7 @@ import { LiveAnalyticsModule } from '../modules/live-analytics/live-analytics.mo
 import { WebhooksModule } from '../modules/webhooks/webhooks.module';
 import { ApiKeysModule } from '../modules/api-keys/api-keys.module';
 import { IntegrationsModule } from '../modules/integrations/integrations.module';
+import { PaymentsModule } from '../modules/payments/payments.module';
 import { GiftCardsModule } from '../modules/gift-cards/gift-cards.module';
 import { PrivacyModule } from '../modules/privacy/privacy.module';
 import { BackupModule } from '../modules/backup/backup.module';
@@ -221,6 +222,7 @@ import {
     WebhooksModule,
     ApiKeysModule,
     IntegrationsModule,
+    PaymentsModule,
     GiftCardsModule,
     PrivacyModule,
     BackupModule,

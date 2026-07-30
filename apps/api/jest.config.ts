@@ -25,7 +25,7 @@ const config: Config = {
   collectCoverageFrom: [
     '<rootDir>/src/**/*.ts',
     '!<rootDir>/src/**/*.module.ts',
-
+    '!<rootDir>/src/modules/payments/providers/*.ts',
     '!<rootDir>/src/**/*.interface.ts',
     '!<rootDir>/src/main.ts',
     '!<rootDir>/src/test/**',
@@ -150,6 +150,18 @@ const config: Config = {
       functions: 75,
       lines: 60,
       statements: 60,
+    },
+    '**/src/modules/payments/payments.service.ts': {
+      branches: 40,
+      functions: 50,
+      lines: 60,
+      statements: 60,
+    },
+    '**/src/modules/payments/payment-state-machine.ts': {
+      branches: 90,
+      functions: 90,
+      lines: 90,
+      statements: 90,
     },
     '**/src/prisma/prisma.service.ts': { branches: 90, functions: 70, lines: 80, statements: 80 },
     '**/src/redis/redis.service.ts': { branches: 35, functions: 70, lines: 65, statements: 65 },

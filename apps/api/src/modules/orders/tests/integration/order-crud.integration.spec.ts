@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { OrdersService } from '../../orders.service';
+import { PaymentsService } from '../../../payments/payments.service';
 import { PrismaService } from '../../../../prisma/prisma.service';
 import { AuditLogsService } from '../../../audit-logs/audit-logs.service';
 import { CacheService } from '../../../../common/services/cache.service';
@@ -28,6 +29,19 @@ describe('Order CRUD — Integration', () => {
         { provide: AuditLogsService, useValue: createMockAuditLogs() },
         { provide: CacheService, useValue: createMockCache() },
         { provide: EventEmitter2, useValue: createMockEventEmitter() },
+        {
+          provide: PaymentsService,
+          useValue: {
+            charge: jest.fn(),
+            refund: jest.fn(),
+            partialRefund: jest.fn(),
+            voidPayment: jest.fn(),
+            splitPayment: jest.fn(),
+            findAll: jest.fn(),
+            findOne: jest.fn(),
+            reconcile: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
