@@ -124,6 +124,8 @@ async function bootstrap(): Promise<void> {
     .addTag('usage', 'Usage Tracking & Analytics')
     .addTag('health', 'Health Checks')
     .addTag('metrics', 'Prometheus Metrics')
+    .addTag('webhooks', 'Webhook Registration & Delivery')
+    .addTag('api-keys', 'API Key Management')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);

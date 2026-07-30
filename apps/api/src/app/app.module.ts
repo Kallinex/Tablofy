@@ -69,6 +69,10 @@ import { ForecastingDashboardModule } from '../modules/forecasting-dashboard/for
 import { ExportEngineModule } from '../modules/export-engine/export-engine.module';
 import { ScheduledReportsModule } from '../modules/scheduled-reports/scheduled-reports.module';
 import { LiveAnalyticsModule } from '../modules/live-analytics/live-analytics.module';
+import { WebhooksModule } from '../modules/webhooks/webhooks.module';
+import { ApiKeysModule } from '../modules/api-keys/api-keys.module';
+import { IntegrationsModule } from '../modules/integrations/integrations.module';
+import { WebhookEventEmitter } from '../modules/webhooks/webhook-event-emitter';
 import { DomainEventModule } from '../common/event-emitter/domain-event.module';
 import { CommonModule } from '../common/common.module';
 import { CorrelationModule } from '../common/correlation/correlation.module';
@@ -98,6 +102,8 @@ import {
   monitoringConfig,
   metricsConfig,
   sentryConfig,
+  webhookConfig,
+  apiKeysConfig,
 } from '../config';
 
 @Module({
@@ -115,6 +121,8 @@ import {
         monitoringConfig,
         metricsConfig,
         sentryConfig,
+        webhookConfig,
+        apiKeysConfig,
       ],
       envFilePath: '.env',
     }),
@@ -204,6 +212,9 @@ import {
     ExportEngineModule,
     ScheduledReportsModule,
     LiveAnalyticsModule,
+    WebhooksModule,
+    ApiKeysModule,
+    IntegrationsModule,
   ],
   providers: [
     {
@@ -234,6 +245,7 @@ import {
       provide: APP_FILTER,
       useClass: HttpExceptionFilter,
     },
+    WebhookEventEmitter,
   ],
 })
 export class AppModule implements NestModule {

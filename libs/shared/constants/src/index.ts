@@ -128,3 +128,75 @@ export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const PHONE_REGEX = /^\+?[1-9]\d{1,14}$/;
 export const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export const WEBHOOK_EVENT_TYPES = [
+  'orders.created',
+  'orders.updated',
+  'orders.completed',
+  'orders.cancelled',
+  'customers.created',
+  'customers.updated',
+  'customers.deleted',
+  'inventory.low_stock',
+  'inventory.out_of_stock',
+  'inventory.received',
+  'payments.completed',
+  'payments.failed',
+  'payments.refunded',
+  'loyalty.points_earned',
+  'loyalty.points_redeemed',
+  'loyalty.tier_changed',
+  'campaigns.sent',
+  'campaigns.opened',
+  'campaigns.clicked',
+  'suppliers.created',
+  'suppliers.updated',
+  'transfers.created',
+  'transfers.completed',
+] as const;
+
+export const WEBHOOK_DELIVERY_STATUSES = {
+  PENDING: 'PENDING',
+  DELIVERED: 'DELIVERED',
+  FAILED: 'FAILED',
+  RETRYING: 'RETRYING',
+  DEAD_LETTER: 'DEAD_LETTER',
+} as const;
+
+export const WEBHOOK_DEFAULTS = {
+  MAX_RETRIES: 5,
+  INITIAL_BACKOFF_MS: 1000,
+  BACKOFF_FACTOR: 2,
+  MAX_BACKOFF_MS: 3600000,
+  DELIVERY_TIMEOUT_MS: 30000,
+  SIGNATURE_HEADER: 'X-Webhook-Signature',
+  SIGNATURE_VERSION: 'v1',
+  SECRET_ROTATION_DAYS: 90,
+  MAX_REGISTRATIONS_PER_TENANT: 50,
+} as const;
+
+export const API_KEY_SCOPES = [
+  'orders:read',
+  'orders:write',
+  'menu:read',
+  'menu:write',
+  'inventory:read',
+  'inventory:write',
+  'customers:read',
+  'customers:write',
+  'payments:read',
+  'payments:write',
+  'restaurants:read',
+  'restaurants:write',
+  'reports:read',
+  'webhooks:read',
+  'webhooks:write',
+  'admin:all',
+] as const;
+
+export const API_KEY_DEFAULTS = {
+  KEY_PREFIX: 'tab_',
+  KEY_LENGTH: 48,
+  PREFIX_LENGTH: 100,
+  MAX_KEYS_PER_TENANT: 20,
+} as const;

@@ -215,6 +215,8 @@ model Tenant {
   scheduledReports     ScheduledReport[]
   reportExports        ReportExport[]
   analyticsDashboards  AnalyticsDashboard[]
+  webhookRegistrations WebhookRegistration[]
+  apiKeys              ApiKey[]
 
   @@index([status])
   @@index([deletedAt])
@@ -259,6 +261,7 @@ model User {
   receivedMessages   Message[]            @relation("MessageRecipient")
   feedback           Feedback[]
   reports            Report[]
+  apiKeys            ApiKey[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -3505,4 +3508,89 @@ model AnalyticsDashboard {
   @@unique([tenantId, name])
   @@index([tenantId])
   @@map("analytics_dashboards")
+}
+
+model WebhookRegistration {
+  id              String          @id @default(uuid())
+  tenantId        String
+  name            String
+  url             String
+  description     String?
+  events          String[]
+  secretHash      String
+  secretPrefix    String
+  isActive        Boolean         @default(true)
+  retryCount      Int             @default(3)
+  timeoutMs       Int             @default(30000)
+  headers         Json            @default("{}")
+  metadata        Json            @default("{}")
+  lastDeliveredAt DateTime?
+  lastFailureAt   DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  deliveries      WebhookDelivery[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@map("webhook_registrations")
+}
+
+model WebhookDelivery {
+  id              String              @id @default(uuid())
+  webhookId       String
+  tenantId        String
+  eventType       String
+  eventId         String
+  payload         Json
+  status          String              @default("PENDING")
+  attemptCount    Int                 @default(0)
+  maxRetries      Int                 @default(3)
+  statusCode      Int?
+  responseBody    String?
+  durationMs      Int?
+  errorMessage    String?
+  nextRetryAt     DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  registration    WebhookRegistration @relation(fields: [webhookId], references: [id])
+
+  @@index([webhookId])
+  @@index([tenantId, status])
+  @@index([eventType])
+  @@index([nextRetryAt])
+  @@index([status, nextRetryAt])
+  @@map("webhook_deliveries")
+}
+
+model ApiKey {
+  id              String    @id @default(uuid())
+  tenantId        String
+  name            String
+  keyPrefix       String
+  keyHash         String
+  keyLastChars    String
+  scopes          String[]
+  isActive        Boolean   @default(true)
+  expiresAt       DateTime?
+  lastUsedAt      DateTime?
+  rateLimitPerMin Int       @default(60)
+  metadata        Json      @default("{}")
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  tenant          Tenant    @relation(fields: [tenantId], references: [id])
+  createdBy       User      @relation(fields: [createdById], references: [id])
+
+  @@index([tenantId])
+  @@index([keyPrefix])
+  @@unique([tenantId, name])
+  @@map("api_keys")
 }

@@ -7,4 +7,6 @@ export { default as loggingConfig } from './logging.config';
 export { default as monitoringConfig } from './monitoring.config';
 export { default as metricsConfig } from './metrics.config';
 export { default as sentryConfig } from './sentry.config';
+export { default as webhookConfig } from './webhook.config';
+export { default as apiKeysConfig } from './api-keys.config';
 export { validate } from './env.validation';
