@@ -72,9 +72,14 @@ import { LiveAnalyticsModule } from '../modules/live-analytics/live-analytics.mo
 import { WebhooksModule } from '../modules/webhooks/webhooks.module';
 import { ApiKeysModule } from '../modules/api-keys/api-keys.module';
 import { IntegrationsModule } from '../modules/integrations/integrations.module';
+import { GiftCardsModule } from '../modules/gift-cards/gift-cards.module';
+import { PrivacyModule } from '../modules/privacy/privacy.module';
+import { BackupModule } from '../modules/backup/backup.module';
 import { WebhookEventEmitter } from '../modules/webhooks/webhook-event-emitter';
 import { DomainEventModule } from '../common/event-emitter/domain-event.module';
 import { CommonModule } from '../common/common.module';
+import { I18nModule } from '../common/i18n/i18n.module';
+import { RecoveryModule } from '../common/recovery/recovery.module';
 import { CorrelationModule } from '../common/correlation/correlation.module';
 import { LoggerModule } from '../common/logger/logger.module';
 import { MetricsModule } from '../common/metrics/metrics.module';
@@ -91,6 +96,7 @@ import { TenantMiddleware } from '../common/middleware/tenant.middleware';
 import { CorrelationMiddleware } from '../common/correlation/correlation.middleware';
 import { HttpLoggingMiddleware } from '../common/logger/http-logging.middleware';
 import { PrometheusMiddleware } from '../common/metrics/prometheus.middleware';
+import { I18nMiddleware } from '../common/i18n/i18n.middleware';
 import {
   validate,
   appConfig,
@@ -215,6 +221,11 @@ import {
     WebhooksModule,
     ApiKeysModule,
     IntegrationsModule,
+    GiftCardsModule,
+    PrivacyModule,
+    BackupModule,
+    I18nModule,
+    RecoveryModule,
   ],
   providers: [
     {
@@ -251,7 +262,13 @@ import {
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
-      .apply(CorrelationMiddleware, HttpLoggingMiddleware, PrometheusMiddleware, TenantMiddleware)
+      .apply(
+        CorrelationMiddleware,
+        I18nMiddleware,
+        HttpLoggingMiddleware,
+        PrometheusMiddleware,
+        TenantMiddleware,
+      )
       .forRoutes('*');
   }
 }

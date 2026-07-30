@@ -1,0 +1,91 @@
+{
+  "common": {
+    "success": "Success",
+    "created": "Created successfully",
+    "updated": "Updated successfully",
+    "deleted": "Deleted successfully",
+    "notFound": "{resource} not found",
+    "alreadyExists": "{resource} already exists",
+    "badRequest": "Bad request",
+    "unauthorized": "Unauthorized",
+    "forbidden": "Forbidden",
+    "internalError": "Internal server error",
+    "validationFailed": "Validation failed",
+    "rateLimited": "Too many requests, please try again later"
+  },
+  "validation": {
+    "required": "{field} is required",
+    "minLength": "{field} must be at least {min} characters",
+    "maxLength": "{field} must not exceed {max} characters",
+    "min": "{field} must be at least {min}",
+    "max": "{field} must not exceed {max}",
+    "email": "Invalid email address",
+    "url": "Invalid URL",
+    "uuid": "Invalid UUID",
+    "enum": "{field} must be one of: {values}",
+    "number": "{field} must be a number",
+    "integer": "{field} must be an integer",
+    "string": "{field} must be a string",
+    "boolean": "{field} must be a boolean",
+    "array": "{field} must be an array",
+    "dateString": "{field} must be a valid date",
+    "unique": "{field} already in use",
+    "minItems": "{field} must contain at least {min} items",
+    "maxItems": "{field} must not contain more than {max} items"
+  },
+  "auth": {
+    "loginSuccess": "Login successful",
+    "loginFailed": "Invalid email or password",
+    "logoutSuccess": "Logged out successfully",
+    "tokenExpired": "Session expired, please login again",
+    "tokenInvalid": "Invalid token",
+    "passwordChanged": "Password changed successfully",
+    "passwordWeak": "Password is too weak",
+    "accountLocked": "Account temporarily locked due to too many attempts",
+    "accountInactive": "Account is inactive",
+    "emailNotVerified": "Email not verified",
+    "twoFactorRequired": "Two-factor authentication required"
+  },
+  "webhook": {
+    "created": "Webhook created successfully",
+    "updated": "Webhook updated successfully",
+    "deleted": "Webhook deleted successfully",
+    "secretRotated": "Webhook secret rotated successfully",
+    "deliveryFailed": "Webhook delivery failed",
+    "deliverySuccess": "Webhook delivered successfully",
+    "maxRegistrations": "Maximum webhook registrations reached"
+  },
+  "giftCard": {
+    "issued": "Gift card issued successfully",
+    "recharged": "Gift card recharged successfully",
+    "redeemed": "Gift card redeemed successfully",
+    "expired": "Gift card has expired",
+    "insufficientBalance": "Insufficient gift card balance",
+    "invalidCode": "Invalid gift card code",
+    "notFound": "Gift card not found",
+    "deactivated": "Gift card is deactivated"
+  },
+  "privacy": {
+    "exportRequested": "Data export requested successfully",
+    "exportReady": "Data export is ready for download",
+    "exportFailed": "Data export failed",
+    "anonymized": "Account anonymized successfully",
+    "consentRecorded": "Consent recorded successfully",
+    "consentRevoked": "Consent revoked successfully",
+    "cookiesSaved": "Cookie preferences saved successfully",
+    "dataDeleted": "Personal data deleted successfully"
+  },
+  "backup": {
+    "created": "Backup created successfully",
+    "restored": "Backup restored successfully",
+    "verified": "Backup verified successfully",
+    "notFound": "Backup not found",
+    "expired": "Backup has expired",
+    "inProgress": "Backup already in progress"
+  },
+  "health": {
+    "pass": "All systems operational",
+    "fail": "System health check failed",
+    "degraded": "System performance degraded"
+  }
+}

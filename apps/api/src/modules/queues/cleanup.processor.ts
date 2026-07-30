@@ -69,6 +69,60 @@ export class CleanupProcessor implements OnModuleInit {
         cleaned.push(`archived_audit_logs: ${result.count}`);
         break;
       }
+      case 'failed_webhook_deliveries': {
+        const retentionDays = this.configService.get<number>('WEBHOOK_RETENTION_DAYS', 30);
+        const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+        const result = await this.prisma.webhookDelivery.deleteMany({
+          where: { status: 'FAILED', createdAt: { lt: cutoff } },
+        });
+        this.logger.log(`[Cleanup] Removed ${result.count} failed webhook deliveries`);
+        cleaned.push(`failed_webhook_deliveries: ${result.count}`);
+        break;
+      }
+      case 'stale_jobs': {
+        this.logger.log(
+          '[Cleanup] stale_jobs cleanup: BullMQ queue maintenance recommended via external tool',
+        );
+        cleaned.push('stale_jobs: skipped (bullmq jobs managed externally)');
+        break;
+      }
+      case 'expired_data_exports': {
+        const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const result = await this.prisma.dataExportRequest.deleteMany({
+          where: { expiresAt: { lt: cutoff }, status: 'COMPLETED' },
+        });
+        this.logger.log(`[Cleanup] Removed ${result.count} expired data exports`);
+        cleaned.push(`expired_data_exports: ${result.count}`);
+        break;
+      }
+      case 'expired_backups': {
+        const cutoff = new Date(Date.now());
+        const expired = await this.prisma.backupRecord.findMany({
+          where: { expiresAt: { lt: cutoff }, status: 'COMPLETED' },
+        });
+        const ids = expired.map((r) => r.id);
+        if (ids.length > 0) {
+          await this.prisma.backupRecord.updateMany({
+            where: { id: { in: ids } },
+            data: { status: 'EXPIRED' },
+          });
+          this.logger.log(`[Cleanup] Expired ${ids.length} backup records`);
+        }
+        cleaned.push(`expired_backups: ${ids.length}`);
+        break;
+      }
+      case 'stale_gift_cards': {
+        const cutoff = new Date(Date.now());
+        const result = await this.prisma.giftCard.updateMany({
+          where: { expiresAt: { lt: cutoff }, status: 'ACTIVE' },
+          data: { status: 'EXPIRED' },
+        });
+        if (result.count > 0) {
+          this.logger.log(`[Cleanup] Expired ${result.count} gift cards`);
+        }
+        cleaned.push(`stale_gift_cards: ${result.count}`);
+        break;
+      }
       default:
         this.logger.warn(`[Cleanup] Unknown cleanup type: ${type}`);
     }

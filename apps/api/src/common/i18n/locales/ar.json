@@ -1,0 +1,91 @@
+{
+  "common": {
+    "success": "نجاح",
+    "created": "تم الإنشاء بنجاح",
+    "updated": "تم التحديث بنجاح",
+    "deleted": "تم الحذف بنجاح",
+    "notFound": "{resource} غير موجود",
+    "alreadyExists": "{resource} موجود بالفعل",
+    "badRequest": "طلب غير صحيح",
+    "unauthorized": "غير مصرح",
+    "forbidden": "ممنوع",
+    "internalError": "خطأ داخلي في الخادم",
+    "validationFailed": "فشل التحقق من الصحة",
+    "rateLimited": "طلبات كثيرة جداً، يرجى المحاولة مرة أخرى لاحقاً"
+  },
+  "validation": {
+    "required": "{field} مطلوب",
+    "minLength": "{field} يجب أن يكون على الأقل {min} أحرف",
+    "maxLength": "{field} يجب ألا يتجاوز {max} أحرف",
+    "min": "{field} يجب أن يكون على الأقل {min}",
+    "max": "{field} يجب ألا يتجاوز {max}",
+    "email": "بريد إلكتروني غير صحيح",
+    "url": "رابط غير صحيح",
+    "uuid": "معرف غير صحيح",
+    "enum": "{field} يجب أن يكون واحداً من: {values}",
+    "number": "{field} يجب أن يكون رقماً",
+    "integer": "{field} يجب أن يكون عدداً صحيحاً",
+    "string": "{field} يجب أن يكون نصاً",
+    "boolean": "{field} يجب أن يكون منطقياً",
+    "array": "{field} يجب أن يكون مصفوفة",
+    "dateString": "{field} يجب أن يكون تاريخاً صحيحاً",
+    "unique": "{field} مستخدم بالفعل",
+    "minItems": "{field} يجب أن يحتوي على {min} عناصر على الأقل",
+    "maxItems": "{field} يجب ألا يحتوي على أكثر من {max} عناصر"
+  },
+  "auth": {
+    "loginSuccess": "تم تسجيل الدخول بنجاح",
+    "loginFailed": "بريد إلكتروني أو كلمة مرور غير صحيحة",
+    "logoutSuccess": "تم تسجيل الخروج بنجاح",
+    "tokenExpired": "انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى",
+    "tokenInvalid": "رمز غير صحيح",
+    "passwordChanged": "تم تغيير كلمة المرور بنجاح",
+    "passwordWeak": "كلمة المرور ضعيفة جداً",
+    "accountLocked": "تم قفل الحساب مؤقتاً بسبب كثرة المحاولات",
+    "accountInactive": "الحساب غير نشط",
+    "emailNotVerified": "البريد الإلكتروني غير مؤكد",
+    "twoFactorRequired": "المصادقة الثنائية مطلوبة"
+  },
+  "webhook": {
+    "created": "تم إنشاء webhook بنجاح",
+    "updated": "تم تحديث webhook بنجاح",
+    "deleted": "تم حذف webhook بنجاح",
+    "secretRotated": "تم تدوير سر webhook بنجاح",
+    "deliveryFailed": "فشل توصيل webhook",
+    "deliverySuccess": "تم توصيل webhook بنجاح",
+    "maxRegistrations": "تم الوصول للحد الأقصى من تسجيلات webhook"
+  },
+  "giftCard": {
+    "issued": "تم إصدار بطاقة الهدايا بنجاح",
+    "recharged": "تم إعادة شحن بطاقة الهدايا بنجاح",
+    "redeemed": "تم استبدال بطاقة الهدايا بنجاح",
+    "expired": "بطاقة الهدايا منتهية الصلاحية",
+    "insufficientBalance": "رصيد بطاقة الهدايا غير كافٍ",
+    "invalidCode": "رمز بطاقة هدايا غير صحيح",
+    "notFound": "بطاقة الهدايا غير موجودة",
+    "deactivated": "بطاقة الهدايا غير نشطة"
+  },
+  "privacy": {
+    "exportRequested": "تم طلب تصدير البيانات بنجاح",
+    "exportReady": "تصدير البيانات جاهز للتحميل",
+    "exportFailed": "فشل تصدير البيانات",
+    "anonymized": "تم إخفاء هوية الحساب بنجاح",
+    "consentRecorded": "تم تسجيل الموافقة بنجاح",
+    "consentRevoked": "تم إلغاء الموافقة بنجاح",
+    "cookiesSaved": "تم حفظ تفضيلات ملفات تعريف الارتباط بنجاح",
+    "dataDeleted": "تم حذف البيانات الشخصية بنجاح"
+  },
+  "backup": {
+    "created": "تم إنشاء النسخة الاحتياطية بنجاح",
+    "restored": "تم استعادة النسخة الاحتياطية بنجاح",
+    "verified": "تم التحقق من النسخة الاحتياطية بنجاح",
+    "notFound": "النسخة الاحتياطية غير موجودة",
+    "expired": "النسخة الاحتياطية منتهية الصلاحية",
+    "inProgress": "نسخة احتياطية قيد التنفيذ بالفعل"
+  },
+  "health": {
+    "pass": "جميع الأنظمة تعمل بشكل طبيعي",
+    "fail": "فشل فحص صحة النظام",
+    "degraded": "أداء النظام متدهور"
+  }
+}

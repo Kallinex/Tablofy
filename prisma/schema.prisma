@@ -217,6 +217,11 @@ model Tenant {
   analyticsDashboards  AnalyticsDashboard[]
   webhookRegistrations WebhookRegistration[]
   apiKeys              ApiKey[]
+  giftCards            GiftCard[]
+  consentRecords       ConsentRecord[]
+  cookiePreferences    CookiePreference[]
+  dataExportRequests   DataExportRequest[]
+  backupRecords        BackupRecord[]
 
   @@index([status])
   @@index([deletedAt])
@@ -262,6 +267,10 @@ model User {
   feedback           Feedback[]
   reports            Report[]
   apiKeys            ApiKey[]
+  issuedGiftCards    GiftCard[]           @relation("IssuedGiftCards")
+  performedTxns     GiftCardTransaction[] @relation("PerformedTransactions")
+  consentRecords    ConsentRecord[]
+  dataExportRequests DataExportRequest[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -3593,4 +3602,167 @@ model ApiKey {
   @@index([keyPrefix])
   @@unique([tenantId, name])
   @@map("api_keys")
+}
+
+model GiftCard {
+  id              String               @id @default(uuid())
+  tenantId        String
+  code            String               @unique
+  initialBalance  Decimal              @default(0)
+  currentBalance  Decimal              @default(0)
+  currency        Currency             @default(USD)
+  status          String               @default("ACTIVE")
+  issueType       String               @default("MANUAL")
+  recipientName   String?
+  recipientEmail  String?
+  recipientPhone  String?
+  message         String?
+  expiresAt       DateTime?
+  issuedById      String?
+  issuedAt        DateTime             @default(now())
+  redeemedAt      DateTime?
+  metadata        Json                 @default("{}")
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  deletedAt       DateTime?
+
+  tenant          Tenant               @relation(fields: [tenantId], references: [id])
+  transactions    GiftCardTransaction[]
+  issuedBy        User?                @relation("IssuedGiftCards", fields: [issuedById], references: [id])
+
+  @@index([tenantId])
+  @@index([code])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("gift_cards")
+}
+
+model GiftCardTransaction {
+  id            String    @id @default(uuid())
+  giftCardId    String
+  tenantId      String
+  type          String
+  amount        Decimal   @default(0)
+  balanceBefore Decimal   @default(0)
+  balanceAfter  Decimal   @default(0)
+  currency      Currency  @default(USD)
+  referenceId   String?
+  referenceType String?
+  description   String?
+  performedById String?
+  metadata      Json      @default("{}")
+  createdAt     DateTime  @default(now())
+
+  giftCard      GiftCard  @relation(fields: [giftCardId], references: [id])
+  performedBy   User?     @relation("PerformedTransactions", fields: [performedById], references: [id])
+
+  @@index([giftCardId])
+  @@index([tenantId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("gift_card_transactions")
+}
+
+model ConsentRecord {
+  id          String    @id @default(uuid())
+  tenantId    String
+  userId      String?
+  customerId  String?
+  type        String
+  granted     Boolean   @default(false)
+  ipAddress   String?
+  userAgent   String?
+  consentDate DateTime  @default(now())
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  metadata    Json      @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  user        User?     @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([customerId])
+  @@index([type])
+  @@index([consentDate])
+  @@map("consent_records")
+}
+
+model CookiePreference {
+  id              String   @id @default(uuid())
+  tenantId        String
+  userId          String?
+  visitorId       String?
+  necessary       Boolean  @default(true)
+  functional      Boolean  @default(true)
+  analytics       Boolean  @default(false)
+  marketing       Boolean  @default(false)
+  thirdParty      Boolean  @default(false)
+  ipAddress       String?
+  userAgent       String?
+  preferencesSet  DateTime @default(now())
+  lastUpdated     DateTime @updatedAt
+  createdAt       DateTime @default(now())
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([visitorId])
+  @@map("cookie_preferences")
+}
+
+model DataExportRequest {
+  id          String    @id @default(uuid())
+  tenantId    String
+  userId      String
+  status      String    @default("PENDING")
+  requestType String    @default("FULL")
+  format      String    @default("JSON")
+  filePath    String?
+  fileSize    Int?
+  expiresAt   DateTime?
+  completedAt DateTime?
+  errorMessage String?
+  metadata    Json      @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([status])
+  @@map("data_export_requests")
+}
+
+model BackupRecord {
+  id              String   @id @default(uuid())
+  tenantId        String
+  type            String   @default("FULL")
+  status          String   @default("PENDING")
+  filePath        String?
+  fileSize        Int?
+  checksum        String?
+  metadata        Json     @default("{}")
+  retentionDays   Int      @default(30)
+  expiresAt       DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  errorMessage    String?
+  verifiedAt      DateTime?
+  verifiedBy      String?
+  verificationStatus String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("backup_records")
 }
