@@ -11,7 +11,10 @@ export class ForecastingProcessor {
     private readonly queueService: QueueService,
     private readonly forecastingService: ForecastingService,
   ) {
-    this.queueService.registerWorker('forecast-generation', this.handleForecastGeneration.bind(this));
+    this.queueService.registerWorker(
+      'forecast-generation',
+      this.handleForecastGeneration.bind(this),
+    );
     this.queueService.registerWorker('auto-reorder', this.handleAutoReorder.bind(this));
   }
 
@@ -21,9 +24,16 @@ export class ForecastingProcessor {
     const itemId = payload?.inventoryItemId as string | undefined;
     if (tenantId && itemId) {
       await this.forecastingService.generateForecast(
-        { inventoryItemId: itemId, period: payload?.period as any, method: payload?.method as any, days: payload?.days as number | undefined },
+        {
+          inventoryItemId: itemId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          period: payload?.period as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          method: payload?.method as any,
+          days: payload?.days as number | undefined,
+        },
         tenantId,
-        payload?.userId as string ?? 'system',
+        (payload?.userId as string) ?? 'system',
       );
     }
     this.logger.log(`Forecast generation complete for tenant ${tenantId}`);
@@ -34,7 +44,10 @@ export class ForecastingProcessor {
     this.logger.log(`Processing auto-reorder ${job.id}`);
     const { tenantId } = job.data;
     if (tenantId) {
-      await this.forecastingService.generateReorderSuggestions(tenantId, job.data.userId ?? 'system');
+      await this.forecastingService.generateReorderSuggestions(
+        tenantId,
+        job.data.userId ?? 'system',
+      );
     }
     this.logger.log(`Auto-reorder complete for tenant ${tenantId}`);
     return { processed: true, tenantId };

@@ -7,14 +7,19 @@ export class PurchasingProcessor {
   private readonly logger = new Logger(PurchasingProcessor.name);
 
   constructor(private readonly queueService: QueueService) {
-    this.queueService.registerWorker('purchase-notifications', this.handlePurchaseNotifications.bind(this));
+    this.queueService.registerWorker(
+      'purchase-notifications',
+      this.handlePurchaseNotifications.bind(this),
+    );
     this.queueService.registerWorker('purchase-analytics', this.handlePurchaseAnalytics.bind(this));
   }
 
   private async handlePurchaseNotifications(job: Job<QueueJobData>) {
     this.logger.log(`Processing purchase notification ${job.id}`);
     const { tenantId, userId, payload } = job.data;
-    this.logger.log(`Purchase notification for tenant ${tenantId} user ${userId}: ${JSON.stringify(payload)}`);
+    this.logger.log(
+      `Purchase notification for tenant ${tenantId} user ${userId}: ${JSON.stringify(payload)}`,
+    );
     return { processed: true };
   }
 

@@ -1,6 +1,4 @@
-import {
-  Controller, Get, Post, Param, Body,
-} from '@nestjs/common';
+import { Controller, Get, Post, Param, Body } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { CostingService } from './costing.service';
@@ -23,7 +21,10 @@ export class CostingController {
   }
 
   @Get('valuation/item/:itemId')
-  async getValuationsForItem(@Param('itemId') itemId: string, @CurrentUser() user: CurrentUserData) {
+  async getValuationsForItem(
+    @Param('itemId') itemId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
     return this.costingService.getValuationsForItem(itemId, user.tenantId!);
   }
 

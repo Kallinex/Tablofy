@@ -1,5 +1,15 @@
 import {
-  Controller, Get, Post, Put, Patch, Delete, Param, Query, Body, UseGuards, HttpCode, HttpStatus,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Delete,
+  Param,
+  Query,
+  Body,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -252,10 +262,7 @@ export class CustomersController {
   @Post('rewards/:rewardId/redeem')
   @Roles('OWNER', 'MANAGER', 'CASHIER')
   @ApiOperation({ summary: 'Redeem a reward' })
-  async redeemReward(
-    @Param('rewardId') rewardId: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async redeemReward(@Param('rewardId') rewardId: string, @CurrentUser() user: CurrentUserData) {
     return this.customersService.redeemReward(rewardId, user.tenantId!, user.id);
   }
 
@@ -348,7 +355,10 @@ export class CustomersController {
   @Post('referrals/:referralId/complete')
   @Roles('OWNER', 'MANAGER')
   @ApiOperation({ summary: 'Complete referral and award points' })
-  async completeReferral(@Param('referralId') referralId: string, @CurrentUser() user: CurrentUserData) {
+  async completeReferral(
+    @Param('referralId') referralId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
     return this.customersService.completeReferral(referralId, user.tenantId!);
   }
 
@@ -471,10 +481,7 @@ export class CustomersController {
   @Get('marketing/sms-list')
   @Roles('OWNER', 'MANAGER')
   @ApiOperation({ summary: 'Get SMS list for marketing' })
-  async getSmsList(
-    @Query('segmentId') segmentId?: string,
-    @CurrentUser() user?: CurrentUserData,
-  ) {
+  async getSmsList(@Query('segmentId') segmentId?: string, @CurrentUser() user?: CurrentUserData) {
     return this.customersService.getSmsList(user!.tenantId!, segmentId);
   }
 

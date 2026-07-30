@@ -1,12 +1,26 @@
 import {
-  Controller, Get, Post, Put, Delete, Param, Query, Body, UseGuards, HttpCode, HttpStatus,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Param,
+  Query,
+  Body,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { InventoryService } from './inventory.service';
 import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
 import { UpdateInventoryItemDto } from './dto/update-inventory-item.dto';
-import { QueryInventoryDto, QueryStockAdjustmentDto, QueryWasteEntryDto, QueryInventoryCountDto } from './dto/query-inventory.dto';
+import {
+  QueryInventoryDto,
+  QueryStockAdjustmentDto,
+  QueryWasteEntryDto,
+  QueryInventoryCountDto,
+} from './dto/query-inventory.dto';
 import { CreateInventoryCategoryDto } from './dto/create-inventory-category.dto';
 import { UpdateInventoryCategoryDto } from './dto/update-inventory-category.dto';
 import { CreateInventoryUnitDto } from './dto/create-inventory-unit.dto';
@@ -71,7 +85,10 @@ export class InventoryController {
 
   @Post('categories')
   @Roles('OWNER', 'MANAGER')
-  async createCategory(@Body() dto: CreateInventoryCategoryDto, @CurrentUser() user: CurrentUserData) {
+  async createCategory(
+    @Body() dto: CreateInventoryCategoryDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
     return this.inventoryService.createCategory(dto, user.tenantId!, user.id);
   }
 
@@ -135,15 +152,15 @@ export class InventoryController {
 
   @Post('locations')
   @Roles('OWNER', 'MANAGER')
-  async createLocation(@Body() dto: CreateInventoryLocationDto, @CurrentUser() user: CurrentUserData) {
+  async createLocation(
+    @Body() dto: CreateInventoryLocationDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
     return this.inventoryService.createLocation(dto, user.tenantId!, user.id);
   }
 
   @Get('locations')
-  async getLocations(
-    @Query('branchId') branchId?: string,
-    @CurrentUser() user?: CurrentUserData,
-  ) {
+  async getLocations(@Query('branchId') branchId?: string, @CurrentUser() user?: CurrentUserData) {
     return this.inventoryService.getLocations(user!.tenantId!, branchId);
   }
 
@@ -170,13 +187,22 @@ export class InventoryController {
 
   @Post('adjustments')
   @Roles('OWNER', 'MANAGER')
-  async createAdjustment(@Body() dto: CreateStockAdjustmentDto, @CurrentUser() user: CurrentUserData) {
+  async createAdjustment(
+    @Body() dto: CreateStockAdjustmentDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
     return this.inventoryService.createAdjustment(dto, user.tenantId!, user.id);
   }
 
   @Get('adjustments')
-  async listAdjustments(@Query() query: QueryStockAdjustmentDto, @CurrentUser() user: CurrentUserData) {
-    return this.inventoryService.listAdjustments(user.tenantId!, query as unknown as Record<string, unknown>);
+  async listAdjustments(
+    @Query() query: QueryStockAdjustmentDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.inventoryService.listAdjustments(
+      user.tenantId!,
+      query as unknown as Record<string, unknown>,
+    );
   }
 
   @Post('adjustments/:id/approve')
@@ -197,7 +223,10 @@ export class InventoryController {
 
   @Get('waste')
   async listWasteEntries(@Query() query: QueryWasteEntryDto, @CurrentUser() user: CurrentUserData) {
-    return this.inventoryService.listWasteEntries(user.tenantId!, query as unknown as Record<string, unknown>);
+    return this.inventoryService.listWasteEntries(
+      user.tenantId!,
+      query as unknown as Record<string, unknown>,
+    );
   }
 
   // ============================================
@@ -212,7 +241,10 @@ export class InventoryController {
 
   @Get('counts')
   async listCounts(@Query() query: QueryInventoryCountDto, @CurrentUser() user: CurrentUserData) {
-    return this.inventoryService.listCounts(user.tenantId!, query as unknown as Record<string, unknown>);
+    return this.inventoryService.listCounts(
+      user.tenantId!,
+      query as unknown as Record<string, unknown>,
+    );
   }
 
   // ============================================
@@ -231,10 +263,7 @@ export class InventoryController {
   }
 
   @Get('expiring')
-  async getExpiringBatches(
-    @Query('days') days?: number,
-    @CurrentUser() user?: CurrentUserData,
-  ) {
+  async getExpiringBatches(@Query('days') days?: number, @CurrentUser() user?: CurrentUserData) {
     return this.inventoryService.getExpiringBatches(user!.tenantId!, days ?? 30);
   }
 

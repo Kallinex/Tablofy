@@ -1,4 +1,13 @@
-import { IsString, IsOptional, IsEmail, IsEnum, IsArray, IsDateString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEmail,
+  IsEnum,
+  IsArray,
+  IsDateString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { CustomerStatus } from '@prisma/client';
 
 export class CreateCustomerDto {

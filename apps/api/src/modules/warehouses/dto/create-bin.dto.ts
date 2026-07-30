@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsBoolean, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsEnum, MaxLength } from 'class-validator';
 import { StorageBinType } from '@prisma/client';
 
 export class CreateBinDto {

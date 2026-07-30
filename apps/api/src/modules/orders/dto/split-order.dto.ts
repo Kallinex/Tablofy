@@ -1,4 +1,14 @@
-import { IsUUID, IsString, IsOptional, IsArray, ValidateNested, IsNumber, Min, MaxLength, ArrayMinSize } from 'class-validator';
+import {
+  IsUUID,
+  IsString,
+  IsOptional,
+  IsArray,
+  ValidateNested,
+  IsNumber,
+  Min,
+  MaxLength,
+  ArrayMinSize,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 class SplitOrderItemDto {

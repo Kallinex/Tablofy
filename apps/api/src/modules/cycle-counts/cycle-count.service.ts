@@ -34,7 +34,7 @@ export class CycleCountService {
         status: dto.status ?? CycleCountStatus.SCHEDULED,
         countType: dto.countType ?? 'FULL',
         notes: dto.notes,
-        metadata: dto.metadata as Prisma.InputJsonValue ?? Prisma.DbNull,
+        metadata: (dto.metadata as Prisma.InputJsonValue) ?? Prisma.DbNull,
       },
     });
 
@@ -128,11 +128,16 @@ export class CycleCountService {
       where: { id },
       data: {
         countDate: dto.countDate ? new Date(dto.countDate) : undefined,
-        scheduledDate: dto.scheduledDate !== undefined ? (dto.scheduledDate ? new Date(dto.scheduledDate) : null) : undefined,
+        scheduledDate:
+          dto.scheduledDate !== undefined
+            ? dto.scheduledDate
+              ? new Date(dto.scheduledDate)
+              : null
+            : undefined,
         status: dto.status,
         countType: dto.countType,
         notes: dto.notes,
-        metadata: dto.metadata !== undefined ? dto.metadata as Prisma.InputJsonValue : undefined,
+        metadata: dto.metadata !== undefined ? (dto.metadata as Prisma.InputJsonValue) : undefined,
       },
     });
 
@@ -240,7 +245,10 @@ export class CycleCountService {
       include: { items: true },
     });
     if (!existing) throw new NotFoundException('Cycle count not found');
-    if (existing.status !== CycleCountStatus.COMPLETED && existing.status !== CycleCountStatus.APPROVED) {
+    if (
+      existing.status !== CycleCountStatus.COMPLETED &&
+      existing.status !== CycleCountStatus.APPROVED
+    ) {
       throw new BadRequestException('Only COMPLETED or APPROVED cycle counts can be reconciled');
     }
 
@@ -290,7 +298,13 @@ export class CycleCountService {
     return updated;
   }
 
-  async recordItemCount(id: string, itemId: string, dto: RecordCountDto, tenantId: string, userId: string) {
+  async recordItemCount(
+    id: string,
+    itemId: string,
+    dto: RecordCountDto,
+    tenantId: string,
+    userId: string,
+  ) {
     const count = await this.prisma.cycleCount.findFirst({
       where: { id, tenantId, deletedAt: null },
     });
@@ -355,7 +369,10 @@ export class CycleCountService {
       where: { id, tenantId, deletedAt: null },
     });
     if (!existing) throw new NotFoundException('Cycle count not found');
-    if (existing.status !== CycleCountStatus.SCHEDULED && existing.status !== CycleCountStatus.IN_PROGRESS) {
+    if (
+      existing.status !== CycleCountStatus.SCHEDULED &&
+      existing.status !== CycleCountStatus.IN_PROGRESS
+    ) {
       throw new BadRequestException('Only SCHEDULED or IN_PROGRESS cycle counts can be cancelled');
     }
 

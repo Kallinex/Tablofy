@@ -9,7 +9,13 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Prisma, OrderStatus as PrismaOrderStatus, OrderType, PaymentMethod, PaymentStatus, KitchenStatus as PrismaKitchenStatus } from '@prisma/client';
+import {
+  Prisma,
+  OrderStatus as PrismaOrderStatus,
+  OrderType,
+  PaymentStatus,
+  KitchenStatus as PrismaKitchenStatus,
+} from '@prisma/client';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { QueryOrderDto } from './dto/query-order.dto';
@@ -32,7 +38,9 @@ type OrderWithIncludes = Prisma.OrderGetPayload<{
     items: { include: { modifiers: true } };
     payments: true;
     statusHistory: { orderBy: { createdAt: 'asc' } };
-    orderNotes: { include: { user: { select: { id: true; firstName: true; lastName: true; role: true } } } };
+    orderNotes: {
+      include: { user: { select: { id: true; firstName: true; lastName: true; role: true } } };
+    };
     table: { select: { id: true; number: true } };
     user: { select: { id: true; firstName: true; lastName: true; role: true } };
     restaurant: { select: { id: true; name: true } };
@@ -51,16 +59,18 @@ export class OrdersService {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  async create(dto: CreateOrderDto, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async create(
+    dto: CreateOrderDto,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     await this.validateBusinessRules(dto, tenantId);
 
     const orderNumber = await this.generateOrderNumber(dto.restaurantId);
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const subtotal = dto.items.reduce(
-        (sum, item) => sum + item.unitPrice * item.quantity,
-        0,
-      );
+      const subtotal = dto.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
 
       const order = await tx.order.create({
         data: {
@@ -142,21 +152,43 @@ export class OrdersService {
       resourceId: result!.id,
       userId,
       tenantId,
-      newValues: { orderNumber: result!.orderNumber, status: result!.status, itemCount: dto.items.length },
+      newValues: {
+        orderNumber: result!.orderNumber,
+        status: result!.status,
+        itemCount: dto.items.length,
+      },
       ...meta,
     });
 
-    this.eventEmitter.emit('order.created', { tenantId, orderId: result!.id, orderNumber: result!.orderNumber });
+    this.eventEmitter.emit('order.created', {
+      tenantId,
+      orderId: result!.id,
+      orderNumber: result!.orderNumber,
+    });
     await this.cacheService.deletePattern(tenantId, 'list:*');
 
     return result;
   }
 
   async findAll(query: QueryOrderDto, tenantId: string) {
-    const { page = 1, limit = 20, search, status, orderType, branchId, tableId, source, startDate, endDate } = query;
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      status,
+      orderType,
+      branchId,
+      tableId,
+      source,
+      startDate,
+      endDate,
+    } = query;
 
     const listKey = `list:${page}:${limit}:${status || ''}:${orderType || ''}:${branchId || ''}:${tableId || ''}:${source || ''}:${search || ''}:${startDate || ''}:${endDate || ''}`;
-    const cached = await this.cacheService.get<{ data: unknown[]; meta: unknown }>(tenantId, listKey);
+    const cached = await this.cacheService.get<{ data: unknown[]; meta: unknown }>(
+      tenantId,
+      listKey,
+    );
     if (cached) return cached;
 
     const where: Prisma.OrderWhereInput = { tenantId, deletedAt: null };
@@ -215,7 +247,9 @@ export class OrdersService {
         items: { include: { modifiers: true } },
         payments: true,
         statusHistory: { orderBy: { createdAt: 'asc' } },
-        orderNotes: { include: { user: { select: { id: true, firstName: true, lastName: true, role: true } } } },
+        orderNotes: {
+          include: { user: { select: { id: true, firstName: true, lastName: true, role: true } } },
+        },
         table: { select: { id: true, number: true } },
         user: { select: { id: true, firstName: true, lastName: true, role: true } },
         restaurant: { select: { id: true, name: true } },
@@ -231,7 +265,13 @@ export class OrdersService {
     return order as OrderWithIncludes;
   }
 
-  async update(id: string, dto: UpdateOrderDto, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async update(
+    id: string,
+    dto: UpdateOrderDto,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const existing = await this.findOne(id, tenantId);
     const currentStatus = existing.status;
 
@@ -272,7 +312,8 @@ export class OrdersService {
             if (itemDto.variantId !== undefined) itemUpdateData.variantId = itemDto.variantId;
             if (itemDto.variantName !== undefined) itemUpdateData.variantName = itemDto.variantName;
             if (itemDto.discount !== undefined) itemUpdateData.discount = itemDto.discount;
-            if (itemDto.preparationNotes !== undefined) itemUpdateData.preparationNotes = itemDto.preparationNotes;
+            if (itemDto.preparationNotes !== undefined)
+              itemUpdateData.preparationNotes = itemDto.preparationNotes;
 
             if (itemDto.unitPrice !== undefined && itemDto.quantity !== undefined) {
               const modifiersTotal = await tx.orderItemModifier.aggregate({
@@ -280,7 +321,8 @@ export class OrdersService {
                 _sum: { price: true },
               });
               const modTotal = Number(modifiersTotal._sum.price || 0) * (itemDto.quantity || 1);
-              itemUpdateData.total = (itemDto.unitPrice * itemDto.quantity) + modTotal - (itemDto.discount || 0);
+              itemUpdateData.total =
+                itemDto.unitPrice * itemDto.quantity + modTotal - (itemDto.discount || 0);
             }
 
             await tx.orderItem.update({ where: { id: itemDto.id }, data: itemUpdateData });
@@ -290,7 +332,11 @@ export class OrdersService {
                 if (modDto.id) {
                   await tx.orderItemModifier.update({
                     where: { id: modDto.id },
-                    data: { name: modDto.name, quantity: modDto.quantity || 1, price: modDto.price },
+                    data: {
+                      name: modDto.name,
+                      quantity: modDto.quantity || 1,
+                      price: modDto.price,
+                    },
                   });
                 } else {
                   await tx.orderItemModifier.create({
@@ -336,7 +382,13 @@ export class OrdersService {
     return result;
   }
 
-  async changeStatus(id: string, dto: ChangeStatusDto, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async changeStatus(
+    id: string,
+    dto: ChangeStatusDto,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const existing = await this.findOne(id, tenantId);
     const currentStatus = existing.status;
 
@@ -358,7 +410,12 @@ export class OrdersService {
 
       const verResult = await tx.order.updateMany({
         where: { id, version: existing.version },
-        data: { version: { increment: 1 }, status: dto.status as PrismaOrderStatus, ...(updateData as any) },
+        data: {
+          version: { increment: 1 },
+          status: dto.status as PrismaOrderStatus,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ...(updateData as any),
+        },
       });
       if (verResult.count === 0) {
         throw new ConflictException('Order was modified by another user. Please retry.');
@@ -391,7 +448,11 @@ export class OrdersService {
 
       return tx.order.findUnique({
         where: { id },
-        include: { items: { include: { modifiers: true } }, payments: true, statusHistory: { orderBy: { createdAt: 'asc' } } },
+        include: {
+          items: { include: { modifiers: true } },
+          payments: true,
+          statusHistory: { orderBy: { createdAt: 'asc' } },
+        },
       });
     });
 
@@ -414,7 +475,13 @@ export class OrdersService {
     return result;
   }
 
-  async applyDiscount(id: string, dto: ApplyDiscountDto, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async applyDiscount(
+    id: string,
+    dto: ApplyDiscountDto,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const existing = await this.findOne(id, tenantId);
     const currentStatus = existing.status;
 
@@ -422,9 +489,8 @@ export class OrdersService {
       throw new BadRequestException(`Cannot modify order in ${currentStatus} status`);
     }
 
-    const discountAmount = dto.discountType === 'PERCENTAGE'
-      ? (Number(existing.subtotal) * dto.value) / 100
-      : dto.value;
+    const discountAmount =
+      dto.discountType === 'PERCENTAGE' ? (Number(existing.subtotal) * dto.value) / 100 : dto.value;
 
     if (discountAmount > Number(existing.subtotal)) {
       throw new BadRequestException('Discount cannot exceed subtotal');
@@ -470,7 +536,12 @@ export class OrdersService {
     return result;
   }
 
-  async removeDiscount(id: string, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async removeDiscount(
+    id: string,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const existing = await this.findOne(id, tenantId);
     const currentStatus = existing.status;
 
@@ -516,7 +587,13 @@ export class OrdersService {
     return result;
   }
 
-  async addPayment(id: string, dto: AddPaymentDto, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async addPayment(
+    id: string,
+    dto: AddPaymentDto,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const existing = await this.findOne(id, tenantId);
     const currentStatus = existing.status;
 
@@ -559,7 +636,9 @@ export class OrdersService {
         data: {
           paidAmount: totalPaid,
           tip: { increment: dto.tip || 0 },
-          ...(totalPaid >= orderTotal ? { status: PrismaOrderStatus.COMPLETED, completedAt: new Date() } : {}),
+          ...(totalPaid >= orderTotal
+            ? { status: PrismaOrderStatus.COMPLETED, completedAt: new Date() }
+            : {}),
         },
       });
 
@@ -596,7 +675,14 @@ export class OrdersService {
     return result;
   }
 
-  async refundPayment(id: string, paymentId: string, tenantId: string, userId: string, reason?: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async refundPayment(
+    id: string,
+    paymentId: string,
+    tenantId: string,
+    userId: string,
+    reason?: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const payment = await this.prisma.payment.findFirst({
       where: { id: paymentId, orderId: id, tenantId },
     });
@@ -648,9 +734,13 @@ export class OrdersService {
     return result;
   }
 
-  async addNote(id: string, dto: AddNoteDto, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
-    const existing = await this.findOne(id, tenantId);
-
+  async addNote(
+    id: string,
+    dto: AddNoteDto,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const note = await this.prisma.orderNote.create({
       data: {
         orderId: id,
@@ -678,7 +768,13 @@ export class OrdersService {
     return note;
   }
 
-  async splitOrder(id: string, dto: SplitOrderDto, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async splitOrder(
+    id: string,
+    dto: SplitOrderDto,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const existing = await this.findOne(id, tenantId);
     const currentStatus = existing.status;
 
@@ -716,7 +812,9 @@ export class OrdersService {
 
         const movedQuantity = splitItem.quantity;
         if (movedQuantity > originalItem.quantity) {
-          throw new BadRequestException(`Cannot move ${movedQuantity} of ${originalItem.quantity} for item ${originalItem.productName}`);
+          throw new BadRequestException(
+            `Cannot move ${movedQuantity} of ${originalItem.quantity} for item ${originalItem.productName}`,
+          );
         }
 
         const remainingQuantity = originalItem.quantity - movedQuantity;
@@ -780,14 +878,24 @@ export class OrdersService {
       ...meta,
     });
 
-    this.eventEmitter.emit('order.split', { tenantId, sourceOrderId: id, newOrderId: result.newOrderId });
+    this.eventEmitter.emit('order.split', {
+      tenantId,
+      sourceOrderId: id,
+      newOrderId: result.newOrderId,
+    });
     await this.cacheService.delete(tenantId, `one:${id}`);
     await this.cacheService.deletePattern(tenantId, 'list:*');
 
     return result;
   }
 
-  async mergeOrders(targetId: string, dto: MergeOrdersDto, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async mergeOrders(
+    targetId: string,
+    dto: MergeOrdersDto,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     if (targetId === dto.sourceOrderId) {
       throw new BadRequestException('Cannot merge an order with itself');
     }
@@ -842,7 +950,11 @@ export class OrdersService {
       ...meta,
     });
 
-    this.eventEmitter.emit('orders.merged', { tenantId, targetOrderId: targetId, sourceOrderId: dto.sourceOrderId });
+    this.eventEmitter.emit('orders.merged', {
+      tenantId,
+      targetOrderId: targetId,
+      sourceOrderId: dto.sourceOrderId,
+    });
     await this.cacheService.delete(tenantId, `one:${targetId}`);
     await this.cacheService.delete(tenantId, `one:${dto.sourceOrderId}`);
     await this.cacheService.deletePattern(tenantId, 'list:*');
@@ -850,7 +962,13 @@ export class OrdersService {
     return result;
   }
 
-  async moveTable(id: string, dto: MoveTableDto, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async moveTable(
+    id: string,
+    dto: MoveTableDto,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const existing = await this.findOne(id, tenantId);
 
     if (isTerminalStatus(existing.status as string)) {
@@ -886,7 +1004,12 @@ export class OrdersService {
     return result;
   }
 
-  async duplicateOrder(id: string, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async duplicateOrder(
+    id: string,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const existing = await this.findOne(id, tenantId);
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -915,7 +1038,9 @@ export class OrdersService {
           customerEmail: existing.customerEmail,
           deliveryAddress: existing.deliveryAddress,
           deliveryFee: existing.deliveryFee,
-          notes: existing.notes ? `Duplicated from order #${existing.orderNumber}: ${existing.notes}` : `Duplicated from order #${existing.orderNumber}`,
+          notes: existing.notes
+            ? `Duplicated from order #${existing.orderNumber}: ${existing.notes}`
+            : `Duplicated from order #${existing.orderNumber}`,
         },
       });
 
@@ -970,13 +1095,23 @@ export class OrdersService {
       ...meta,
     });
 
-    this.eventEmitter.emit('order.duplicated', { tenantId, sourceOrderId: id, newOrderId: result!.id });
+    this.eventEmitter.emit('order.duplicated', {
+      tenantId,
+      sourceOrderId: id,
+      newOrderId: result!.id,
+    });
     await this.cacheService.deletePattern(tenantId, 'list:*');
 
     return result;
   }
 
-  async applyServiceCharge(id: string, serviceChargeId: string, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async applyServiceCharge(
+    id: string,
+    serviceChargeId: string,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const existing = await this.findOne(id, tenantId);
 
     if (isTerminalStatus(existing.status as string)) {
@@ -991,9 +1126,7 @@ export class OrdersService {
     }
 
     const rate = Number(sc.rate);
-    const scAmount = sc.isPercentage
-      ? (Number(existing.subtotal) * rate) / 100
-      : rate;
+    const scAmount = sc.isPercentage ? (Number(existing.subtotal) * rate) / 100 : rate;
 
     const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.order.update({
@@ -1024,7 +1157,13 @@ export class OrdersService {
     return result;
   }
 
-  async applyTaxRate(id: string, taxRateId: string, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async applyTaxRate(
+    id: string,
+    taxRateId: string,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const existing = await this.findOne(id, tenantId);
 
     if (isTerminalStatus(existing.status as string)) {
@@ -1071,7 +1210,14 @@ export class OrdersService {
     return result;
   }
 
-  async voidItem(id: string, itemId: string, reason: string | undefined, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async voidItem(
+    id: string,
+    itemId: string,
+    reason: string | undefined,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const existing = await this.findOne(id, tenantId);
 
     if (isTerminalStatus(existing.status as string)) {
@@ -1122,9 +1268,12 @@ export class OrdersService {
     return result;
   }
 
-  async softDelete(id: string, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
-    const existing = await this.findOne(id, tenantId);
-
+  async softDelete(
+    id: string,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     await this.prisma.order.update({
       where: { id },
       data: { deletedAt: new Date() },
@@ -1190,7 +1339,7 @@ export class OrdersService {
     ticketId: string,
     status: PrismaKitchenStatus,
     tenantId: string,
-    meta?: { ipAddress?: string; userAgent?: string },
+    _meta?: { ipAddress?: string; userAgent?: string },
   ) {
     const ticket = await this.prisma.kitchenTicket.findFirst({
       where: { id: ticketId, tenantId },
@@ -1209,7 +1358,12 @@ export class OrdersService {
     return result;
   }
 
-  async restore(id: string, tenantId: string, userId: string, meta?: { ipAddress?: string; userAgent?: string }) {
+  async restore(
+    id: string,
+    tenantId: string,
+    userId: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ) {
     const order = await this.prisma.order.findFirst({
       where: { id, tenantId, deletedAt: { not: null } },
     });
@@ -1256,21 +1410,22 @@ export class OrdersService {
       if (!table) throw new NotFoundException('Table not found');
     }
 
-    const productIds = dto.items.map(i => i.productId);
+    const productIds = dto.items.map((i) => i.productId);
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds }, tenantId, deletedAt: null },
     });
-    const productMap = new Map(products.map(p => [p.id, p]));
+    const productMap = new Map(products.map((p) => [p.id, p]));
     for (const item of dto.items) {
-      if (!productMap.has(item.productId)) throw new NotFoundException(`Product ${item.productId} not found`);
+      if (!productMap.has(item.productId))
+        throw new NotFoundException(`Product ${item.productId} not found`);
     }
 
-    const variantIds = dto.items.filter(i => i.variantId).map(i => i.variantId!);
+    const variantIds = dto.items.filter((i) => i.variantId).map((i) => i.variantId!);
     if (variantIds.length) {
       const variants = await this.prisma.productVariant.findMany({
         where: { id: { in: variantIds }, tenantId, deletedAt: null },
       });
-      const variantMap = new Map(variants.map(v => [v.id, v]));
+      const variantMap = new Map(variants.map((v) => [v.id, v]));
       for (const item of dto.items) {
         if (item.variantId && !variantMap.has(item.variantId)) {
           throw new NotFoundException(`Variant ${item.variantId} not found`);
@@ -1279,7 +1434,11 @@ export class OrdersService {
     }
   }
 
-  private async updateKitchenStatus(tx: Prisma.TransactionClient, orderId: string, orderStatus: string) {
+  private async updateKitchenStatus(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    orderStatus: string,
+  ) {
     const statusMap: Record<string, PrismaKitchenStatus> = {
       CONFIRMED: PrismaKitchenStatus.PENDING,
       IN_PREPARATION: PrismaKitchenStatus.PREPARING,
@@ -1306,12 +1465,19 @@ export class OrdersService {
 
     if (kitchenStatus === 'SERVED') {
       await tx.kitchenTicket.updateMany({
-        where: { orderId, status: { in: [PrismaKitchenStatus.READY, PrismaKitchenStatus.PREPARING] } },
+        where: {
+          orderId,
+          status: { in: [PrismaKitchenStatus.READY, PrismaKitchenStatus.PREPARING] },
+        },
         data: { status: kitchenStatus },
       });
     }
 
-    if (kitchenStatus === PrismaKitchenStatus.PREPARING || kitchenStatus === PrismaKitchenStatus.PENDING || kitchenStatus === PrismaKitchenStatus.CANCELLED) {
+    if (
+      kitchenStatus === PrismaKitchenStatus.PREPARING ||
+      kitchenStatus === PrismaKitchenStatus.PENDING ||
+      kitchenStatus === PrismaKitchenStatus.CANCELLED
+    ) {
       await tx.orderItem.updateMany({
         where: { orderId, voidedAt: null },
         data: { kitchenStatus },

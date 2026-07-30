@@ -113,7 +113,9 @@ export class CrmService {
         },
       });
     } catch (error) {
-      this.logger.error(`Failed to add timeline entry: ${error instanceof Error ? error.message : 'unknown'}`);
+      this.logger.error(
+        `Failed to add timeline entry: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
     }
   }
 
@@ -148,7 +150,12 @@ export class CrmService {
     return template;
   }
 
-  async updateTemplate(id: string, dto: UpdateCommunicationTemplateDto, tenantId: string, userId?: string) {
+  async updateTemplate(
+    id: string,
+    dto: UpdateCommunicationTemplateDto,
+    tenantId: string,
+    userId?: string,
+  ) {
     const template = await this.prisma.communicationTemplate.findFirst({
       where: { id, tenantId, deletedAt: null },
     });
@@ -435,7 +442,9 @@ export class CrmService {
           },
         });
       } catch (error) {
-        this.logger.error(`Event rule ${rule.name} failed: ${error instanceof Error ? error.message : 'unknown'}`);
+        this.logger.error(
+          `Event rule ${rule.name} failed: ${error instanceof Error ? error.message : 'unknown'}`,
+        );
 
         await this.prisma.eventLog.create({
           data: {
@@ -472,9 +481,9 @@ export class CrmService {
 
     switch (actionType) {
       case 'add_timeline_entry': {
-        const customerId = (action.customerIdField
-          ? payload[action.customerIdField as string]
-          : payload.customerId) as string;
+        const customerId = (
+          action.customerIdField ? payload[action.customerIdField as string] : payload.customerId
+        ) as string;
         if (customerId) {
           await this.addSystemTimelineEntry(
             customerId,
@@ -490,9 +499,9 @@ export class CrmService {
         break;
       }
       case 'send_notification': {
-        const customerId2 = (action.customerIdField
-          ? payload[action.customerIdField as string]
-          : payload.customerId) as string;
+        const customerId2 = (
+          action.customerIdField ? payload[action.customerIdField as string] : payload.customerId
+        ) as string;
         if (customerId2) {
           await this.queueService.addJob('notification-jobs', 'event-notification', {
             tenantId,

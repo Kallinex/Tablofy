@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, IsNumber, ValidateNested, Min, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsArray, ValidateNested, MaxLength } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TransferItemDto } from './create-transfer.dto';
 

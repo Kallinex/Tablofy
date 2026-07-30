@@ -16,7 +16,9 @@ export class InventoryProcessor {
   private async handleInventorySync(job: Job<QueueJobData>) {
     this.logger.log(`Processing inventory sync ${job.id}`);
     const { tenantId, userId, payload } = job.data;
-    this.logger.log(`Inventory sync for tenant ${tenantId} user ${userId}: ${JSON.stringify(payload)}`);
+    this.logger.log(
+      `Inventory sync for tenant ${tenantId} user ${userId}: ${JSON.stringify(payload)}`,
+    );
     return { processed: true };
   }
 

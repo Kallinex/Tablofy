@@ -52,20 +52,27 @@ export function validateTransition(from: string, to: string): void {
 
   const allowed = validTransitions[fromStatus];
   if (!allowed || !allowed.includes(toStatus)) {
-    throw new BadRequestException(
-      `Cannot transition order from ${from} to ${to}`,
-    );
+    throw new BadRequestException(`Cannot transition order from ${from} to ${to}`);
   }
 }
 
 export function isTerminalStatus(status: string): boolean {
-  return [OrderStatus.CANCELLED, OrderStatus.REFUNDED, OrderStatus.VOIDED].includes(status as OrderStatus);
+  return [OrderStatus.CANCELLED, OrderStatus.REFUNDED, OrderStatus.VOIDED].includes(
+    status as OrderStatus,
+  );
 }
 
 export function isPayableStatus(status: string): boolean {
-  return [OrderStatus.CONFIRMED, OrderStatus.IN_PREPARATION, OrderStatus.READY, OrderStatus.SERVED].includes(status as OrderStatus);
+  return [
+    OrderStatus.CONFIRMED,
+    OrderStatus.IN_PREPARATION,
+    OrderStatus.READY,
+    OrderStatus.SERVED,
+  ].includes(status as OrderStatus);
 }
 
 export function isKitchenTracked(status: string): boolean {
-  return [OrderStatus.CONFIRMED, OrderStatus.IN_PREPARATION, OrderStatus.READY].includes(status as OrderStatus);
+  return [OrderStatus.CONFIRMED, OrderStatus.IN_PREPARATION, OrderStatus.READY].includes(
+    status as OrderStatus,
+  );
 }

@@ -1,22 +1,17 @@
-import {
-  Injectable, NotFoundException, ConflictException, BadRequestException, Logger,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { QueueService } from '../queues/queue.service';
 import { PurchasingGateway } from './purchasing.gateway';
-import {
-  Prisma, PurchaseOrderStatus, GoodsReceiptStatus, StockMovementType,
-} from '@prisma/client';
+import { Prisma, PurchaseOrderStatus, GoodsReceiptStatus, StockMovementType } from '@prisma/client';
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto';
 import { UpdatePurchaseOrderDto } from './dto/update-purchase-order.dto';
 import { QueryPurchaseOrderDto } from './dto/query-purchase-order.dto';
-import { CreateGoodsReceiptDto, GoodsReceiptItemDto } from './dto/create-goods-receipt.dto';
+import { CreateGoodsReceiptDto } from './dto/create-goods-receipt.dto';
 import { UpdateGoodsReceiptDto } from './dto/update-goods-receipt.dto';
 import { QueryGoodsReceiptDto } from './dto/query-goods-receipt.dto';
-import { ApprovePurchaseOrderDto } from './dto/approve-purchase-order.dto';
 
 @Injectable()
 export class PurchasingService {
@@ -200,7 +195,10 @@ export class PurchasingService {
       include: { items: true },
     });
     if (!po) throw new NotFoundException('Purchase order not found');
-    if (po.status !== PurchaseOrderStatus.DRAFT && po.status !== PurchaseOrderStatus.PENDING_APPROVAL) {
+    if (
+      po.status !== PurchaseOrderStatus.DRAFT &&
+      po.status !== PurchaseOrderStatus.PENDING_APPROVAL
+    ) {
       throw new BadRequestException('Only DRAFT or PENDING_APPROVAL orders can be updated');
     }
 
@@ -341,7 +339,13 @@ export class PurchasingService {
     return updated;
   }
 
-  async approvePO(id: string, userId: string, tenantId: string, approved: boolean, reason?: string) {
+  async approvePO(
+    id: string,
+    userId: string,
+    tenantId: string,
+    approved: boolean,
+    reason?: string,
+  ) {
     const po = await this.prisma.purchaseOrder.findFirst({
       where: { id, tenantId, deletedAt: null },
       include: { approval: true },
@@ -429,7 +433,11 @@ export class PurchasingService {
     await this.cacheService.delete(tenantId, `po:${id}`);
     await this.cacheService.delete(tenantId, 'po:list');
     await this.cacheService.delete(tenantId, 'po:stats');
-    this.gateway.broadcastPurchaseUpdate(tenantId, `purchase.${approved ? 'approved' : 'rejected'}`, updated);
+    this.gateway.broadcastPurchaseUpdate(
+      tenantId,
+      `purchase.${approved ? 'approved' : 'rejected'}`,
+      updated,
+    );
 
     await this.queueService.addJob('purchase-notifications', 'po-approved', {
       tenantId,
@@ -479,7 +487,10 @@ export class PurchasingService {
       include: { items: true },
     });
     if (!po) throw new NotFoundException('Purchase order not found');
-    if (po.status !== PurchaseOrderStatus.ORDERED && po.status !== PurchaseOrderStatus.PARTIALLY_RECEIVED) {
+    if (
+      po.status !== PurchaseOrderStatus.ORDERED &&
+      po.status !== PurchaseOrderStatus.PARTIALLY_RECEIVED
+    ) {
       throw new BadRequestException('Only ORDERED or PARTIALLY_RECEIVED orders can be received');
     }
 
@@ -605,9 +616,11 @@ export class PurchasingService {
     const statuses = Object.values(PurchaseOrderStatus);
     const counts = await Promise.all(
       statuses.map((status) =>
-        this.prisma.purchaseOrder.count({
-          where: { tenantId, status, deletedAt: null },
-        }).then((count) => ({ status, count })),
+        this.prisma.purchaseOrder
+          .count({
+            where: { tenantId, status, deletedAt: null },
+          })
+          .then((count) => ({ status, count })),
       ),
     );
 
@@ -658,8 +671,13 @@ export class PurchasingService {
       include: { items: true },
     });
     if (!po) throw new NotFoundException('Purchase order not found');
-    if (po.status !== PurchaseOrderStatus.ORDERED && po.status !== PurchaseOrderStatus.PARTIALLY_RECEIVED) {
-      throw new BadRequestException('Can only receive goods for ORDERED or PARTIALLY_RECEIVED orders');
+    if (
+      po.status !== PurchaseOrderStatus.ORDERED &&
+      po.status !== PurchaseOrderStatus.PARTIALLY_RECEIVED
+    ) {
+      throw new BadRequestException(
+        'Can only receive goods for ORDERED or PARTIALLY_RECEIVED orders',
+      );
     }
 
     const grnNumber = await this.generateGRNNumber(tenantId);
@@ -703,16 +721,18 @@ export class PurchasingService {
         const invItem = await tx.inventoryItem.findFirst({
           where: { id: item.inventoryItemId, tenantId },
         });
-        if (!invItem) throw new NotFoundException(`Inventory item ${item.inventoryItemId} not found`);
+        if (!invItem)
+          throw new NotFoundException(`Inventory item ${item.inventoryItemId} not found`);
 
         const unitPrice = item.unitPrice ?? 0;
         const totalCost = Number((item.quantityReceived * unitPrice).toFixed(4));
         const currentQty = Number(invItem.currentQuantity);
         const currentAvgCost = Number(invItem.averageCost ?? 0);
         const newQty = currentQty + Number(item.quantityReceived);
-        const newAvgCost = newQty > 0
-          ? Number(((currentAvgCost * currentQty + totalCost) / newQty).toFixed(4))
-          : unitPrice;
+        const newAvgCost =
+          newQty > 0
+            ? Number(((currentAvgCost * currentQty + totalCost) / newQty).toFixed(4))
+            : unitPrice;
 
         await tx.inventoryItem.update({
           where: { id: item.inventoryItemId },
@@ -1007,7 +1027,9 @@ export class PurchasingService {
               type: StockMovementType.ADJUSTMENT,
               quantity: -item.quantityReceived,
               unitCost: item.unitPrice,
-              totalCost: Number((-Number(item.quantityReceived) * Number(item.unitPrice ?? 0)).toFixed(4)),
+              totalCost: Number(
+                (-Number(item.quantityReceived) * Number(item.unitPrice ?? 0)).toFixed(4),
+              ),
               referenceType: 'GoodsReceipt',
               referenceId: grn.id,
               notes: `GRN cancellation ${grn.grnNumber}`,

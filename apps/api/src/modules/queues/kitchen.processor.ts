@@ -24,9 +24,7 @@ export class KitchenProcessor implements OnModuleInit {
         this.logger.log(`[Kitchen] KDS processing for order ${payload.orderId}`);
         break;
       case 'ticket-item.status-changed':
-        this.logger.log(
-          `[Kitchen] Item ${payload.itemId} status changed to ${payload.status}`,
-        );
+        this.logger.log(`[Kitchen] Item ${payload.itemId} status changed to ${payload.status}`);
         break;
       default:
         this.logger.log(`[Kitchen] Unknown event type: ${eventType}`);

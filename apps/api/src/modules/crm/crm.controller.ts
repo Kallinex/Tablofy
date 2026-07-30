@@ -1,6 +1,4 @@
-import {
-  Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { CrmService } from './crm.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
@@ -57,20 +55,14 @@ export class CrmController {
 
   @Get('templates')
   @Roles('OWNER', 'MANAGER')
-  async listTemplates(
-    @CurrentUser() user: CurrentUserData,
-    @Query('channel') channel?: string,
-  ) {
+  async listTemplates(@CurrentUser() user: CurrentUserData, @Query('channel') channel?: string) {
     const tenantId = user.tenantId!;
     return this.crmService.listTemplates(tenantId, channel);
   }
 
   @Get('templates/:id')
   @Roles('OWNER', 'MANAGER')
-  async getTemplate(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async getTemplate(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     return this.crmService.getTemplate(id, tenantId);
   }
@@ -88,10 +80,7 @@ export class CrmController {
 
   @Delete('templates/:id')
   @Roles('OWNER', 'MANAGER')
-  async deleteTemplate(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async deleteTemplate(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     await this.crmService.deleteTemplate(id, tenantId, user.id ?? undefined);
     return { deleted: true };
@@ -138,30 +127,21 @@ export class CrmController {
 
   @Post('event-rules')
   @Roles('OWNER', 'MANAGER')
-  async createEventRule(
-    @Body() dto: CreateEventRuleDto,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async createEventRule(@Body() dto: CreateEventRuleDto, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     return this.crmService.createEventRule(dto, tenantId, user.id ?? undefined);
   }
 
   @Get('event-rules')
   @Roles('OWNER', 'MANAGER')
-  async listEventRules(
-    @CurrentUser() user: CurrentUserData,
-    @Query('event') event?: string,
-  ) {
+  async listEventRules(@CurrentUser() user: CurrentUserData, @Query('event') event?: string) {
     const tenantId = user.tenantId!;
     return this.crmService.listEventRules(tenantId, event);
   }
 
   @Get('event-rules/:id')
   @Roles('OWNER', 'MANAGER')
-  async getEventRule(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async getEventRule(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     return this.crmService.getEventRule(id, tenantId);
   }
@@ -179,10 +159,7 @@ export class CrmController {
 
   @Delete('event-rules/:id')
   @Roles('OWNER', 'MANAGER')
-  async deleteEventRule(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async deleteEventRule(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     await this.crmService.deleteEventRule(id, tenantId, user.id ?? undefined);
     return { deleted: true };

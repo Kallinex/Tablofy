@@ -12,7 +12,10 @@ export class RecipesProcessor {
     private readonly queueService: QueueService,
     private readonly recipesService: RecipesService,
   ) {
-    this.queueService.registerWorker('inventory-deduction', this.handleInventoryDeduction.bind(this));
+    this.queueService.registerWorker(
+      'inventory-deduction',
+      this.handleInventoryDeduction.bind(this),
+    );
   }
 
   @OnEvent('order.completed')
@@ -30,7 +33,9 @@ export class RecipesProcessor {
     try {
       await this.recipesService.rollbackDeduction(payload.orderId, payload.tenantId);
     } catch (error) {
-      this.logger.error(`Rollback failed for order ${payload.orderId}: ${(error as Error).message}`);
+      this.logger.error(
+        `Rollback failed for order ${payload.orderId}: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -40,7 +45,9 @@ export class RecipesProcessor {
     try {
       await this.recipesService.rollbackDeduction(payload.orderId, payload.tenantId);
     } catch (error) {
-      this.logger.error(`Rollback failed for order ${payload.orderId}: ${(error as Error).message}`);
+      this.logger.error(
+        `Rollback failed for order ${payload.orderId}: ${(error as Error).message}`,
+      );
     }
   }
 

@@ -1,14 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  HttpCode,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpCode } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { KdsService } from './kds.service';
 import { CreateKitchenStationDto } from './dto/create-kitchen-station.dto';
@@ -58,10 +48,7 @@ export class KdsController {
   @Get('stations/:id')
   @Roles('OWNER', 'MANAGER', 'STAFF', 'KITCHEN', 'CASHIER')
   @ApiOperation({ summary: 'Get kitchen station by ID' })
-  findOneStation(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  findOneStation(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.kdsService.findOneStation(id, this.tenantId(user));
   }
 
@@ -79,10 +66,7 @@ export class KdsController {
   @Delete('stations/:id')
   @Roles('OWNER', 'MANAGER')
   @ApiOperation({ summary: 'Soft-delete a kitchen station' })
-  deleteStation(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  deleteStation(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.kdsService.deleteStation(id, this.tenantId(user), user.id);
   }
 
@@ -92,10 +76,7 @@ export class KdsController {
   @HttpCode(200)
   @Roles('OWNER', 'MANAGER')
   @ApiOperation({ summary: 'Assign a product to a kitchen station' })
-  assignProductStation(
-    @Body() dto: AssignProductStationDto,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  assignProductStation(@Body() dto: AssignProductStationDto, @CurrentUser() user: CurrentUserData) {
     return this.kdsService.assignProductStation(dto, this.tenantId(user), user.id);
   }
 
@@ -149,10 +130,7 @@ export class KdsController {
   @Get('station-queue/:stationId')
   @Roles('OWNER', 'MANAGER', 'STAFF', 'KITCHEN', 'CASHIER')
   @ApiOperation({ summary: 'Get queue for a specific kitchen station' })
-  getStationQueue(
-    @Param('stationId') stationId: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  getStationQueue(@Param('stationId') stationId: string, @CurrentUser() user: CurrentUserData) {
     return this.kdsService.getStationQueue(stationId, this.tenantId(user));
   }
 }

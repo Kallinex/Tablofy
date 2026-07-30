@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -52,7 +52,7 @@ export class WarehousesService {
         capacityUnit: dto.capacityUnit,
         managerName: dto.managerName,
         branchId: dto.branchId,
-        metadata: dto.metadata as Prisma.InputJsonValue ?? Prisma.DbNull,
+        metadata: (dto.metadata as Prisma.InputJsonValue) ?? Prisma.DbNull,
       },
     });
 
@@ -169,7 +169,7 @@ export class WarehousesService {
         managerId: dto.managerId,
         isDefault: dto.isDefault,
         branchId: dto.branchId,
-        metadata: dto.metadata !== undefined ? dto.metadata as Prisma.InputJsonValue : undefined,
+        metadata: dto.metadata !== undefined ? (dto.metadata as Prisma.InputJsonValue) : undefined,
         version: { increment: 1 },
       },
     });
@@ -286,7 +286,8 @@ export class WarehousesService {
     const existing = await this.prisma.warehouseZone.findFirst({
       where: { warehouseId, code: dto.code, deletedAt: null },
     });
-    if (existing) throw new ConflictException('Zone with this code already exists in this warehouse');
+    if (existing)
+      throw new ConflictException('Zone with this code already exists in this warehouse');
 
     const zone = await this.prisma.warehouseZone.create({
       data: {
@@ -359,7 +360,7 @@ export class WarehousesService {
         capacityUnit: dto.capacityUnit,
         isActive: dto.isActive,
         sortOrder: dto.sortOrder,
-        metadata: dto.metadata !== undefined ? dto.metadata as Prisma.InputJsonValue : undefined,
+        metadata: dto.metadata !== undefined ? (dto.metadata as Prisma.InputJsonValue) : undefined,
         version: { increment: 1 },
       },
     });
@@ -424,7 +425,8 @@ export class WarehousesService {
     const existing = await this.prisma.storageBin.findFirst({
       where: { warehouseId, code: dto.code, deletedAt: null },
     });
-    if (existing) throw new ConflictException('Bin with this code already exists in this warehouse');
+    if (existing)
+      throw new ConflictException('Bin with this code already exists in this warehouse');
 
     const bin = await this.prisma.storageBin.create({
       data: {
@@ -504,13 +506,14 @@ export class WarehousesService {
         status: dto.status,
         capacity: dto.capacity !== undefined ? new Prisma.Decimal(dto.capacity) : undefined,
         capacityUnit: dto.capacityUnit,
-        currentLoad: dto.currentLoad !== undefined ? new Prisma.Decimal(dto.currentLoad) : undefined,
+        currentLoad:
+          dto.currentLoad !== undefined ? new Prisma.Decimal(dto.currentLoad) : undefined,
         maxWeight: dto.maxWeight !== undefined ? new Prisma.Decimal(dto.maxWeight) : undefined,
         length: dto.length !== undefined ? new Prisma.Decimal(dto.length) : undefined,
         width: dto.width !== undefined ? new Prisma.Decimal(dto.width) : undefined,
         height: dto.height !== undefined ? new Prisma.Decimal(dto.height) : undefined,
         isActive: dto.isActive,
-        metadata: dto.metadata !== undefined ? dto.metadata as Prisma.InputJsonValue : undefined,
+        metadata: dto.metadata !== undefined ? (dto.metadata as Prisma.InputJsonValue) : undefined,
         version: { increment: 1 },
       },
     });
@@ -559,7 +562,12 @@ export class WarehousesService {
   // Warehouse-Branch Mapping
   // ============================================
 
-  async addBranch(warehouseId: string, dto: CreateWarehouseBranchDto, tenantId: string, userId: string) {
+  async addBranch(
+    warehouseId: string,
+    dto: CreateWarehouseBranchDto,
+    tenantId: string,
+    userId: string,
+  ) {
     const warehouse = await this.prisma.warehouse.findFirst({
       where: { id: warehouseId, tenantId, deletedAt: null },
     });

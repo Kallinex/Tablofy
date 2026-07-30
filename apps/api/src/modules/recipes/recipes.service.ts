@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -213,7 +219,7 @@ export class RecipesService {
       if (existing) throw new ConflictException('Recipe with this name already exists');
     }
 
-    const updated = await this.prisma.recipe.update({
+    await this.prisma.recipe.update({
       where: { id },
       data: {
         name: dto.name,
@@ -294,7 +300,9 @@ export class RecipesService {
   async getRecipeCost(id: string, tenantId: string) {
     const recipe = await this.getRecipe(id, tenantId);
 
-    const items = (recipe as Record<string, unknown>).items as Array<Record<string, unknown>> | undefined;
+    const items = (recipe as Record<string, unknown>).items as
+      | Array<Record<string, unknown>>
+      | undefined;
     if (!items || items.length === 0) {
       return {
         recipeId: id,
@@ -313,13 +321,18 @@ export class RecipesService {
       const quantity = Number(item.quantity);
       const wastePct = Number(item.wastePercentage ?? 0);
       const effectiveQuantity = quantity * (1 + wastePct / 100);
-      const unitCost = Number((invItem as Record<string, unknown> | null)?.averageCost ?? (invItem as Record<string, unknown> | null)?.unitCost ?? 0);
+      const unitCost = Number(
+        (invItem as Record<string, unknown> | null)?.averageCost ??
+          (invItem as Record<string, unknown> | null)?.unitCost ??
+          0,
+      );
       const itemCost = effectiveQuantity * unitCost;
       totalCost += itemCost;
 
       costItems.push({
         inventoryItemId: item.inventoryItemId as string,
-        inventoryItemName: (invItem as Record<string, unknown> | null)?.name as string ?? 'Unknown',
+        inventoryItemName:
+          ((invItem as Record<string, unknown> | null)?.name as string) ?? 'Unknown',
         quantity: quantity,
         wastePercentage: wastePct,
         effectiveQuantity,
@@ -330,9 +343,8 @@ export class RecipesService {
 
     const product = (recipe as Record<string, unknown>).product as Record<string, unknown> | null;
     const sellingPrice = product?.basePrice ? Number(product.basePrice) : null;
-    const foodCostPercentage = sellingPrice && sellingPrice > 0
-      ? (totalCost / sellingPrice) * 100
-      : 0;
+    const foodCostPercentage =
+      sellingPrice && sellingPrice > 0 ? (totalCost / sellingPrice) * 100 : 0;
 
     return {
       recipeId: id,
@@ -344,7 +356,12 @@ export class RecipesService {
     };
   }
 
-  async addRecipeItem(recipeId: string, dto: CreateRecipeItemDto, tenantId: string, userId: string) {
+  async addRecipeItem(
+    recipeId: string,
+    dto: CreateRecipeItemDto,
+    tenantId: string,
+    userId: string,
+  ) {
     const recipe = await this.prisma.recipe.findFirst({
       where: { id: recipeId, tenantId, deletedAt: null },
     });
@@ -386,7 +403,10 @@ export class RecipesService {
 
     await this.cacheService.delete(tenantId, `recipe:${recipeId}`);
     await this.cacheService.delete(tenantId, 'recipes:list');
-    this.gateway.broadcastRecipeUpdate(tenantId, 'recipe.updated', { recipeId, action: 'item-added' });
+    this.gateway.broadcastRecipeUpdate(tenantId, 'recipe.updated', {
+      recipeId,
+      action: 'item-added',
+    });
 
     return item;
   }
@@ -429,7 +449,10 @@ export class RecipesService {
 
     await this.cacheService.delete(tenantId, `recipe:${item.recipeId}`);
     await this.cacheService.delete(tenantId, 'recipes:list');
-    this.gateway.broadcastRecipeUpdate(tenantId, 'recipe.updated', { recipeId: item.recipeId, action: 'item-updated' });
+    this.gateway.broadcastRecipeUpdate(tenantId, 'recipe.updated', {
+      recipeId: item.recipeId,
+      action: 'item-updated',
+    });
 
     return updated;
   }
@@ -456,7 +479,10 @@ export class RecipesService {
 
     await this.cacheService.delete(tenantId, `recipe:${item.recipeId}`);
     await this.cacheService.delete(tenantId, 'recipes:list');
-    this.gateway.broadcastRecipeUpdate(tenantId, 'recipe.updated', { recipeId: item.recipeId, action: 'item-removed' });
+    this.gateway.broadcastRecipeUpdate(tenantId, 'recipe.updated', {
+      recipeId: item.recipeId,
+      action: 'item-removed',
+    });
   }
 
   async deductInventoryForOrder(orderId: string, tenantId: string): Promise<DeductionReport> {
@@ -473,7 +499,7 @@ export class RecipesService {
       throw new BadRequestException('Order has no items to deduct');
     }
 
-    const productIds = orderItems.map(oi => oi.productId);
+    const productIds = orderItems.map((oi) => oi.productId);
     const recipes = await this.prisma.recipe.findMany({
       where: { productId: { in: productIds }, tenantId, deletedAt: null, isActive: true },
       include: {
@@ -497,12 +523,15 @@ export class RecipesService {
       throw new BadRequestException('No active recipes found for ordered products');
     }
 
-    const deductionMap = new Map<string, {
-      inventoryItemId: string;
-      inventoryItemName: string;
-      totalQuantityNeeded: number;
-      unitCost: number;
-    }>();
+    const deductionMap = new Map<
+      string,
+      {
+        inventoryItemId: string;
+        inventoryItemName: string;
+        totalQuantityNeeded: number;
+        unitCost: number;
+      }
+    >();
 
     for (const recipe of recipes) {
       for (const item of recipe.items) {
@@ -608,7 +637,10 @@ export class RecipesService {
     return report;
   }
 
-  async rollbackDeduction(orderId: string, tenantId: string): Promise<{ rolledBack: boolean; movementsReversed: number }> {
+  async rollbackDeduction(
+    orderId: string,
+    tenantId: string,
+  ): Promise<{ rolledBack: boolean; movementsReversed: number }> {
     const movements = await this.prisma.stockMovement.findMany({
       where: {
         referenceType: 'ORDER',
@@ -667,12 +699,18 @@ export class RecipesService {
     });
 
     await this.cacheService.delete(tenantId, 'inventory:list');
-    this.gateway.broadcastInventoryUpdate(tenantId, 'deduction.rolled_back', { orderId, movementsReversed: reversedCount });
+    this.gateway.broadcastInventoryUpdate(tenantId, 'deduction.rolled_back', {
+      orderId,
+      movementsReversed: reversedCount,
+    });
 
     return { rolledBack: true, movementsReversed: reversedCount };
   }
 
-  async getDeductionReport(orderId: string, tenantId: string): Promise<{
+  async getDeductionReport(
+    orderId: string,
+    tenantId: string,
+  ): Promise<{
     orderId: string;
     movements: Array<{
       id: string;
@@ -700,7 +738,7 @@ export class RecipesService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const enrichedMovements = movements.map(m => ({
+    const enrichedMovements = movements.map((m) => ({
       id: m.id,
       inventoryItemId: m.inventoryItemId,
       inventoryItemName: m.inventoryItem.name,

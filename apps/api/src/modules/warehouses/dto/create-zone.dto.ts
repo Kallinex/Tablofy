@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsBoolean, IsInt, Min, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsInt, Min, MaxLength } from 'class-validator';
 import { WarehouseZoneType } from '@prisma/client';
 
 export class CreateZoneDto {

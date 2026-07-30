@@ -1,14 +1,18 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  Logger,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { QueueService } from '../queues/queue.service';
 import { TransfersGateway } from './transfers.gateway';
-import {
-  Prisma, TransferStatus, StockMovementType,
-} from '@prisma/client';
-import { CreateTransferDto, TransferItemDto } from './dto/create-transfer.dto';
+import { Prisma, TransferStatus, StockMovementType } from '@prisma/client';
+import { CreateTransferDto } from './dto/create-transfer.dto';
 import { UpdateTransferDto } from './dto/update-transfer.dto';
 import { QueryTransferDto } from './dto/query-transfer.dto';
 import { ReceiveTransferDto } from './dto/receive-transfer.dto';
@@ -311,7 +315,7 @@ export class TransfersService {
     return updated;
   }
 
-  async approveTransfer(id: string, tenantId: string, userId: string, userRole?: string) {
+  async approveTransfer(id: string, tenantId: string, userId: string, _userRole?: string) {
     const transfer = await this.prisma.branchTransfer.findFirst({
       where: { id, tenantId, deletedAt: null },
     });
@@ -373,7 +377,6 @@ export class TransfersService {
 
         const qty = Number(item.quantity);
         const currentQty = Number(inventoryItem.currentQuantity);
-        const availableQty = Number(inventoryItem.availableQuantity);
 
         if (currentQty < qty) {
           throw new BadRequestException(
@@ -398,7 +401,9 @@ export class TransfersService {
             type: StockMovementType.TRANSFER_OUT,
             quantity: -qty,
             unitCost: item.unitCost ?? inventoryItem.averageCost,
-            totalCost: item.unitCost ? -Number(item.unitCost) * qty : -(Number(inventoryItem.averageCost ?? 0) * qty),
+            totalCost: item.unitCost
+              ? -Number(item.unitCost) * qty
+              : -(Number(inventoryItem.averageCost ?? 0) * qty),
             referenceType: 'BranchTransfer',
             referenceId: transfer.id,
             notes: `Transfer OUT to ${transfer.toBranchId} | ${item.notes ?? ''}`,
@@ -453,9 +458,7 @@ export class TransfersService {
           (ti) => ti.inventoryItemId === receiveItem.inventoryItemId,
         );
         if (!transferItem) {
-          throw new NotFoundException(
-            `Item ${receiveItem.inventoryItemId} not found in transfer`,
-          );
+          throw new NotFoundException(`Item ${receiveItem.inventoryItemId} not found in transfer`);
         }
 
         const qtyReceived = Number(receiveItem.quantityReceived);
@@ -555,7 +558,10 @@ export class TransfersService {
       include: { items: { include: { inventoryItem: true } } },
     });
     if (!transfer) throw new NotFoundException('Transfer not found');
-    if (transfer.status === TransferStatus.RECEIVED || transfer.status === TransferStatus.CANCELLED) {
+    if (
+      transfer.status === TransferStatus.RECEIVED ||
+      transfer.status === TransferStatus.CANCELLED
+    ) {
       throw new BadRequestException(`Cannot cancel a ${transfer.status.toLowerCase()} transfer`);
     }
 
@@ -634,17 +640,20 @@ export class TransfersService {
   // Stock Movements
   // ============================================
 
-  async getMovements(tenantId: string, query: {
-    page?: number;
-    limit?: number;
-    type?: StockMovementType;
-    itemId?: string;
-    branchId?: string;
-    fromDate?: string;
-    toDate?: string;
-    sortBy?: string;
-    sortOrder?: 'asc' | 'desc';
-  }) {
+  async getMovements(
+    tenantId: string,
+    query: {
+      page?: number;
+      limit?: number;
+      type?: StockMovementType;
+      itemId?: string;
+      branchId?: string;
+      fromDate?: string;
+      toDate?: string;
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+    },
+  ) {
     const cacheKey = `movements:list:${JSON.stringify(query)}`;
     const cached = await this.cacheService.get(tenantId, cacheKey);
     if (cached) return cached;
@@ -713,13 +722,17 @@ export class TransfersService {
     return movement;
   }
 
-  async getMovementsByItem(itemId: string, tenantId: string, query: {
-    page?: number;
-    limit?: number;
-    type?: StockMovementType;
-    fromDate?: string;
-    toDate?: string;
-  }) {
+  async getMovementsByItem(
+    itemId: string,
+    tenantId: string,
+    query: {
+      page?: number;
+      limit?: number;
+      type?: StockMovementType;
+      fromDate?: string;
+      toDate?: string;
+    },
+  ) {
     const cacheKey = `movements:item:${itemId}:${JSON.stringify(query)}`;
     const cached = await this.cacheService.get(tenantId, cacheKey);
     if (cached) return cached;

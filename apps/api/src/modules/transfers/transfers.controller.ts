@@ -1,5 +1,14 @@
 import {
-  Controller, Get, Post, Put, Delete, Param, Query, Body, UseGuards, HttpCode, HttpStatus,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Param,
+  Query,
+  Body,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -113,7 +122,8 @@ export class TransfersController {
   @Get('stock-movements')
   @ApiOperation({ summary: 'List stock movements' })
   async getMovements(
-    @Query() query: {
+    @Query()
+    query: {
       page?: number;
       limit?: number;
       type?: string;
@@ -142,7 +152,8 @@ export class TransfersController {
   @ApiOperation({ summary: 'Get stock movement history for an item' })
   async getMovementsByItem(
     @Param('itemId') itemId: string,
-    @Query() query: {
+    @Query()
+    query: {
       page?: number;
       limit?: number;
       type?: string;

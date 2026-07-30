@@ -1,6 +1,4 @@
-import {
-  Controller, Get, Post, Delete, Param, Body, HttpCode, HttpStatus,
-} from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { BarcodeService } from './barcode.service';

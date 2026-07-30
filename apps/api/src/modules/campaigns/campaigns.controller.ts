@@ -1,6 +1,4 @@
-import {
-  Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { CampaignsService } from './campaigns.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
@@ -21,20 +19,14 @@ export class CampaignsController {
 
   @Post('campaigns')
   @Roles('OWNER', 'MANAGER')
-  async createCampaign(
-    @Body() dto: CreateCampaignDto,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async createCampaign(@Body() dto: CreateCampaignDto, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     return this.campaignsService.createCampaign(dto, tenantId, user.id ?? undefined);
   }
 
   @Get('campaigns')
   @Roles('OWNER', 'MANAGER')
-  async listCampaigns(
-    @CurrentUser() user: CurrentUserData,
-    @Query() query?: CampaignQueryDto,
-  ) {
+  async listCampaigns(@CurrentUser() user: CurrentUserData, @Query() query?: CampaignQueryDto) {
     const tenantId = user.tenantId!;
     return this.campaignsService.listCampaigns(tenantId, query);
   }
@@ -48,10 +40,7 @@ export class CampaignsController {
 
   @Get('campaigns/:id')
   @Roles('OWNER', 'MANAGER')
-  async getCampaign(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async getCampaign(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     return this.campaignsService.getCampaign(id, tenantId);
   }
@@ -69,10 +58,7 @@ export class CampaignsController {
 
   @Delete('campaigns/:id')
   @Roles('OWNER', 'MANAGER')
-  async deleteCampaign(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async deleteCampaign(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     await this.campaignsService.deleteCampaign(id, tenantId, user.id ?? undefined);
     return { deleted: true };
@@ -80,30 +66,21 @@ export class CampaignsController {
 
   @Post('campaigns/:id/execute')
   @Roles('OWNER', 'MANAGER')
-  async executeCampaign(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async executeCampaign(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     return this.campaignsService.executeCampaign(id, tenantId, user.id ?? undefined);
   }
 
   @Post('campaigns/:id/pause')
   @Roles('OWNER', 'MANAGER')
-  async pauseCampaign(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async pauseCampaign(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     return this.campaignsService.pauseCampaign(id, tenantId, user.id ?? undefined);
   }
 
   @Post('campaigns/:id/clone')
   @Roles('OWNER', 'MANAGER')
-  async cloneCampaign(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async cloneCampaign(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     return this.campaignsService.cloneCampaign(id, tenantId, user.id ?? undefined);
   }
@@ -122,10 +99,7 @@ export class CampaignsController {
 
   @Get('campaigns/:id/analytics')
   @Roles('OWNER', 'MANAGER')
-  async getCampaignAnalytics(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async getCampaignAnalytics(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     return this.campaignsService.getCampaignAnalytics(id, tenantId);
   }
@@ -134,20 +108,14 @@ export class CampaignsController {
 
   @Post('promotions')
   @Roles('OWNER', 'MANAGER')
-  async createPromotion(
-    @Body() dto: CreatePromotionDto,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async createPromotion(@Body() dto: CreatePromotionDto, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     return this.campaignsService.createPromotion(dto, tenantId, user.id ?? undefined);
   }
 
   @Get('promotions')
   @Roles('OWNER', 'MANAGER', 'STAFF')
-  async listPromotions(
-    @CurrentUser() user: CurrentUserData,
-    @Query() query?: PromotionQueryDto,
-  ) {
+  async listPromotions(@CurrentUser() user: CurrentUserData, @Query() query?: PromotionQueryDto) {
     const tenantId = user.tenantId!;
     return this.campaignsService.listPromotions(tenantId, query);
   }
@@ -160,20 +128,14 @@ export class CampaignsController {
   }
 
   @Get('promotions/code/:code')
-  async getPromotionByCode(
-    @Param('code') code: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async getPromotionByCode(@Param('code') code: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     return this.campaignsService.getPromotionByCode(code, tenantId);
   }
 
   @Get('promotions/:id')
   @Roles('OWNER', 'MANAGER', 'STAFF')
-  async getPromotion(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async getPromotion(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     return this.campaignsService.getPromotion(id, tenantId);
   }
@@ -191,10 +153,7 @@ export class CampaignsController {
 
   @Delete('promotions/:id')
   @Roles('OWNER', 'MANAGER')
-  async deletePromotion(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async deletePromotion(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
     await this.campaignsService.deletePromotion(id, tenantId, user.id ?? undefined);
     return { deleted: true };

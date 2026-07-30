@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -6,8 +12,14 @@ import { CacheService } from '../../common/services/cache.service';
 import { QueueService } from '../queues/queue.service';
 import { CustomersGateway } from './customers.gateway';
 import {
-  Prisma, CustomerStatus, LoyaltyTransactionType, WalletTransactionType,
-  RewardType, RewardStatus, MembershipTier, SegmentType, ReferralStatus, Currency,
+  Prisma,
+  CustomerStatus,
+  LoyaltyTransactionType,
+  WalletTransactionType,
+  RewardStatus,
+  MembershipTier,
+  SegmentType,
+  ReferralStatus,
 } from '@prisma/client';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
@@ -180,7 +192,7 @@ export class CustomersService {
         addresses: true,
         preferences: true,
         visitHistory: { orderBy: { visitedAt: 'desc' }, take: 10 },
-            memberships: { orderBy: { joinedAt: 'desc' }, take: 1 },
+        memberships: { orderBy: { joinedAt: 'desc' }, take: 1 },
         rewards: { orderBy: { createdAt: 'desc' }, take: 20 },
         wallets: true,
         referralsMade: { take: 10 },
@@ -381,8 +393,6 @@ export class CustomersService {
   // ============================================
 
   async earnPoints(customerId: string, dto: EarnPointsDto, tenantId: string, userId: string) {
-    const customer = await this.findById(customerId, tenantId);
-
     const membership = await this.ensureMembership(customerId, tenantId);
     const tierConfig = await this.getTierConfig(membership.tier, tenantId);
     const multiplier = tierConfig?.multiplier ?? 1;
@@ -426,7 +436,11 @@ export class CustomersService {
 
     await this.cacheService.delete(tenantId, `customer:${customerId}`);
     await this.cacheService.delete(tenantId, `loyalty:${customerId}`);
-    this.gateway.broadcastLoyaltyUpdate(tenantId, 'loyalty.earned', { customerId, points: adjustedPoints, balance: newBalance });
+    this.gateway.broadcastLoyaltyUpdate(tenantId, 'loyalty.earned', {
+      customerId,
+      points: adjustedPoints,
+      balance: newBalance,
+    });
 
     return txn;
   }
@@ -471,7 +485,11 @@ export class CustomersService {
 
     await this.cacheService.delete(tenantId, `customer:${customerId}`);
     await this.cacheService.delete(tenantId, `loyalty:${customerId}`);
-    this.gateway.broadcastLoyaltyUpdate(tenantId, 'loyalty.redeemed', { customerId, points: -dto.points, balance: newBalance });
+    this.gateway.broadcastLoyaltyUpdate(tenantId, 'loyalty.redeemed', {
+      customerId,
+      points: -dto.points,
+      balance: newBalance,
+    });
 
     return txn;
   }
@@ -530,13 +548,23 @@ export class CustomersService {
 
     return {
       data,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, hasPrevious: page > 1 },
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrevious: page > 1,
+      },
     };
   }
 
   async getPointsBalance(customerId: string, tenantId: string) {
     const cacheKey = `loyalty:${customerId}`;
-    const cached = await this.cacheService.get<{ points: number; tier: string }>(tenantId, cacheKey);
+    const cached = await this.cacheService.get<{ points: number; tier: string }>(
+      tenantId,
+      cacheKey,
+    );
     if (cached) return cached;
 
     const membership = await this.prisma.membership.findUnique({
@@ -570,7 +598,12 @@ export class CustomersService {
     return membership;
   }
 
-  async upgradeMembership(customerId: string, dto: MembershipUpgradeDto, tenantId: string, userId: string) {
+  async upgradeMembership(
+    customerId: string,
+    dto: MembershipUpgradeDto,
+    tenantId: string,
+    userId: string,
+  ) {
     const membership = await this.ensureMembership(customerId, tenantId);
     const oldTier = membership.tier;
 
@@ -606,7 +639,11 @@ export class CustomersService {
 
     await this.cacheService.delete(tenantId, `customer:${customerId}`);
     await this.cacheService.delete(tenantId, `loyalty:${customerId}`);
-    this.gateway.broadcastMembershipUpdate(tenantId, 'membership.changed', { customerId, fromTier: oldTier, toTier: dto.tier });
+    this.gateway.broadcastMembershipUpdate(tenantId, 'membership.changed', {
+      customerId,
+      fromTier: oldTier,
+      toTier: dto.tier,
+    });
 
     return updated;
   }
@@ -675,7 +712,10 @@ export class CustomersService {
       throw new BadRequestException(`Reward is ${reward.status.toLowerCase()}`);
     }
     if (reward.expiredAt && reward.expiredAt < new Date()) {
-      await this.prisma.reward.update({ where: { id: rewardId }, data: { status: RewardStatus.EXPIRED } });
+      await this.prisma.reward.update({
+        where: { id: rewardId },
+        data: { status: RewardStatus.EXPIRED },
+      });
       throw new BadRequestException('Reward has expired');
     }
 
@@ -693,7 +733,10 @@ export class CustomersService {
     });
 
     await this.cacheService.delete(tenantId, `customer:${reward.customerId}`);
-    this.gateway.broadcastRewardUpdate(tenantId, 'reward.redeemed', { rewardId, customerId: reward.customerId });
+    this.gateway.broadcastRewardUpdate(tenantId, 'reward.redeemed', {
+      rewardId,
+      customerId: reward.customerId,
+    });
     return updated;
   }
 
@@ -735,7 +778,12 @@ export class CustomersService {
     return wallet;
   }
 
-  async rechargeWallet(customerId: string, dto: WalletRechargeDto, tenantId: string, userId: string) {
+  async rechargeWallet(
+    customerId: string,
+    dto: WalletRechargeDto,
+    tenantId: string,
+    userId: string,
+  ) {
     const wallet = await this.ensureWallet(customerId, tenantId);
 
     const amount = Math.round(dto.amount * 100) / 100;
@@ -773,7 +821,10 @@ export class CustomersService {
     });
 
     await this.cacheService.delete(tenantId, `customer:${customerId}`);
-    this.gateway.broadcastWalletUpdate(tenantId, 'wallet.updated', { customerId, balance: Number(updated.balance) });
+    this.gateway.broadcastWalletUpdate(tenantId, 'wallet.updated', {
+      customerId,
+      balance: Number(updated.balance),
+    });
 
     return { wallet: updated, transaction: txn };
   }
@@ -820,7 +871,10 @@ export class CustomersService {
     });
 
     await this.cacheService.delete(tenantId, `customer:${customerId}`);
-    this.gateway.broadcastWalletUpdate(tenantId, 'wallet.updated', { customerId, balance: Number(updated.balance) });
+    this.gateway.broadcastWalletUpdate(tenantId, 'wallet.updated', {
+      customerId,
+      balance: Number(updated.balance),
+    });
 
     return { wallet: updated, transaction: txn };
   }
@@ -863,7 +917,10 @@ export class CustomersService {
     });
 
     await this.cacheService.delete(tenantId, `customer:${customerId}`);
-    this.gateway.broadcastWalletUpdate(tenantId, 'wallet.updated', { customerId, balance: Number(updated.balance) });
+    this.gateway.broadcastWalletUpdate(tenantId, 'wallet.updated', {
+      customerId,
+      balance: Number(updated.balance),
+    });
 
     return { wallet: updated, transaction: txn };
   }
@@ -878,13 +935,25 @@ export class CustomersService {
     const where = { walletId: wallet.id };
 
     const [data, total] = await Promise.all([
-      this.prisma.walletTransaction.findMany({ where, skip, take: limit, orderBy: { createdAt: 'desc' } }),
+      this.prisma.walletTransaction.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
       this.prisma.walletTransaction.count({ where }),
     ]);
 
     return {
       data,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, hasPrevious: page > 1 },
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrevious: page > 1,
+      },
     };
   }
 
@@ -892,7 +961,12 @@ export class CustomersService {
   // Referrals
   // ============================================
 
-  async createReferral(customerId: string, dto: CreateReferralDto, tenantId: string, userId: string) {
+  async createReferral(
+    customerId: string,
+    dto: CreateReferralDto,
+    tenantId: string,
+    userId: string,
+  ) {
     await this.findById(customerId, tenantId);
 
     const existing = await this.prisma.referral.findUnique({
@@ -967,8 +1041,12 @@ export class CustomersService {
   async getReferralStats(customerId: string, tenantId: string) {
     const [total, rewarded, pending] = await Promise.all([
       this.prisma.referral.count({ where: { referrerId: customerId, tenantId } }),
-      this.prisma.referral.count({ where: { referrerId: customerId, tenantId, status: ReferralStatus.REWARDED } }),
-      this.prisma.referral.count({ where: { referrerId: customerId, tenantId, status: ReferralStatus.PENDING } }),
+      this.prisma.referral.count({
+        where: { referrerId: customerId, tenantId, status: ReferralStatus.REWARDED },
+      }),
+      this.prisma.referral.count({
+        where: { referrerId: customerId, tenantId, status: ReferralStatus.PENDING },
+      }),
     ]);
 
     const pointsEarned = await this.prisma.referral.aggregate({
@@ -1009,7 +1087,7 @@ export class CustomersService {
         name: dto.name,
         type: dto.type,
         description: dto.description,
-        rules: dto.rules !== undefined ? dto.rules as Prisma.InputJsonValue : undefined,
+        rules: dto.rules !== undefined ? (dto.rules as Prisma.InputJsonValue) : undefined,
         isDynamic: dto.isDynamic,
         isActive: dto.isActive,
       },
@@ -1090,7 +1168,9 @@ export class CustomersService {
           create: { customerId, segmentId, tenantId },
         });
         results.push(assignment);
-      } catch { continue; }
+      } catch {
+        continue;
+      }
     }
 
     await this.cacheService.delete(tenantId, 'segments:list');
@@ -1101,7 +1181,7 @@ export class CustomersService {
   // Analytics
   // ============================================
 
-  async getCustomerAnalytics(customerId: string, tenantId: string) {
+  async getCustomerAnalytics(customerId: string, _tenantId: string) {
     const analytics = await this.prisma.customerAnalytics.findUnique({
       where: { customerId },
     });
@@ -1133,15 +1213,12 @@ export class CustomersService {
 
     const totalVisits = visits.length;
     const totalSpend = visits.reduce((sum, v) => sum + Number(v.totalSpent ?? 0), 0);
-    const totalOrders = visits.filter(v => v.orderId).length;
+    const totalOrders = visits.filter((v) => v.orderId).length;
     const averageOrderValue = totalOrders > 0 ? totalSpend / totalOrders : 0;
-    const lastVisit = visits.length > 0 ? visits.reduce((latest, v) =>
-      v.visitedAt > latest.visitedAt ? v : latest
-    ) : null;
-
-    const membership = await this.prisma.membership.findUnique({
-      where: { customerId_tenantId: { customerId, tenantId } },
-    });
+    const lastVisit =
+      visits.length > 0
+        ? visits.reduce((latest, v) => (v.visitedAt > latest.visitedAt ? v : latest))
+        : null;
 
     const pointsEarned = await this.prisma.loyaltyPointsTransaction.aggregate({
       where: { customerId, tenantId, type: LoyaltyTransactionType.EARNED },
@@ -1200,13 +1277,17 @@ export class CustomersService {
   // Visit History
   // ============================================
 
-  async recordVisit(customerId: string, data: {
-    restaurantId?: string;
-    branchId?: string;
-    orderId?: string;
-    totalSpent?: number;
-    itemsCount?: number;
-  }, tenantId: string) {
+  async recordVisit(
+    customerId: string,
+    data: {
+      restaurantId?: string;
+      branchId?: string;
+      orderId?: string;
+      totalSpent?: number;
+      itemsCount?: number;
+    },
+    tenantId: string,
+  ) {
     await this.findById(customerId, tenantId);
 
     const visit = await this.prisma.visitHistory.create({
@@ -1240,13 +1321,25 @@ export class CustomersService {
     const where = { customerId, tenantId };
 
     const [data, total] = await Promise.all([
-      this.prisma.visitHistory.findMany({ where, skip, take: limit, orderBy: { visitedAt: 'desc' } }),
+      this.prisma.visitHistory.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { visitedAt: 'desc' },
+      }),
       this.prisma.visitHistory.count({ where }),
     ]);
 
     return {
       data,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, hasPrevious: page > 1 },
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrevious: page > 1,
+      },
     };
   }
 
@@ -1306,9 +1399,11 @@ export class CustomersService {
     });
 
     if (format === 'csv') {
-      const header = 'id,firstName,lastName,email,phone,status,tier,points,totalSpend,totalVisits,lastVisitAt,createdAt';
-      const rows = (customers as Array<Record<string, unknown>>).map(c => {
-        const membership = (c.memberships as Array<Record<string, unknown>> | undefined)?.[0] ?? null;
+      const header =
+        'id,firstName,lastName,email,phone,status,tier,points,totalSpend,totalVisits,lastVisitAt,createdAt';
+      const rows = (customers as Array<Record<string, unknown>>).map((c) => {
+        const membership =
+          (c.memberships as Array<Record<string, unknown>> | undefined)?.[0] ?? null;
         const analytics = c.analytics as Record<string, unknown> | null;
         return `"${c.id}","${c.firstName}","${c.lastName}","${c.email ?? ''}","${c.phone ?? ''}","${c.status}","${membership?.tier ?? ''}",${membership?.points ?? 0},${analytics?.totalSpend ?? 0},${analytics?.totalVisits ?? 0},"${analytics?.lastVisitAt ? new Date(analytics.lastVisitAt as string).toISOString() : ''}","${new Date(c.createdAt as string).toISOString()}"`;
       });
@@ -1356,7 +1451,7 @@ export class CustomersService {
       include: { tiers: true },
     });
 
-    return program?.tiers.find(t => t.tier === tier) ?? null;
+    return program?.tiers.find((t) => t.tier === tier) ?? null;
   }
 
   private async calculateExpiry(tenantId: string): Promise<Date | undefined> {
@@ -1380,7 +1475,10 @@ export class CustomersService {
 
     let newTier: MembershipTier | null = null;
     for (const tier of tiers) {
-      if (membership.points >= tier.minPoints && membership.points <= (tier.maxPoints ?? Infinity)) {
+      if (
+        membership.points >= tier.minPoints &&
+        membership.points <= (tier.maxPoints ?? Infinity)
+      ) {
         newTier = tier.tier;
       }
     }
@@ -1393,10 +1491,21 @@ export class CustomersService {
       });
 
       await this.prisma.membershipHistory.create({
-        data: { customerId, tenantId, fromTier: oldTier, toTier: newTier, reason: 'Automatic upgrade', pointsAtTime: membership.points },
+        data: {
+          customerId,
+          tenantId,
+          fromTier: oldTier,
+          toTier: newTier,
+          reason: 'Automatic upgrade',
+          pointsAtTime: membership.points,
+        },
       });
 
-      this.gateway.broadcastMembershipUpdate(tenantId, 'membership.changed', { customerId, fromTier: oldTier, toTier: newTier });
+      this.gateway.broadcastMembershipUpdate(tenantId, 'membership.changed', {
+        customerId,
+        fromTier: oldTier,
+        toTier: newTier,
+      });
     }
   }
 }

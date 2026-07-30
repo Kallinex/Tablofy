@@ -1,13 +1,17 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { QueueService } from '../queues/queue.service';
 import { InventoryGateway } from './inventory.gateway';
-import {
-  Prisma, StockMovementType, AdjustmentType, WasteType,
-} from '@prisma/client';
+import { Prisma, StockMovementType, AdjustmentType, WasteType } from '@prisma/client';
 import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
 import { UpdateInventoryItemDto } from './dto/update-inventory-item.dto';
 import { QueryInventoryDto } from './dto/query-inventory.dto';
@@ -70,7 +74,12 @@ export class InventoryService {
     return category;
   }
 
-  async updateCategory(id: string, dto: UpdateInventoryCategoryDto, tenantId: string, userId: string) {
+  async updateCategory(
+    id: string,
+    dto: UpdateInventoryCategoryDto,
+    tenantId: string,
+    userId: string,
+  ) {
     const category = await this.prisma.inventoryCategory.findFirst({
       where: { id, tenantId, deletedAt: null },
     });
@@ -288,7 +297,12 @@ export class InventoryService {
     return location;
   }
 
-  async updateLocation(id: string, dto: UpdateInventoryLocationDto, tenantId: string, userId: string) {
+  async updateLocation(
+    id: string,
+    dto: UpdateInventoryLocationDto,
+    tenantId: string,
+    userId: string,
+  ) {
     const location = await this.prisma.inventoryLocation.findFirst({
       where: { id, tenantId, deletedAt: null },
     });
@@ -402,7 +416,7 @@ export class InventoryService {
         isPurchasable: dto.isPurchasable ?? true,
         isManufactured: dto.isManufactured ?? false,
         image: dto.image,
-        metadata: dto.metadata as Prisma.InputJsonValue ?? Prisma.DbNull,
+        metadata: (dto.metadata as Prisma.InputJsonValue) ?? Prisma.DbNull,
       },
     });
 
@@ -462,7 +476,7 @@ export class InventoryService {
         isPurchasable: dto.isPurchasable,
         isManufactured: dto.isManufactured,
         image: dto.image,
-        metadata: dto.metadata !== undefined ? dto.metadata as Prisma.InputJsonValue : undefined,
+        metadata: dto.metadata !== undefined ? (dto.metadata as Prisma.InputJsonValue) : undefined,
         version: { increment: 1 },
       },
     });
@@ -535,9 +549,11 @@ export class InventoryService {
 
     const orderBy: Prisma.InventoryItemOrderByWithRelationInput = {};
     if (query.sortBy === 'name') orderBy.name = query.sortOrder ?? 'asc';
-    else if (query.sortBy === 'currentQuantity') orderBy.currentQuantity = query.sortOrder ?? 'desc';
+    else if (query.sortBy === 'currentQuantity')
+      orderBy.currentQuantity = query.sortOrder ?? 'desc';
     else if (query.sortBy === 'unitCost') orderBy.unitCost = query.sortOrder ?? 'desc';
-    else if (query.sortBy === 'availableQuantity') orderBy.availableQuantity = query.sortOrder ?? 'desc';
+    else if (query.sortBy === 'availableQuantity')
+      orderBy.availableQuantity = query.sortOrder ?? 'desc';
     else if (query.sortBy === 'createdAt') orderBy.createdAt = query.sortOrder ?? 'desc';
     else orderBy.createdAt = 'desc';
 
@@ -633,7 +649,7 @@ export class InventoryService {
     if (!item) throw new NotFoundException('Inventory item not found');
 
     const unitCost = dto.unitCost ?? Number(item.unitCost ?? 0);
-    const totalCost = dto.totalCost ?? (dto.quantity * unitCost);
+    const totalCost = dto.totalCost ?? dto.quantity * unitCost;
 
     const adjustment = await this.prisma.$transaction(async (tx) => {
       const adj = await tx.stockAdjustment.create({
@@ -716,11 +732,14 @@ export class InventoryService {
     if (adjustment.status !== 'PENDING') throw new BadRequestException('Adjustment is not PENDING');
 
     const item = adjustment.inventoryItem;
-    const qtyChange = adjustment.type === AdjustmentType.INCREASE ? Number(adjustment.quantity) : -Number(adjustment.quantity);
+    const qtyChange =
+      adjustment.type === AdjustmentType.INCREASE
+        ? Number(adjustment.quantity)
+        : -Number(adjustment.quantity);
     const newCurrent = Number(item.currentQuantity) + qtyChange;
     const newAvailable = newCurrent - Number(item.reservedQuantity);
 
-    const [updated] = await this.prisma.$transaction([
+    await this.prisma.$transaction([
       this.prisma.inventoryItem.update({
         where: { id: adjustment.inventoryItemId },
         data: {
@@ -801,7 +820,14 @@ export class InventoryService {
 
     return {
       data,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, hasPrevious: page > 1 },
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrevious: page > 1,
+      },
     };
   }
 
@@ -817,11 +843,13 @@ export class InventoryService {
 
     const currentQty = Number(item.currentQuantity);
     if (currentQty < dto.quantity) {
-      throw new BadRequestException(`Insufficient stock. Available: ${currentQty}, requested waste: ${dto.quantity}`);
+      throw new BadRequestException(
+        `Insufficient stock. Available: ${currentQty}, requested waste: ${dto.quantity}`,
+      );
     }
 
     const unitCost = dto.unitCost ?? Number(item.unitCost ?? 0);
-    const totalCost = dto.totalCost ?? (dto.quantity * unitCost);
+    const totalCost = dto.totalCost ?? dto.quantity * unitCost;
 
     const waste = await this.prisma.$transaction(async (tx) => {
       const entry = await tx.wasteEntry.create({
@@ -921,7 +949,14 @@ export class InventoryService {
 
     return {
       data,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, hasPrevious: page > 1 },
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrevious: page > 1,
+      },
     };
   }
 
@@ -1005,7 +1040,14 @@ export class InventoryService {
 
     return {
       data,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, hasPrevious: page > 1 },
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrevious: page > 1,
+      },
     };
   }
 
@@ -1117,7 +1159,7 @@ export class InventoryService {
       orderBy: { currentQuantity: 'asc' },
     });
 
-    return items.filter(item => Number(item.currentQuantity) <= Number(item.minStock!));
+    return items.filter((item) => Number(item.currentQuantity) <= Number(item.minStock!));
   }
 
   async getCriticalStockItems(tenantId: string) {
@@ -1132,7 +1174,7 @@ export class InventoryService {
       orderBy: { currentQuantity: 'asc' },
     });
 
-    return items.filter(item => Number(item.currentQuantity) <= Number(item.reorderLevel!));
+    return items.filter((item) => Number(item.currentQuantity) <= Number(item.reorderLevel!));
   }
 
   async getOutOfStockItems(tenantId: string) {

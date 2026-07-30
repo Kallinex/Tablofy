@@ -7,7 +7,10 @@ export class WarehousesProcessor {
   private readonly logger = new Logger(WarehousesProcessor.name);
 
   constructor(private readonly queueService: QueueService) {
-    this.queueService.registerWorker('warehouse-analytics', this.handleWarehouseAnalytics.bind(this));
+    this.queueService.registerWorker(
+      'warehouse-analytics',
+      this.handleWarehouseAnalytics.bind(this),
+    );
   }
 
   private async handleWarehouseAnalytics(job: Job<QueueJobData>) {

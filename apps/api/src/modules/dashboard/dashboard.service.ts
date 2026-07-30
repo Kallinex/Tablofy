@@ -3,7 +3,6 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
-import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class DashboardService {
@@ -148,13 +147,16 @@ export class DashboardService {
       costScore: Number(m.costScore ?? 0),
     }));
 
-    const bottomPerformers = [...metrics].reverse().slice(0, 5).map((m) => ({
-      supplierId: m.supplierId,
-      supplierName: m.supplier?.name ?? 'Unknown',
-      overallScore: Number(m.overallScore),
-      qualityScore: Number(m.qualityScore ?? 0),
-      costScore: Number(m.costScore ?? 0),
-    }));
+    const bottomPerformers = [...metrics]
+      .reverse()
+      .slice(0, 5)
+      .map((m) => ({
+        supplierId: m.supplierId,
+        supplierName: m.supplier?.name ?? 'Unknown',
+        overallScore: Number(m.overallScore),
+        qualityScore: Number(m.qualityScore ?? 0),
+        costScore: Number(m.costScore ?? 0),
+      }));
 
     const result = { topPerformers, bottomPerformers };
     await this.cacheService.set(tenantId, cacheKey, result, 300);
@@ -173,7 +175,14 @@ export class DashboardService {
         isActive: true,
         reorderLevel: { not: null },
       },
-      select: { id: true, name: true, sku: true, currentQuantity: true, reorderLevel: true, unit: true },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        currentQuantity: true,
+        reorderLevel: true,
+        unit: true,
+      },
       orderBy: { currentQuantity: 'asc' },
     });
 

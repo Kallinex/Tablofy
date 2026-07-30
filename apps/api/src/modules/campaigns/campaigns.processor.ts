@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { QueueService, QueueJobData } from '../queues/queue.service';
+import { QueueService } from '../queues/queue.service';
 
 @Injectable()
 export class CampaignsProcessor {

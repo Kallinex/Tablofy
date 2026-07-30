@@ -211,7 +211,10 @@ model Tenant {
   invitations  Invitation[]
   auditLogs    AuditLog[]
   restaurants  Restaurant[]
-  customers    Customer[]
+  customers            Customer[]
+  scheduledReports     ScheduledReport[]
+  reportExports        ReportExport[]
+  analyticsDashboards  AnalyticsDashboard[]
 
   @@index([status])
   @@index([deletedAt])
@@ -3438,7 +3441,68 @@ model InventoryValuation {
 
   @@index([inventoryItemId])
   @@index([tenantId])
-  @@index([valuationDate])
-  @@index([method])
-  @@map("inventory_valuations")
+   @@index([valuationDate])
+   @@index([method])
+   @@map("inventory_valuations")
+}
+
+model ScheduledReport {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String
+  type        String
+  format      String
+  schedule    String
+  recipients  Json      @default("[]")
+  config      Json      @default("{}")
+  isActive    Boolean   @default(true)
+  lastRunAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, isActive])
+  @@map("scheduled_reports")
+}
+
+model ReportExport {
+  id            String    @id @default(uuid())
+  tenantId      String
+  type          String
+  reportType    String
+  periodStart   DateTime?
+  periodEnd     DateTime?
+  config        Json      @default("{}")
+  filePath      String?
+  fileSize      Int?
+  status        String    @default("PENDING")
+  errorMessage  String?
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+  deletedAt     DateTime?
+
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status])
+  @@map("report_exports")
+}
+
+model AnalyticsDashboard {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String    @default("Default")
+  config      Json      @default("{}")
+  layout      Json      @default("{}")
+  isDefault   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("analytics_dashboards")
 }

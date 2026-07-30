@@ -1,4 +1,14 @@
-import { IsOptional, IsString, IsUUID, IsEnum, IsNumber, Min, MaxLength, IsArray, ValidateNested } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsUUID,
+  IsEnum,
+  IsNumber,
+  Min,
+  MaxLength,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { OrderType } from '@prisma/client';
 

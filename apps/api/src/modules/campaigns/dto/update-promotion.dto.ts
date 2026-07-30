@@ -1,4 +1,13 @@
-import { IsString, IsOptional, IsEnum, IsNumber, IsDateString, IsBoolean, IsArray, Min } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsNumber,
+  IsDateString,
+  IsBoolean,
+  IsArray,
+  Min,
+} from 'class-validator';
 import { PromotionType, PromotionStatus } from '@prisma/client';
 
 export class UpdatePromotionDto {

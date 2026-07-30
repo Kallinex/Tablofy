@@ -27,19 +27,28 @@ export class KdsService {
 
   // ---- Kitchen Station CRUD ----
 
-  async createStation(dto: CreateKitchenStationDto, restaurantId: string, tenantId: string, userId: string) {
+  async createStation(
+    dto: CreateKitchenStationDto,
+    restaurantId: string,
+    tenantId: string,
+    userId: string,
+  ) {
     const existingSlug = await this.prisma.kitchenStation.findUnique({
       where: { restaurantId_slug: { restaurantId, slug: dto.slug } },
     });
     if (existingSlug) {
-      throw new ConflictException(`Station with slug "${dto.slug}" already exists in this restaurant`);
+      throw new ConflictException(
+        `Station with slug "${dto.slug}" already exists in this restaurant`,
+      );
     }
 
     const existingName = await this.prisma.kitchenStation.findUnique({
       where: { restaurantId_name: { restaurantId, name: dto.name } },
     });
     if (existingName) {
-      throw new ConflictException(`Station with name "${dto.name}" already exists in this restaurant`);
+      throw new ConflictException(
+        `Station with name "${dto.name}" already exists in this restaurant`,
+      );
     }
 
     const station = await this.prisma.kitchenStation.create({
@@ -108,7 +117,10 @@ export class KdsService {
       this.prisma.kitchenStation.count({ where }),
     ]);
 
-    const result = { data: stations, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+    const result = {
+      data: stations,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
     await this.cacheService.set(tenantId, cacheKey, result, 60);
     return result;
   }
@@ -129,14 +141,16 @@ export class KdsService {
       const existingName = await this.prisma.kitchenStation.findUnique({
         where: { restaurantId_name: { restaurantId: station.restaurantId, name: dto.name } },
       });
-      if (existingName) throw new ConflictException(`Station with name "${dto.name}" already exists`);
+      if (existingName)
+        throw new ConflictException(`Station with name "${dto.name}" already exists`);
     }
 
     if (dto.slug && dto.slug !== station.slug) {
       const existingSlug = await this.prisma.kitchenStation.findUnique({
         where: { restaurantId_slug: { restaurantId: station.restaurantId, slug: dto.slug } },
       });
-      if (existingSlug) throw new ConflictException(`Station with slug "${dto.slug}" already exists`);
+      if (existingSlug)
+        throw new ConflictException(`Station with slug "${dto.slug}" already exists`);
     }
 
     const updated = await this.prisma.kitchenStation.update({
@@ -194,7 +208,9 @@ export class KdsService {
   async assignProductStation(dto: AssignProductStationDto, tenantId: string, userId: string) {
     const [product, station] = await Promise.all([
       this.prisma.product.findFirst({ where: { id: dto.productId, tenantId, deletedAt: null } }),
-      this.prisma.kitchenStation.findFirst({ where: { id: dto.stationId, tenantId, deletedAt: null } }),
+      this.prisma.kitchenStation.findFirst({
+        where: { id: dto.stationId, tenantId, deletedAt: null },
+      }),
     ]);
 
     if (!product) throw new NotFoundException(`Product ${dto.productId} not found`);
@@ -288,7 +304,9 @@ export class KdsService {
 
     const updateData: Prisma.KitchenTicketItemUpdateInput = {
       status: dto.status,
-      ...(dto.status === TicketItemStatus.PREPARING && !item.startedAt ? { startedAt: new Date() } : {}),
+      ...(dto.status === TicketItemStatus.PREPARING && !item.startedAt
+        ? { startedAt: new Date() }
+        : {}),
       ...(dto.status === TicketItemStatus.READY || dto.status === TicketItemStatus.SERVED
         ? { completedAt: new Date() }
         : {}),
@@ -345,7 +363,9 @@ export class KdsService {
       where: {
         stationId,
         tenantId,
-        status: { in: [TicketItemStatus.PENDING, TicketItemStatus.QUEUED, TicketItemStatus.PREPARING] },
+        status: {
+          in: [TicketItemStatus.PENDING, TicketItemStatus.QUEUED, TicketItemStatus.PREPARING],
+        },
       },
       include: {
         ticket: { select: { id: true, ticketNumber: true, status: true, createdAt: true } },
@@ -458,7 +478,12 @@ export class KdsService {
               items: {
                 include: {
                   orderItem: {
-                    select: { productName: true, variantName: true, quantity: true, preparationNotes: true },
+                    select: {
+                      productName: true,
+                      variantName: true,
+                      quantity: true,
+                      preparationNotes: true,
+                    },
                   },
                   station: { select: { name: true, color: true } },
                 },
@@ -504,7 +529,12 @@ export class KdsService {
               items: {
                 include: {
                   orderItem: {
-                    select: { productName: true, variantName: true, quantity: true, preparationNotes: true },
+                    select: {
+                      productName: true,
+                      variantName: true,
+                      quantity: true,
+                      preparationNotes: true,
+                    },
                   },
                   station: { select: { name: true, color: true } },
                 },

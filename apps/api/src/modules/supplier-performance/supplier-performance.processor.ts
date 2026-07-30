@@ -7,7 +7,10 @@ export class SupplierPerformanceProcessor {
   private readonly logger = new Logger(SupplierPerformanceProcessor.name);
 
   constructor(private readonly queueService: QueueService) {
-    this.queueService.registerWorker('supplier-performance-calculation', this.handleCalculation.bind(this));
+    this.queueService.registerWorker(
+      'supplier-performance-calculation',
+      this.handleCalculation.bind(this),
+    );
   }
 
   private async handleCalculation(job: Job<QueueJobData>) {

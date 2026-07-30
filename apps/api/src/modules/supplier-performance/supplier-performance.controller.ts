@@ -1,6 +1,4 @@
-import {
-  Controller, Get, Post, Param, Query, Body,
-} from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Body } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { SupplierPerformanceService } from './supplier-performance.service';
@@ -33,7 +31,10 @@ export class SupplierPerformanceController {
   }
 
   @Get('supplier/:supplierId')
-  async findBySupplier(@Param('supplierId') supplierId: string, @CurrentUser() user: CurrentUserData) {
+  async findBySupplier(
+    @Param('supplierId') supplierId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
     return this.supplierPerformanceService.findBySupplier(supplierId, user.tenantId!);
   }
 }

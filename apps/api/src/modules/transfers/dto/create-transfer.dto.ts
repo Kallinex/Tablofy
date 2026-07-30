@@ -1,4 +1,12 @@
-import { IsString, IsOptional, IsArray, IsNumber, ValidateNested, Min, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  IsNumber,
+  ValidateNested,
+  Min,
+  MaxLength,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class TransferItemDto {

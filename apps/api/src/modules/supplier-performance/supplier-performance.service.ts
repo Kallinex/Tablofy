@@ -34,7 +34,7 @@ export class SupplierPerformanceService {
       costScore: dto.costScore,
       overallScore: this.calculateOverallScore(dto),
       rank: dto.rank,
-      metadata: dto.metadata as Prisma.InputJsonValue ?? Prisma.DbNull,
+      metadata: (dto.metadata as Prisma.InputJsonValue) ?? Prisma.DbNull,
     };
 
     if (dto.supplierId) {
@@ -156,14 +156,22 @@ export class SupplierPerformanceService {
 
     const quality = dto.qualityScore ?? 0;
     const cost = dto.costScore ?? 0;
-    const delivery = (dto.deliveryAccuracy ?? (dto.onTimeDeliveries != null && dto.totalOrders != null
-      ? (dto.onTimeDeliveries / dto.totalOrders) * 100
-      : 0));
+    const delivery =
+      dto.deliveryAccuracy ??
+      (dto.onTimeDeliveries != null && dto.totalOrders != null
+        ? (dto.onTimeDeliveries / dto.totalOrders) * 100
+        : 0);
     const fillRate = dto.fillRate ?? 0;
 
-    return Math.round(
-      (quality * qualityWeight + cost * costWeight + delivery * deliveryWeight + fillRate * fillRateWeight) * 100,
-    ) / 100;
+    return (
+      Math.round(
+        (quality * qualityWeight +
+          cost * costWeight +
+          delivery * deliveryWeight +
+          fillRate * fillRateWeight) *
+          100,
+      ) / 100
+    );
   }
 
   private async invalidateListCache(tenantId: string) {

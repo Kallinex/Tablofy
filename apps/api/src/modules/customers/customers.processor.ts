@@ -17,7 +17,9 @@ export class CustomersProcessor {
   private async handleRewardProcessing(job: Job<QueueJobData>) {
     this.logger.log(`Processing reward ${job.id}`);
     const { tenantId, userId, payload } = job.data;
-    this.logger.log(`Reward processing for tenant ${tenantId} user ${userId}: ${JSON.stringify(payload)}`);
+    this.logger.log(
+      `Reward processing for tenant ${tenantId} user ${userId}: ${JSON.stringify(payload)}`,
+    );
     return { processed: true };
   }
 

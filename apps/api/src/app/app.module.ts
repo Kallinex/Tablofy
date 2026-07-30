@@ -57,6 +57,18 @@ import { CycleCountModule } from '../modules/cycle-counts/cycle-count.module';
 import { SupplierPerformanceModule } from '../modules/supplier-performance/supplier-performance.module';
 import { CostingModule } from '../modules/costing/costing.module';
 import { DashboardModule } from '../modules/dashboard/dashboard.module';
+import { ExecutiveDashboardModule } from '../modules/executive-dashboard/executive-dashboard.module';
+import { SalesAnalyticsModule } from '../modules/sales-analytics/sales-analytics.module';
+import { KitchenAnalyticsModule } from '../modules/kitchen-analytics/kitchen-analytics.module';
+import { InventoryAnalyticsModule } from '../modules/inventory-analytics/inventory-analytics.module';
+import { CustomerAnalyticsModule } from '../modules/customer-analytics/customer-analytics.module';
+import { CrmAnalyticsModule } from '../modules/crm-analytics/crm-analytics.module';
+import { SupplierAnalyticsModule } from '../modules/supplier-analytics/supplier-analytics.module';
+import { FinancialAnalyticsModule } from '../modules/financial-analytics/financial-analytics.module';
+import { ForecastingDashboardModule } from '../modules/forecasting-dashboard/forecasting-dashboard.module';
+import { ExportEngineModule } from '../modules/export-engine/export-engine.module';
+import { ScheduledReportsModule } from '../modules/scheduled-reports/scheduled-reports.module';
+import { LiveAnalyticsModule } from '../modules/live-analytics/live-analytics.module';
 import { DomainEventModule } from '../common/event-emitter/domain-event.module';
 import { CommonModule } from '../common/common.module';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -151,6 +163,18 @@ import {
     SupplierPerformanceModule,
     CostingModule,
     DashboardModule,
+    ExecutiveDashboardModule,
+    SalesAnalyticsModule,
+    KitchenAnalyticsModule,
+    InventoryAnalyticsModule,
+    CustomerAnalyticsModule,
+    CrmAnalyticsModule,
+    SupplierAnalyticsModule,
+    FinancialAnalyticsModule,
+    ForecastingDashboardModule,
+    ExportEngineModule,
+    ScheduledReportsModule,
+    LiveAnalyticsModule,
   ],
   providers: [
     {

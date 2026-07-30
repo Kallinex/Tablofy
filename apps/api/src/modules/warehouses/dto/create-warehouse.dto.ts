@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsBoolean, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsEnum, MaxLength } from 'class-validator';
 import { WarehouseType, WarehouseStatus } from '@prisma/client';
 
 export class CreateWarehouseDto {

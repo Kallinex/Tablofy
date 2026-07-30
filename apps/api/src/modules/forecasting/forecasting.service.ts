@@ -5,10 +5,13 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { QueueService } from '../queues/queue.service';
 import { ForecastingGateway } from './forecasting.gateway';
-import { Prisma, StockMovementType, ForecastMethod, ConsumptionPeriod } from '@prisma/client';
-import { GenerateForecastDto, ForecastMethodDto, ConsumptionPeriodDto } from './dto/generate-forecast.dto';
+import { Prisma, ForecastMethod, ConsumptionPeriod } from '@prisma/client';
+import { GenerateForecastDto } from './dto/generate-forecast.dto';
 import { QueryForecastDto } from './dto/query-forecast.dto';
-import { ApproveReorderSuggestionDto, CompleteReorderSuggestionDto } from './dto/reorder-suggestion.dto';
+import {
+  ApproveReorderSuggestionDto,
+  CompleteReorderSuggestionDto,
+} from './dto/reorder-suggestion.dto';
 
 @Injectable()
 export class ForecastingService {
@@ -45,7 +48,10 @@ export class ForecastingService {
       orderBy: { date: 'asc' },
     });
 
-    const aggregated = this.aggregateConsumption(consumptionData, period);
+    const aggregated = this.aggregateConsumption(
+      consumptionData.map((r) => ({ date: r.date, quantity: Number(r.quantity) })),
+      period,
+    );
     const forecast = this.calculateMovingAverage(aggregated, period, method);
 
     const forecastEntry = await this.prisma.inventoryForecast.create({
@@ -54,7 +60,8 @@ export class ForecastingService {
         tenantId,
         forecastDate: forecast.forecastDate,
         quantity: new Prisma.Decimal(forecast.quantity),
-        confidence: forecast.confidence !== null ? new Prisma.Decimal(forecast.confidence) : undefined,
+        confidence:
+          forecast.confidence !== null ? new Prisma.Decimal(forecast.confidence) : undefined,
         method,
         period,
         factors: {
@@ -233,11 +240,10 @@ export class ForecastingService {
         }
 
         const safetyStock = Math.ceil(avgConsumption * leadTimeDays * 0.5);
-        const eoq = avgConsumption > 0
-          ? Math.sqrt(2 * avgConsumption * 365 * 10 / 5)
-          : 0;
+        const eoq = avgConsumption > 0 ? Math.sqrt((2 * avgConsumption * 365 * 10) / 5) : 0;
 
-        const priority = currentStock <= 0 ? 'CRITICAL' : currentStock <= (reorderLevel * 0.5) ? 'HIGH' : 'MEDIUM';
+        const priority =
+          currentStock <= 0 ? 'CRITICAL' : currentStock <= reorderLevel * 0.5 ? 'HIGH' : 'MEDIUM';
 
         suggestions.push({
           inventoryItemId: item.id,
@@ -271,7 +277,9 @@ export class ForecastingService {
     });
 
     await this.invalidateReorderCache(tenantId);
-    this.gateway.broadcastReorderUpdate(tenantId, 'reorder.suggestions_generated', { count: suggestions.length });
+    this.gateway.broadcastReorderUpdate(tenantId, 'reorder.suggestions_generated', {
+      count: suggestions.length,
+    });
 
     return { count: suggestions.length };
   }
@@ -290,10 +298,7 @@ export class ForecastingService {
         where,
         skip,
         take: limit,
-        orderBy: [
-          { status: 'asc' },
-          { suggestedDate: 'desc' },
-        ],
+        orderBy: [{ status: 'asc' }, { suggestedDate: 'desc' }],
         include: {
           inventoryItem: { select: { id: true, name: true, sku: true, unit: true } },
         },
@@ -335,7 +340,12 @@ export class ForecastingService {
     return suggestion;
   }
 
-  async approveSuggestion(id: string, userId: string, tenantId: string, dto?: ApproveReorderSuggestionDto) {
+  async approveSuggestion(
+    id: string,
+    userId: string,
+    tenantId: string,
+    dto?: ApproveReorderSuggestionDto,
+  ) {
     const suggestion = await this.prisma.reorderSuggestion.findFirst({
       where: { id, tenantId },
     });
@@ -367,12 +377,18 @@ export class ForecastingService {
     return updated;
   }
 
-  async completeSuggestion(id: string, userId: string, tenantId: string, dto?: CompleteReorderSuggestionDto) {
+  async completeSuggestion(
+    id: string,
+    userId: string,
+    tenantId: string,
+    dto?: CompleteReorderSuggestionDto,
+  ) {
     const suggestion = await this.prisma.reorderSuggestion.findFirst({
       where: { id, tenantId },
     });
     if (!suggestion) throw new NotFoundException('Reorder suggestion not found');
-    if (suggestion.status !== 'APPROVED') throw new BadRequestException('Suggestion must be APPROVED first');
+    if (suggestion.status !== 'APPROVED')
+      throw new BadRequestException('Suggestion must be APPROVED first');
 
     const updated = await this.prisma.reorderSuggestion.update({
       where: { id },
@@ -416,7 +432,7 @@ export class ForecastingService {
   }
 
   private aggregateConsumption(
-    records: Array<{ date: Date; quantity: any }>,
+    records: Array<{ date: Date; quantity: number }>,
     period: ConsumptionPeriod,
   ): Array<{ period: string; total: number }> {
     const grouped = new Map<string, number>();
@@ -461,7 +477,8 @@ export class ForecastingService {
         const recent = values.slice(-windowSize);
         forecastQuantity = recent.reduce((sum, v) => sum + v, 0) / windowSize;
 
-        const variance = recent.reduce((sum, v) => sum + Math.pow(v - forecastQuantity, 2), 0) / windowSize;
+        const variance =
+          recent.reduce((sum, v) => sum + Math.pow(v - forecastQuantity, 2), 0) / windowSize;
         const stdDev = Math.sqrt(variance);
         confidence = forecastQuantity > 0 ? Math.max(0, 1 - stdDev / forecastQuantity) : 0;
       } else if (n > 0) {

@@ -1,4 +1,12 @@
-import { IsArray, IsNumber, IsOptional, IsString, Min, ValidateNested, MaxLength } from 'class-validator';
+import {
+  IsArray,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+  MaxLength,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ReceiveItemDto {

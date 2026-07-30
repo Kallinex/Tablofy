@@ -1,4 +1,12 @@
-import { IsString, IsOptional, IsEnum, IsNumber, IsDateString, MaxLength, Min } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsNumber,
+  IsDateString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { RewardType } from '@prisma/client';
 
 export class CreateRewardDto {

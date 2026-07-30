@@ -5,7 +5,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { ValuationMethod, Prisma } from '@prisma/client';
 import { CreateValuationDto } from './dto/create-valuation.dto';
-import { QueryValuationDto, BatchValuationDto } from './dto/query-valuation.dto';
+import { BatchValuationDto } from './dto/query-valuation.dto';
 
 @Injectable()
 export class CostingService {
@@ -26,9 +26,10 @@ export class CostingService {
 
     const method = dto.method ?? ValuationMethod.WEIGHTED_AVERAGE;
     const quantity = Number(item.currentQuantity);
-    const unitCost = method === ValuationMethod.FIFO
-      ? await this.calculateFifoCost(item.id, tenantId)
-      : await this.calculateWeightedAverageCost(item.id, tenantId);
+    const unitCost =
+      method === ValuationMethod.FIFO
+        ? await this.calculateFifoCost(item.id, tenantId)
+        : await this.calculateWeightedAverageCost(item.id, tenantId);
     const totalValue = quantity * unitCost;
 
     const valuation = await this.prisma.inventoryValuation.create({
@@ -40,7 +41,7 @@ export class CostingService {
         unitCost,
         totalValue,
         quantity,
-        metadata: dto.metadata as Prisma.InputJsonValue ?? Prisma.DbNull,
+        metadata: (dto.metadata as Prisma.InputJsonValue) ?? Prisma.DbNull,
       },
     });
 
@@ -146,7 +147,10 @@ export class CostingService {
     return Number(item?.unitCost ?? 0);
   }
 
-  private async calculateWeightedAverageCost(inventoryItemId: string, tenantId: string): Promise<number> {
+  private async calculateWeightedAverageCost(
+    inventoryItemId: string,
+    tenantId: string,
+  ): Promise<number> {
     const item = await this.prisma.inventoryItem.findFirst({
       where: { id: inventoryItemId, tenantId },
     });

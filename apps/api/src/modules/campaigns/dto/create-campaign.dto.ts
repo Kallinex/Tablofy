@@ -1,4 +1,13 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsNumber, IsObject, IsArray, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsDateString,
+  IsNumber,
+  IsObject,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { CampaignType, CampaignStatus } from '@prisma/client';
 

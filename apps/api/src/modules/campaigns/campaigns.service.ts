@@ -1,10 +1,16 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { QueueService } from '../queues/queue.service';
-import { Prisma, PromotionStatus, CampaignType } from '@prisma/client';
+import { Prisma, CampaignType } from '@prisma/client';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { CampaignQueryDto } from './dto/campaign-query.dto';
@@ -46,10 +52,10 @@ export class CampaignsService {
         data: {
           campaignId: campaign.id,
           tenantId,
-            channel: dto.template.channel,
-            subject: dto.template.subject,
-            body: dto.template.body!,
-            variables: dto.template.variables as Prisma.InputJsonValue,
+          channel: dto.template.channel,
+          subject: dto.template.subject,
+          body: dto.template.body!,
+          variables: dto.template.variables as Prisma.InputJsonValue,
         },
       });
     }
@@ -84,7 +90,7 @@ export class CampaignsService {
       throw new BadRequestException('Cannot update completed or cancelled campaign');
     }
 
-    const updated = await this.prisma.campaign.update({
+    await this.prisma.campaign.update({
       where: { id },
       data: {
         name: dto.name,
@@ -106,7 +112,8 @@ export class CampaignsService {
       if (dto.template.channel) tplUpdate.channel = dto.template.channel;
       if (dto.template.subject) tplUpdate.subject = dto.template.subject;
       if (dto.template.body) tplUpdate.body = dto.template.body;
-      if (dto.template.variables) tplUpdate.variables = dto.template.variables as Prisma.InputJsonValue;
+      if (dto.template.variables)
+        tplUpdate.variables = dto.template.variables as Prisma.InputJsonValue;
       if (existing) {
         await this.prisma.campaignTemplate.update({
           where: { id: existing.id },
@@ -296,7 +303,7 @@ export class CampaignsService {
           data: {
             campaignId: clone.id,
             tenantId,
-            channel: tpl.channel as any,
+            channel: tpl.channel,
             subject: tpl.subject,
             body: tpl.body,
             variables: tpl.variables as Prisma.InputJsonValue,
@@ -317,7 +324,13 @@ export class CampaignsService {
     return this.getCampaignWithRelations(clone.id, tenantId);
   }
 
-  async approveCampaign(id: string, tenantId: string, userId: string, approved: boolean, reason?: string) {
+  async approveCampaign(
+    id: string,
+    tenantId: string,
+    userId: string,
+    approved: boolean,
+    reason?: string,
+  ) {
     const campaign = await this.prisma.campaign.findFirst({
       where: { id, tenantId, deletedAt: null },
     });
@@ -373,17 +386,19 @@ export class CampaignsService {
     });
     if (!campaign) throw new NotFoundException('Campaign not found');
 
-    return campaign.analytics || {
-      totalRecipients: 0,
-      sentCount: 0,
-      deliveredCount: 0,
-      openedCount: 0,
-      clickedCount: 0,
-      bouncedCount: 0,
-      failedCount: 0,
-      conversionCount: 0,
-      revenueGenerated: null,
-    };
+    return (
+      campaign.analytics || {
+        totalRecipients: 0,
+        sentCount: 0,
+        deliveredCount: 0,
+        openedCount: 0,
+        clickedCount: 0,
+        bouncedCount: 0,
+        failedCount: 0,
+        conversionCount: 0,
+        revenueGenerated: null,
+      }
+    );
   }
 
   async getCampaignStats(tenantId: string) {
@@ -434,7 +449,13 @@ export class CampaignsService {
       });
       for (const c of customers) {
         if (c.email) {
-          recipients.push({ campaignId, tenantId, recipient: c.email, channel: CampaignType.EMAIL, customerId: c.id });
+          recipients.push({
+            campaignId,
+            tenantId,
+            recipient: c.email,
+            channel: CampaignType.EMAIL,
+            customerId: c.id,
+          });
         }
       }
     }
@@ -446,7 +467,13 @@ export class CampaignsService {
       });
       for (const a of assignments) {
         if (a.customer.email) {
-          recipients.push({ campaignId, tenantId, recipient: a.customer.email, channel: CampaignType.EMAIL, customerId: a.customer.id });
+          recipients.push({
+            campaignId,
+            tenantId,
+            recipient: a.customer.email,
+            channel: CampaignType.EMAIL,
+            customerId: a.customer.id,
+          });
         }
       }
     }
@@ -543,7 +570,7 @@ export class CampaignsService {
     });
     if (!promotion) throw new NotFoundException('Promotion not found');
 
-    const updated = await this.prisma.promotion.update({
+    await this.prisma.promotion.update({
       where: { id },
       data: {
         name: dto.name,
@@ -686,7 +713,12 @@ export class CampaignsService {
     };
   }
 
-  async validatePromotion(code: string, tenantId?: string, customerId?: string, orderAmount?: number) {
+  async validatePromotion(
+    code: string,
+    tenantId?: string,
+    customerId?: string,
+    orderAmount?: number,
+  ) {
     const where: Prisma.PromotionWhereInput = { code, deletedAt: null };
     if (tenantId) where.tenantId = tenantId;
     const promotion = await this.prisma.promotion.findFirst({ where });
@@ -730,8 +762,19 @@ export class CampaignsService {
     };
   }
 
-  async usePromotion(code: string, customerId: string, orderAmount: number, tenantId: string, orderId?: string) {
-    const { valid, promotion, errors } = await this.validatePromotion(code, tenantId, customerId, orderAmount);
+  async usePromotion(
+    code: string,
+    customerId: string,
+    orderAmount: number,
+    tenantId: string,
+    orderId?: string,
+  ) {
+    const { valid, promotion, errors } = await this.validatePromotion(
+      code,
+      tenantId,
+      customerId,
+      orderAmount,
+    );
     if (!valid) throw new BadRequestException(errors.join('; '));
 
     let discountAmount = 0;
@@ -771,7 +814,12 @@ export class CampaignsService {
       newValues: { code, discountAmount, orderAmount },
     });
 
-    this.eventEmitter.emit('promotion.used', { tenantId, promotionId: promotion.id, customerId, discountAmount });
+    this.eventEmitter.emit('promotion.used', {
+      tenantId,
+      promotionId: promotion.id,
+      customerId,
+      discountAmount,
+    });
 
     return {
       promotionId: promotion.id,

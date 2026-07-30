@@ -8,8 +8,6 @@ import {
   Min,
   MaxLength,
   ValidateNested,
-  IsObject,
-  IsBoolean,
   ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';

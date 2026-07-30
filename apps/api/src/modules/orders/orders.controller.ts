@@ -326,10 +326,17 @@ export class OrdersController {
     @CurrentUser() user: CurrentUserData,
     @Req() req: Request,
   ) {
-    return this.ordersService.updateItemKitchenStatus(id, itemId, dto.kitchenStatus, user.tenantId!, user.id, {
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-    });
+    return this.ordersService.updateItemKitchenStatus(
+      id,
+      itemId,
+      dto.kitchenStatus,
+      user.tenantId!,
+      user.id,
+      {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      },
+    );
   }
 
   @Get(':id/kitchen-tickets')
@@ -355,10 +362,15 @@ export class OrdersController {
     @CurrentUser() user: CurrentUserData,
     @Req() req: Request,
   ) {
-    return this.ordersService.updateKitchenTicketStatus(ticketId, dto.kitchenStatus, user.tenantId!, {
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-    });
+    return this.ordersService.updateKitchenTicketStatus(
+      ticketId,
+      dto.kitchenStatus,
+      user.tenantId!,
+      {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      },
+    );
   }
 
   @Delete(':id')
