@@ -1,13 +1,17 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
   private client!: Redis;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     this.client = new Redis({
@@ -54,12 +58,33 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async blacklistToken(jti: string, ttlSeconds: number): Promise<void> {
     const key = `blacklist:${jti}`;
     await this.client.set(key, '1', 'EX', ttlSeconds);
+    try {
+      const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+      await this.prisma.revokedToken.upsert({
+        where: { jti },
+        update: { expiresAt },
+        create: { jti, expiresAt },
+      });
+    } catch {
+      this.logger.warn(`Failed to persist revoked token ${jti} to database`);
+    }
   }
 
   async isTokenBlacklisted(jti: string): Promise<boolean> {
     const key = `blacklist:${jti}`;
     const result = await this.client.exists(key);
-    return result === 1;
+    if (result === 1) return true;
+    try {
+      const revoked = await this.prisma.revokedToken.findUnique({ where: { jti } });
+      if (revoked) {
+        const ttl = Math.max(1, Math.floor((revoked.expiresAt.getTime() - Date.now()) / 1000));
+        await this.client.set(key, '1', 'EX', ttl);
+        return true;
+      }
+    } catch {
+      this.logger.warn(`Failed to check revoked token ${jti} in database`);
+    }
+    return false;
   }
 
   // ============================================

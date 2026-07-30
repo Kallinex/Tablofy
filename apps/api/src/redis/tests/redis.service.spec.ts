@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../redis.service';
 
 jest.mock('ioredis', () => {
@@ -48,6 +49,15 @@ describe('RedisService', () => {
               };
               return config[key] ?? defaultValue;
             }),
+          },
+        },
+        {
+          provide: PrismaService,
+          useValue: {
+            revokedToken: {
+              upsert: jest.fn().mockResolvedValue({}),
+              findUnique: jest.fn().mockResolvedValue(null),
+            },
           },
         },
       ],

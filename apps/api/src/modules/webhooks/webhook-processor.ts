@@ -141,6 +141,10 @@ export class WebhookProcessor implements OnModuleInit {
     const registration = await this.prisma.webhookRegistration.findUnique({
       where: { id: webhookId },
     });
-    return registration?.secretHash || '';
+    if (!registration) return '';
+    if (registration.encryptedSecret) {
+      return this.deliveryService.decryptSecret(registration.encryptedSecret);
+    }
+    return registration.secretHash || '';
   }
 }

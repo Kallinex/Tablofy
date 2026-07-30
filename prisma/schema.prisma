@@ -3528,6 +3528,7 @@ model WebhookRegistration {
   events          String[]
   secretHash      String
   secretPrefix    String
+  encryptedSecret String?
   isActive        Boolean         @default(true)
   retryCount      Int             @default(3)
   timeoutMs       Int             @default(30000)
@@ -3765,4 +3766,17 @@ model BackupRecord {
   @@index([status])
   @@index([createdAt])
   @@map("backup_records")
+}
+
+model RevokedToken {
+  id        String   @id @default(uuid())
+  jti       String   @unique
+  tenantId  String?
+  userId    String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([jti])
+  @@index([expiresAt])
+  @@map("revoked_tokens")
 }

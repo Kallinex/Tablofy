@@ -102,20 +102,17 @@ describe('AuthService', () => {
 
       expect(result.user.email).toBe(registerDto.email);
       expect(result.tokens.accessToken).toBe('mock-token');
-      expect(result.alreadyExists).toBe(false);
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'USER_REGISTERED' }),
       );
     });
 
-    it('should return alreadyExists for existing user', async () => {
+    it('should throw ConflictException for existing user', async () => {
+      const { ConflictException } = await import('@nestjs/common');
       const existingUser = buildUser();
       prisma.user.findFirst.mockResolvedValue(existingUser);
 
-      const result = await service.register(registerDto);
-
-      expect(result.alreadyExists).toBe(true);
-      expect(result.tokens.accessToken).toBe('');
+      await expect(service.register(registerDto)).rejects.toThrow(ConflictException);
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
@@ -166,6 +163,11 @@ describe('AuthService', () => {
         lockedUntil: null,
       });
       prisma.user.findFirst.mockResolvedValue(fakeUser);
+      prisma.tenant.findUnique.mockResolvedValue({
+        id: fakeUser.tenantId,
+        status: 'ACTIVE',
+        subscription: { status: 'ACTIVE' },
+      });
       jwtService.sign.mockReturnValue('mock-token');
       prisma.refreshToken.create.mockResolvedValue({ token: 'mock-refresh' } as never);
       prisma.user.update.mockResolvedValue(fakeUser);

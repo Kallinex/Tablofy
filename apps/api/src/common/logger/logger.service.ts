@@ -149,6 +149,43 @@ export class AppLoggerService implements LoggerService {
     return undefined;
   }
 
+  private readonly sensitiveKeys = new Set([
+    'password',
+    'token',
+    'authorization',
+    'secret',
+    'apiKey',
+    'api_key',
+    'api-key',
+    'twoFactorSecret',
+    'two_factor_secret',
+    'accessToken',
+    'refreshToken',
+    'jwt',
+    'bearer',
+  ]);
+
+  private sanitize(obj: unknown, depth = 0): unknown {
+    if (depth > 10 || obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+
+    if (Array.isArray(obj)) {
+      return obj.map((item) => this.sanitize(item, depth + 1));
+    }
+
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+      if (this.sensitiveKeys.has(key)) {
+        sanitized[key] = '[REDACTED]';
+      } else if (typeof value === 'object' && value !== null) {
+        sanitized[key] = this.sanitize(value, depth + 1);
+      } else {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
+  }
+
   private extractMeta(params: any[]): Record<string, unknown> {
     const meta: Record<string, unknown> = {};
     for (const p of params) {
@@ -156,6 +193,6 @@ export class AppLoggerService implements LoggerService {
         Object.assign(meta, p);
       }
     }
-    return meta;
+    return this.sanitize(meta, 0) as Record<string, unknown>;
   }
 }

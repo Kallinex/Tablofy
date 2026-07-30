@@ -3,11 +3,14 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PrivacyService } from './privacy.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { Request } from 'express';
 
 @ApiTags('privacy')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, TenantGuard)
+@Roles('OWNER', 'MANAGER')
+@UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
 @Controller('privacy')
 export class PrivacyController {
   constructor(private readonly privacyService: PrivacyService) {}

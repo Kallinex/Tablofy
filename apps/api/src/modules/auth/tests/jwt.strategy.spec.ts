@@ -57,6 +57,11 @@ describe('JwtStrategy', () => {
     redis.isTokenBlacklisted.mockResolvedValue(false);
     const fakeUser = buildUser();
     prisma.user.findUnique.mockResolvedValue(fakeUser);
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      status: 'ACTIVE',
+      subscription: { status: 'ACTIVE' },
+    });
 
     const result = await strategy.validate(validPayload);
 

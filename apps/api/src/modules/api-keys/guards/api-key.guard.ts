@@ -1,6 +1,13 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ApiKeysService } from '../api-keys.service';
+import { SCOPES_KEY } from '../decorators/scopes.decorator';
 
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
@@ -35,8 +42,31 @@ export class ApiKeyGuard implements CanActivate {
       throw new UnauthorizedException('Invalid or expired API key');
     }
 
+    const requiredScopes = this.reflector.getAllAndOverride<string[]>(SCOPES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    const effectiveScopes = requiredScopes ?? this.getDefaultScopesByMethod(context);
+
+    if (effectiveScopes.length > 0 && result.scopes) {
+      const hasScope = effectiveScopes.some((s) => result.scopes?.includes(s));
+      if (!hasScope) {
+        throw new ForbiddenException('API key scope insufficient');
+      }
+    }
+
     request.apiKeyInfo = result;
     request.tenantId = result.tenantId;
     return true;
+  }
+
+  private getDefaultScopesByMethod(context: ExecutionContext): string[] {
+    const request = context.switchToHttp().getRequest<{ method: string }>();
+    const readMethods = ['GET', 'HEAD', 'OPTIONS'];
+    if (readMethods.includes(request.method.toUpperCase())) {
+      return ['read'];
+    }
+    return ['write'];
   }
 }

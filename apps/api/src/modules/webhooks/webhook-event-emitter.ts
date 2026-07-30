@@ -44,8 +44,8 @@ export class WebhookEventEmitter {
   }
 
   @OnEvent('**')
-  async handleEvent(payload: Record<string, unknown>) {
-    const eventType = payload?.eventType as string | undefined;
+  async handleEvent(payload: Record<string, unknown>, eventName?: string) {
+    const eventType = eventName || (payload?.eventType as string | undefined);
     const tenantId = payload?.tenantId as string | undefined;
 
     if (!eventType || !tenantId || !this.subscribedEvents.has(eventType)) {

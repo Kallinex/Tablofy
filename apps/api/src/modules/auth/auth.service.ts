@@ -1,4 +1,10 @@
-import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+  ConflictException,
+  Logger,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -50,26 +56,14 @@ export class AuthService {
       tenantName?: string;
     },
     meta?: { ipAddress?: string; userAgent?: string },
-  ): Promise<{ user: AuthUser; tokens: TokenPair; alreadyExists: boolean }> {
+  ): Promise<{ user: AuthUser; tokens: TokenPair }> {
     const existingUser = await this.prisma.user.findFirst({
       where: { email: data.email.toLowerCase() },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        tenantId: true,
-        emailVerified: true,
-      },
+      select: { id: true },
     });
 
     if (existingUser) {
-      return {
-        user: existingUser,
-        tokens: { accessToken: '', refreshToken: '' },
-        alreadyExists: true,
-      };
+      throw new ConflictException('User already exists');
     }
 
     const hashedPassword = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
@@ -132,7 +126,7 @@ export class AuthService {
       ...meta,
     });
 
-    return { user: result, tokens, alreadyExists: false };
+    return { user: result, tokens };
   }
 
   async login(
@@ -231,6 +225,19 @@ export class AuthService {
       where: { id: user.id },
       data: { lastLoginAt: new Date(), failedLoginAttempts: 0, lockedUntil: null },
     });
+
+    if (user.tenantId) {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: user.tenantId },
+        include: { subscription: true },
+      });
+      if (!tenant || tenant.status !== 'ACTIVE') {
+        throw new UnauthorizedException('Tenant account is disabled');
+      }
+      if (tenant.subscription?.status !== 'ACTIVE') {
+        throw new UnauthorizedException('Subscription is not active');
+      }
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password: _, ...userWithoutPassword } = user;

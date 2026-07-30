@@ -3,11 +3,14 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { BackupService } from './backup.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { Request } from 'express';
 
 @ApiTags('backup')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, TenantGuard)
+@Roles('OWNER')
+@UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
 @Controller('backup')
 export class BackupController {
   constructor(private readonly backupService: BackupService) {}

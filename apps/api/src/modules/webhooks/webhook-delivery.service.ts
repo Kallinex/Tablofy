@@ -10,6 +10,7 @@ export class WebhookDeliveryService {
   private readonly initialBackoffMs: number;
   private readonly backoffFactor: number;
   private readonly maxBackoffMs: number;
+  private readonly encryptionKey: Buffer;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -20,7 +21,30 @@ export class WebhookDeliveryService {
     this.initialBackoffMs = this.configService.get('webhook.initialBackoffMs', 1000);
     this.backoffFactor = this.configService.get('webhook.backoffFactor', 2);
     this.maxBackoffMs = this.configService.get('webhook.maxBackoffMs', 3600000);
+    const key = this.configService.get<string>('webhook.encryptionKey', '');
+    if (!key) {
+      this.logger.warn('WEBHOOK_ENCRYPTION_KEY not set — webhook secrets will be weakly encrypted');
+    }
+    this.encryptionKey = crypto.scryptSync(key, 'webhook-secret-salt', 32);
     this.logger.setContext('WebhookDelivery');
+  }
+
+  encryptSecret(plaintext: string): string {
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-gcm', this.encryptionKey, iv);
+    const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
+  }
+
+  decryptSecret(ciphertext: string): string {
+    const [ivHex, tagHex, encryptedHex] = ciphertext.split(':');
+    const iv = Buffer.from(ivHex, 'hex');
+    const tag = Buffer.from(tagHex, 'hex');
+    const encrypted = Buffer.from(encryptedHex, 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', this.encryptionKey, iv);
+    decipher.setAuthTag(tag);
+    return decipher.update(encrypted) + decipher.final('utf8');
   }
 
   generateSecret(): { secret: string; hash: string; prefix: string } {

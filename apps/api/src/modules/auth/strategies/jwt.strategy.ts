@@ -67,6 +67,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Account is not active');
     }
 
+    if (user.tenantId) {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: user.tenantId },
+        include: { subscription: true },
+      });
+      if (!tenant || tenant.status !== 'ACTIVE') {
+        throw new UnauthorizedException('Tenant account is disabled');
+      }
+      if (tenant.subscription?.status !== 'ACTIVE') {
+        throw new UnauthorizedException('Subscription is not active');
+      }
+    }
+
     return {
       id: user.id,
       email: user.email,

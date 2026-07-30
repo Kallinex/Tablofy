@@ -6,11 +6,14 @@ import { RechargeGiftCardDto } from './dto/recharge-gift-card.dto';
 import { RedeemGiftCardDto } from './dto/redeem-gift-card.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { Request } from 'express';
 
 @ApiTags('gift-cards')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, TenantGuard)
+@Roles('OWNER', 'MANAGER')
+@UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
 @Controller('gift-cards')
 export class GiftCardsController {
   constructor(private readonly giftCardsService: GiftCardsService) {}
@@ -60,6 +63,7 @@ export class GiftCardsController {
   }
 
   @Post(':id/redeem')
+  @Roles('OWNER', 'MANAGER', 'STAFF')
   @ApiOperation({ summary: 'Redeem from a gift card' })
   redeem(
     @Param('id') id: string,

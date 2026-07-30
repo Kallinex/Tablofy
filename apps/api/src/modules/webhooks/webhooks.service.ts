@@ -50,6 +50,7 @@ export class WebhooksService {
     }
 
     const { secret, hash, prefix } = this.deliveryService.generateSecret();
+    const encryptedSecret = this.deliveryService.encryptSecret(secret);
 
     const registration = await this.prisma.webhookRegistration.create({
       data: {
@@ -60,6 +61,7 @@ export class WebhooksService {
         events: dto.events,
         secretHash: hash,
         secretPrefix: prefix,
+        encryptedSecret,
         retryCount: dto.retryCount ?? 3,
         timeoutMs: dto.timeoutMs ?? 30000,
         headers: (dto.headers ?? {}) as object,
@@ -161,10 +163,11 @@ export class WebhooksService {
   async rotateSecret(id: string, tenantId: string, userId: string) {
     await this.findOne(id, tenantId);
     const { secret, hash, prefix } = this.deliveryService.generateSecret();
+    const encryptedSecret = this.deliveryService.encryptSecret(secret);
 
     await this.prisma.webhookRegistration.update({
       where: { id },
-      data: { secretHash: hash, secretPrefix: prefix },
+      data: { secretHash: hash, secretPrefix: prefix, encryptedSecret },
     });
 
     await this.auditLogsService.log({

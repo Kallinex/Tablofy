@@ -12,7 +12,7 @@ import { Currency } from '@prisma/client';
 export class CreateGiftCardDto {
   @IsNumber()
   @Min(0)
-  initialBalance: number;
+  initialBalance!: number;
 
   @IsOptional()
   @IsEnum(Currency)

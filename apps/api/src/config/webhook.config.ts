@@ -8,6 +8,8 @@ export interface WebhookConfig {
   deliveryTimeoutMs: number;
   maxRegistrationsPerTenant: number;
   secretRotationDays: number;
+  encryptionKey: string;
+  encryptionAlgorithm: string;
 }
 
 export default registerAs(
@@ -23,5 +25,7 @@ export default registerAs(
       10,
     ),
     secretRotationDays: parseInt(process.env.WEBHOOK_SECRET_ROTATION_DAYS || '90', 10),
+    encryptionKey: process.env.WEBHOOK_ENCRYPTION_KEY || '',
+    encryptionAlgorithm: 'aes-256-gcm',
   }),
 );

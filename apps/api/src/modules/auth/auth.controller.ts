@@ -26,15 +26,12 @@ export class AuthController {
   @ApiOperation({ summary: 'Register a new user account' })
   @ApiResponse({ status: 201, description: 'Registration successful' })
   @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiResponse({ status: 409, description: 'User already exists' })
   async register(@Body() dto: RegisterDto, @Req() req: Request) {
     const result = await this.authService.register(dto, {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
-
-    if (result.alreadyExists) {
-      return { message: 'If an account was not already created, it has been created now.' };
-    }
 
     return { user: result.user, tokens: result.tokens };
   }

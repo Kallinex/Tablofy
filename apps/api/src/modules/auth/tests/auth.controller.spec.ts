@@ -49,7 +49,6 @@ describe('AuthController', () => {
       authService.register.mockResolvedValue({
         user: fakeUser,
         tokens: { accessToken: 'at', refreshToken: 'rt' },
-        alreadyExists: false,
       });
 
       const result = await controller.register(
@@ -65,25 +64,21 @@ describe('AuthController', () => {
       expect(result).toEqual({ user: fakeUser, tokens: { accessToken: 'at', refreshToken: 'rt' } });
     });
 
-    it('should return message for existing user', async () => {
-      const fakeUser = buildAuthUser();
-      authService.register.mockResolvedValue({
-        user: fakeUser,
-        tokens: { accessToken: '', refreshToken: '' },
-        alreadyExists: true,
-      });
+    it('should throw ConflictException for existing user', async () => {
+      const { ConflictException } = await import('@nestjs/common');
+      authService.register.mockRejectedValue(new ConflictException('User already exists'));
 
-      const result = await controller.register(
-        {
-          email: testCredentials.email,
-          password: testCredentials.password,
-          firstName: 'Test',
-          lastName: 'User',
-        },
-        mockReq as never,
-      );
-
-      expect(result).toEqual({ message: expect.any(String) });
+      await expect(
+        controller.register(
+          {
+            email: testCredentials.email,
+            password: testCredentials.password,
+            firstName: 'Test',
+            lastName: 'User',
+          },
+          mockReq as never,
+        ),
+      ).rejects.toThrow(ConflictException);
     });
   });
 
