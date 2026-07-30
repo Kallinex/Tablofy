@@ -25,7 +25,7 @@ const config: Config = {
   collectCoverageFrom: [
     '<rootDir>/src/**/*.ts',
     '!<rootDir>/src/**/*.module.ts',
-    '!<rootDir>/src/**/*.dto.ts',
+
     '!<rootDir>/src/**/*.interface.ts',
     '!<rootDir>/src/main.ts',
     '!<rootDir>/src/test/**',
@@ -75,8 +75,8 @@ const config: Config = {
     '**/src/modules/auth/auth.service.ts': {
       branches: 55,
       functions: 85,
-      lines: 75,
-      statements: 75,
+      lines: 80,
+      statements: 80,
     },
     '**/src/modules/auth/auth.controller.ts': {
       branches: 50,
@@ -122,10 +122,10 @@ const config: Config = {
       statements: 10,
     },
     '**/src/modules/orders/orders.service.ts': {
-      branches: 25,
-      functions: 25,
-      lines: 25,
-      statements: 25,
+      branches: 30,
+      functions: 50,
+      lines: 60,
+      statements: 60,
     },
     '**/src/modules/orders/order-state-machine.ts': {
       branches: 90,
@@ -140,10 +140,10 @@ const config: Config = {
       statements: 15,
     },
     '**/src/modules/tenants/tenants.service.ts': {
-      branches: 30,
-      functions: 45,
-      lines: 35,
-      statements: 35,
+      branches: 35,
+      functions: 50,
+      lines: 60,
+      statements: 60,
     },
     '**/src/modules/users/users.service.ts': {
       branches: 40,
@@ -151,10 +151,10 @@ const config: Config = {
       lines: 60,
       statements: 60,
     },
-    '**/src/prisma/prisma.service.ts': { branches: 90, functions: 40, lines: 30, statements: 40 },
+    '**/src/prisma/prisma.service.ts': { branches: 90, functions: 70, lines: 80, statements: 80 },
     '**/src/redis/redis.service.ts': { branches: 35, functions: 70, lines: 65, statements: 65 },
   },
-  setupFilesAfterSetup: [],
+  setupFiles: ['<rootDir>/src/test/setup/global-test-setup.ts'],
   verbose: true,
   clearMocks: true,
   restoreMocks: true,

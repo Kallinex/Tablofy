@@ -162,4 +162,75 @@ describe('HttpExceptionFilter', () => {
       }),
     );
   });
+
+  describe('additional HTTP error cases', () => {
+    it('should handle ForbiddenException', () => {
+      const { ForbiddenException } = jest.requireActual('@nestjs/common');
+      const exception = new ForbiddenException('Access denied');
+      const host = createMockArgumentsHost();
+      const response = host.switchToHttp().getResponse();
+
+      filter.catch(exception, host as never);
+
+      expect(response.status).toHaveBeenCalledWith(HttpStatus.FORBIDDEN);
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 403,
+          message: 'Access denied',
+          error: 'Forbidden',
+        }),
+      );
+    });
+
+    it('should handle NotFoundException', () => {
+      const { NotFoundException } = jest.requireActual('@nestjs/common');
+      const exception = new NotFoundException('Resource not found');
+      const host = createMockArgumentsHost();
+      const response = host.switchToHttp().getResponse();
+
+      filter.catch(exception, host as never);
+
+      expect(response.status).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
+    });
+
+    it('should handle ConflictException', () => {
+      const { ConflictException } = jest.requireActual('@nestjs/common');
+      const exception = new ConflictException('Already exists');
+      const host = createMockArgumentsHost();
+      const response = host.switchToHttp().getResponse();
+
+      filter.catch(exception, host as never);
+
+      expect(response.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+    });
+
+    it('should handle InternalServerErrorException', () => {
+      const { InternalServerErrorException } = jest.requireActual('@nestjs/common');
+      const exception = new InternalServerErrorException('Unexpected error');
+      const host = createMockArgumentsHost();
+      const response = host.switchToHttp().getResponse();
+
+      filter.catch(exception, host as never);
+
+      expect(response.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
+    });
+
+    it('should handle BadRequestException with validation messages', () => {
+      const { BadRequestException } = jest.requireActual('@nestjs/common');
+      const exception = new BadRequestException(['email must be valid', 'password too short']);
+      const host = createMockArgumentsHost();
+      const response = host.switchToHttp().getResponse();
+
+      filter.catch(exception, host as never);
+
+      expect(response.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 400,
+          message: expect.arrayContaining(['email must be valid']),
+          error: 'Bad Request',
+        }),
+      );
+    });
+  });
 });

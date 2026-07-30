@@ -32,4 +32,28 @@ describe('PrismaService', () => {
       expect(result).toEqual({ deletedAt: { not: null } });
     });
   });
+
+  describe('onModuleInit', () => {
+    it('should connect successfully', async () => {
+      jest.spyOn(service, '$connect').mockResolvedValueOnce(undefined);
+      await expect(service.onModuleInit()).resolves.not.toThrow();
+    });
+
+    it('should throw if $connect fails', async () => {
+      jest.spyOn(service, '$connect').mockRejectedValueOnce(new Error('Connection refused'));
+      await expect(service.onModuleInit()).rejects.toThrow('Connection refused');
+    });
+  });
+
+  describe('onModuleDestroy', () => {
+    it('should disconnect successfully', async () => {
+      jest.spyOn(service, '$disconnect').mockResolvedValueOnce(undefined);
+      await expect(service.onModuleDestroy()).resolves.not.toThrow();
+    });
+
+    it('should not throw if $disconnect fails', async () => {
+      jest.spyOn(service, '$disconnect').mockRejectedValueOnce(new Error('Disconnect error'));
+      await expect(service.onModuleDestroy()).resolves.not.toThrow();
+    });
+  });
 });
