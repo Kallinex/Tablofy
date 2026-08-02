@@ -76,6 +76,58 @@ class EnvironmentVariables {
   @IsOptional()
   @IsNumber()
   AUDIT_LOG_RETENTION_DAYS?: number;
+
+  @IsOptional()
+  @IsNumber()
+  SHUTDOWN_TIMEOUT_MS?: number;
+
+  @IsOptional()
+  @IsString()
+  HEALTH_DISK_PATH?: string;
+
+  @IsOptional()
+  @IsNumber()
+  HEALTH_DISK_THRESHOLD_MB?: number;
+
+  @IsOptional()
+  @IsNumber()
+  QUEUE_DLQ_ALERT_THRESHOLD?: number;
+
+  @IsOptional()
+  @IsString()
+  SENTRY_DSN?: string;
+
+  @IsOptional()
+  @IsString()
+  SENTRY_ENABLED?: string;
+
+  @IsOptional()
+  @IsNumber()
+  SENTRY_TRACES_SAMPLE_RATE?: number;
+
+  @IsOptional()
+  @IsNumber()
+  SENTRY_PROFILES_SAMPLE_RATE?: number;
+
+  @IsOptional()
+  @IsString()
+  METRICS_ENABLED?: string;
+
+  @IsOptional()
+  @IsString()
+  METRICS_ENDPOINT?: string;
+
+  @IsOptional()
+  @IsString()
+  METRICS_AUTH_TOKEN?: string;
+
+  @IsOptional()
+  @IsString()
+  METRICS_COLLECT_DEFAULT?: string;
+
+  @IsOptional()
+  @IsNumber()
+  METRICS_COLLECT_INTERVAL_MS?: number;
 }
 
 export function validate(config: Record<string, unknown>) {
@@ -105,6 +157,17 @@ export function validate(config: Record<string, unknown>) {
   if (validatedConfig.NODE_ENV === Environment.Production && validatedConfig.CORS_ORIGINS === '*') {
     throw new Error(
       'Wildcard CORS origin (*) is not allowed in production. Specify explicit origins.',
+    );
+  }
+
+  const metricsEnabled = validatedConfig.METRICS_ENABLED !== 'false';
+  if (
+    validatedConfig.NODE_ENV === Environment.Production &&
+    metricsEnabled &&
+    (!validatedConfig.METRICS_AUTH_TOKEN || validatedConfig.METRICS_AUTH_TOKEN.length < 16)
+  ) {
+    throw new Error(
+      'Production environment requires METRICS_AUTH_TOKEN (min 16 characters) to secure the /metrics endpoint.',
     );
   }
 

@@ -11,6 +11,7 @@ import { QueryKitchenStationDto } from './dto/query-kitchen-station.dto';
 import { UpdateTicketItemStatusDto } from './dto/update-ticket-item-status.dto';
 import { KdsGateway } from './kds.gateway';
 import { AssignProductStationDto } from './dto/assign-product-station.dto';
+import { MetricsService } from '../../common/metrics/metrics.service';
 
 @Injectable()
 export class KdsService {
@@ -23,6 +24,7 @@ export class KdsService {
     private readonly queueService: QueueService,
     private readonly eventEmitter: EventEmitter2,
     private readonly kdsGateway: KdsGateway,
+    private readonly metricsService: MetricsService,
   ) {}
 
   // ---- Kitchen Station CRUD ----
@@ -492,6 +494,7 @@ export class KdsService {
           });
 
           this.kdsGateway.broadcastTicketUpdate(tenantId, 'ticket.created', fullTicket);
+          this.metricsService.incrementKitchenTickets();
         }
 
         if (unassignedItems.length > 0) {
@@ -543,6 +546,7 @@ export class KdsService {
           });
 
           this.kdsGateway.broadcastTicketUpdate(tenantId, 'ticket.created', fullTicket);
+          this.metricsService.incrementKitchenTickets();
         }
       });
 

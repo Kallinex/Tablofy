@@ -7,10 +7,12 @@ import { AuditLogsService } from '../../audit-logs/audit-logs.service';
 import { CacheService } from '../../../common/services/cache.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PaymentsService } from '../../payments/payments.service';
+import { MetricsService } from '../../../common/metrics/metrics.service';
 import { createMockPrisma, MockPrisma } from '../../../test/mocks/prisma.mock';
 import { createMockCache, MockCache } from '../../../test/mocks/cache.mock';
 import { createMockAuditLogs, MockAuditLogs } from '../../../test/mocks/audit-log.mock';
 import { createMockEventEmitter, MockEventEmitter } from '../../../test/mocks/event-emitter.mock';
+import { createMockMetrics, MockMetrics } from '../../../test/mocks/metrics.mock';
 import { buildOrder, buildCreateOrderDto } from '../../../test/factories/order.factory';
 import { testTenantId, testUserId } from '../../../test/fixtures/auth.fixture';
 
@@ -20,6 +22,7 @@ describe('OrdersService', () => {
   let auditLogs: MockAuditLogs;
   let cache: MockCache;
   let eventEmitter: MockEventEmitter;
+  let metrics: MockMetrics;
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -42,6 +45,7 @@ describe('OrdersService', () => {
             reconcile: jest.fn(),
           },
         },
+        { provide: MetricsService, useValue: createMockMetrics() },
       ],
     }).compile();
 
@@ -50,6 +54,7 @@ describe('OrdersService', () => {
     auditLogs = module.get(AuditLogsService) as MockAuditLogs;
     cache = module.get(CacheService) as MockCache;
     eventEmitter = module.get(EventEmitter2) as MockEventEmitter;
+    metrics = module.get(MetricsService) as MockMetrics;
   });
 
   beforeEach(() => {
@@ -102,6 +107,7 @@ describe('OrdersService', () => {
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith('order.created', expect.any(Object));
       expect(cache.deletePattern).toHaveBeenCalledWith(testTenantId, expect.any(String));
+      expect(metrics.incrementOrdersCreated).toHaveBeenCalled();
     });
 
     it('should generate order number', async () => {
@@ -303,6 +309,31 @@ describe('OrdersService', () => {
         expect.objectContaining({ action: 'ORDER_PENDING' }),
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith('order.pending', expect.any(Object));
+    });
+
+    it('should increment completed metric when transitioning to COMPLETED', async () => {
+      const fakeOrder = buildOrder({ id: 'order-1', status: 'SERVED' });
+      prisma.order.findFirst.mockResolvedValue(fakeOrder);
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            update: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findUnique: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
+
+      await service.changeStatus(
+        'order-1',
+        { status: 'COMPLETED', reason: 'Paid' },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(metrics.incrementOrdersCompleted).toHaveBeenCalled();
     });
   });
 });

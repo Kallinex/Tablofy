@@ -13,6 +13,8 @@ import {
   createMockEventEmitter,
   MockEventEmitter,
 } from '../../../../test/mocks/event-emitter.mock';
+import { MetricsService } from '../../../../common/metrics/metrics.service';
+import { createMockMetrics } from '../../../../test/mocks/metrics.mock';
 
 describe('Order CRUD — Integration', () => {
   let service: OrdersService;
@@ -42,6 +44,7 @@ describe('Order CRUD — Integration', () => {
             reconcile: jest.fn(),
           },
         },
+        { provide: MetricsService, useValue: createMockMetrics() },
       ],
     }).compile();
 

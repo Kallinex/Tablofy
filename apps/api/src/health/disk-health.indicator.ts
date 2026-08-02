@@ -1,38 +1,36 @@
-import { HealthIndicator, HealthIndicatorResult, HealthCheckError } from '@nestjs/terminus';
 import { Injectable } from '@nestjs/common';
-import * as os from 'os';
+import { HealthCheckError, HealthIndicatorResult } from '@nestjs/terminus';
+import { statfs } from 'node:fs/promises';
 
 @Injectable()
-export class DiskHealthIndicator extends HealthIndicator {
-  async isHealthy(key: string, thresholdPercent = 0.9): Promise<HealthIndicatorResult> {
-    try {
-      const free = os.freemem();
-      const total = os.totalmem();
-      const usedPercent = 1 - free / total;
+export class DiskHealthIndicator {
+  private readonly path: string;
+  private readonly thresholdBytes: number;
 
-      if (usedPercent < thresholdPercent) {
-        return this.getStatus(key, true, {
-          freeBytes: free,
-          totalBytes: total,
-          usedPercent: parseFloat((usedPercent * 100).toFixed(2)),
-        });
-      }
+  constructor() {
+    this.path = process.env.HEALTH_DISK_PATH || '/';
+    const thresholdMb = parseInt(process.env.HEALTH_DISK_THRESHOLD_MB || '200', 10);
+    this.thresholdBytes = thresholdMb * 1024 * 1024;
+  }
 
-      throw new HealthCheckError(
-        'Disk health check failed',
-        this.getStatus(key, false, {
-          freeBytes: free,
-          totalBytes: total,
-          usedPercent: parseFloat((usedPercent * 100).toFixed(2)),
-          threshold: thresholdPercent * 100,
-        }),
-      );
-    } catch (error) {
-      if (error instanceof HealthCheckError) throw error;
-      throw new HealthCheckError(
-        'Disk health check failed',
-        this.getStatus(key, false, { message: (error as Error).message }),
-      );
+  async isHealthy(key: string): Promise<HealthIndicatorResult> {
+    const stats = await statfs(this.path);
+    const availableBytes = stats.bavail * stats.bsize;
+    const totalBytes = stats.blocks * stats.bsize;
+
+    const result: HealthIndicatorResult = {
+      [key]: {
+        status: availableBytes >= this.thresholdBytes ? 'up' : 'down',
+        path: this.path,
+        availableBytes,
+        totalBytes,
+        thresholdBytes: this.thresholdBytes,
+      },
+    };
+
+    if (availableBytes < this.thresholdBytes) {
+      throw new HealthCheckError('Disk space below threshold', result);
     }
+    return result;
   }
 }

@@ -1,83 +1,111 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { QueueService } from '../queues/queue.service';
+import { RedisLockService } from '../../redis/redis-lock.service';
+
+const CRON_LOCK_TTL_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class SchedulerService {
   private readonly logger = new Logger(SchedulerService.name);
 
-  constructor(private readonly queueService: QueueService) {}
+  constructor(
+    private readonly queueService: QueueService,
+    private readonly redisLockService: RedisLockService,
+  ) {}
+
+  private async runLocked(jobName: string, task: () => Promise<void>): Promise<void> {
+    await this.redisLockService.runIfLocked(`cron:${jobName}`, CRON_LOCK_TTL_MS, task);
+  }
 
   @Cron(CronExpression.EVERY_6_HOURS, { name: 'cleanup_expired_sessions' })
   async handleCleanupExpiredSessions() {
-    await this.queueService.addJob('cleanup', 'cleanup', {
-      payload: { type: 'expired_sessions' },
+    await this.runLocked('cleanup_expired_sessions', async () => {
+      await this.queueService.addJob('cleanup', 'cleanup', {
+        payload: { type: 'expired_sessions' },
+      });
+      this.logger.log('Scheduled: cleanup_expired_sessions queued');
     });
-    this.logger.log('Scheduled: cleanup_expired_sessions queued');
   }
 
   @Cron(CronExpression.EVERY_12_HOURS, { name: 'cleanup_expired_tokens' })
   async handleCleanupExpiredTokens() {
-    await this.queueService.addJob('cleanup', 'cleanup', {
-      payload: { type: 'expired_tokens' },
+    await this.runLocked('cleanup_expired_tokens', async () => {
+      await this.queueService.addJob('cleanup', 'cleanup', {
+        payload: { type: 'expired_tokens' },
+      });
+      this.logger.log('Scheduled: cleanup_expired_tokens queued');
     });
-    this.logger.log('Scheduled: cleanup_expired_tokens queued');
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { name: 'archive_old_audit_logs' })
   async handleArchiveOldAuditLogs() {
-    await this.queueService.addJob('cleanup', 'cleanup', {
-      payload: { type: 'archive_old_audit_logs' },
+    await this.runLocked('archive_old_audit_logs', async () => {
+      await this.queueService.addJob('cleanup', 'cleanup', {
+        payload: { type: 'archive_old_audit_logs' },
+      });
+      this.logger.log('Scheduled: archive_old_audit_logs queued');
     });
-    this.logger.log('Scheduled: archive_old_audit_logs queued');
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_2AM, { name: 'cleanup_expired_tokens_2am' })
   async handleCleanupExpiredTokens2am() {
-    await this.queueService.addJob('cleanup', 'cleanup', {
-      payload: { type: 'expired_tokens' },
+    await this.runLocked('cleanup_expired_tokens_2am', async () => {
+      await this.queueService.addJob('cleanup', 'cleanup', {
+        payload: { type: 'expired_tokens' },
+      });
+      this.logger.log('Scheduled: cleanup_expired_tokens_2am queued');
     });
-    this.logger.log('Scheduled: cleanup_expired_tokens_2am queued');
   }
 
   @Cron(CronExpression.EVERY_6_HOURS, { name: 'cleanup_failed_webhooks' })
   async handleCleanupFailedWebhooks() {
-    await this.queueService.addJob('cleanup', 'cleanup', {
-      payload: { type: 'failed_webhook_deliveries' },
+    await this.runLocked('cleanup_failed_webhooks', async () => {
+      await this.queueService.addJob('cleanup', 'cleanup', {
+        payload: { type: 'failed_webhook_deliveries' },
+      });
+      this.logger.log('Scheduled: cleanup_failed_webhooks queued');
     });
-    this.logger.log('Scheduled: cleanup_failed_webhooks queued');
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_3AM, { name: 'cleanup_stale_jobs' })
   async handleCleanupStaleJobs() {
-    await this.queueService.addJob('cleanup', 'cleanup', {
-      payload: { type: 'stale_jobs' },
+    await this.runLocked('cleanup_stale_jobs', async () => {
+      await this.queueService.addJob('cleanup', 'cleanup', {
+        payload: { type: 'stale_jobs' },
+      });
+      this.logger.log('Scheduled: cleanup_stale_jobs queued');
     });
-    this.logger.log('Scheduled: cleanup_stale_jobs queued');
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_4AM, { name: 'cleanup_expired_data_exports' })
   async handleCleanupExpiredDataExports() {
-    await this.queueService.addJob('cleanup', 'cleanup', {
-      payload: { type: 'expired_data_exports' },
+    await this.runLocked('cleanup_expired_data_exports', async () => {
+      await this.queueService.addJob('cleanup', 'cleanup', {
+        payload: { type: 'expired_data_exports' },
+      });
+      this.logger.log('Scheduled: cleanup_expired_data_exports queued');
     });
-    this.logger.log('Scheduled: cleanup_expired_data_exports queued');
   }
 
   @Cron(CronExpression.EVERY_WEEK, { name: 'cleanup_expired_backups' })
   async handleCleanupExpiredBackups() {
-    await this.queueService.addJob('cleanup', 'cleanup', {
-      payload: { type: 'expired_backups' },
+    await this.runLocked('cleanup_expired_backups', async () => {
+      await this.queueService.addJob('cleanup', 'cleanup', {
+        payload: { type: 'expired_backups' },
+      });
+      this.logger.log('Scheduled: cleanup_expired_backups queued');
     });
-    this.logger.log('Scheduled: cleanup_expired_backups queued');
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_5AM, { name: 'cleanup_stale_gift_cards' })
   async handleCleanupStaleGiftCards() {
-    await this.queueService.addJob('cleanup', 'cleanup', {
-      payload: { type: 'stale_gift_cards' },
+    await this.runLocked('cleanup_stale_gift_cards', async () => {
+      await this.queueService.addJob('cleanup', 'cleanup', {
+        payload: { type: 'stale_gift_cards' },
+      });
+      this.logger.log('Scheduled: cleanup_stale_gift_cards queued');
     });
-    this.logger.log('Scheduled: cleanup_stale_gift_cards queued');
   }
 
   getRegisteredJobs(): Array<{ name: string; description: string }> {

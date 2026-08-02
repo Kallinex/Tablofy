@@ -6,6 +6,7 @@ import { CleanupProcessor } from './cleanup.processor';
 import { NotificationProcessor } from './notification.processor';
 import { KitchenProcessor } from './kitchen.processor';
 import { PrintProcessor } from './print.processor';
+import { DeadLetterProcessor } from './dead-letter.processor';
 
 @Global()
 @Module({
@@ -17,6 +18,7 @@ import { PrintProcessor } from './print.processor';
     NotificationProcessor,
     KitchenProcessor,
     PrintProcessor,
+    DeadLetterProcessor,
   ],
   exports: [QueueService],
 })

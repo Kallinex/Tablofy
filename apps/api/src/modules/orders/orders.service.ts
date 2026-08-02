@@ -28,6 +28,7 @@ import { MoveTableDto } from './dto/move-table.dto';
 import { ChangeStatusDto } from './dto/change-status.dto';
 import { OrderStatus, validateTransition, isTerminalStatus } from './order-state-machine';
 import { CACHE_TTL } from '@tablofy/shared/constants';
+import { MetricsService } from '../../common/metrics/metrics.service';
 
 type OrderWithIncludes = Prisma.OrderGetPayload<{
   include: {
@@ -54,6 +55,7 @@ export class OrdersService {
     private readonly cacheService: CacheService,
     private readonly eventEmitter: EventEmitter2,
     private readonly paymentsService: PaymentsService,
+    private readonly metricsService: MetricsService,
   ) {}
 
   async create(
@@ -163,6 +165,7 @@ export class OrdersService {
       orderNumber: result!.orderNumber,
     });
     await this.cacheService.deletePattern(tenantId, 'list:*');
+    this.metricsService.incrementOrdersCreated();
 
     return result;
   }
@@ -439,6 +442,7 @@ export class OrdersService {
             status: PrismaKitchenStatus.PENDING,
           },
         });
+        this.metricsService.incrementKitchenTickets();
       }
 
       await this.updateKitchenStatus(tx, id, dto.status as string);
@@ -468,6 +472,10 @@ export class OrdersService {
     this.eventEmitter.emit(eventName, { tenantId, orderId: id });
     await this.cacheService.delete(tenantId, `one:${id}`);
     await this.cacheService.deletePattern(tenantId, 'list:*');
+
+    if (dto.status === OrderStatus.COMPLETED) {
+      this.metricsService.incrementOrdersCompleted();
+    }
 
     return result;
   }

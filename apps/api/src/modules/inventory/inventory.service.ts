@@ -11,6 +11,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { QueueService } from '../queues/queue.service';
 import { InventoryGateway } from './inventory.gateway';
+import { MetricsService } from '../../common/metrics/metrics.service';
 import {
   Prisma,
   StockMovementType,
@@ -46,6 +47,7 @@ export class InventoryService {
     private readonly queueService: QueueService,
     private readonly eventEmitter: EventEmitter2,
     private readonly gateway: InventoryGateway,
+    private readonly metricsService: MetricsService,
   ) {}
 
   // ============================================
@@ -794,6 +796,7 @@ export class InventoryService {
 
     await this.invalidateItemCache(tenantId);
     this.gateway.broadcastAdjustmentUpdate(tenantId, 'adjustment.approved', approved);
+    this.metricsService.incrementInventoryMovements();
 
     return approved;
   }
@@ -924,6 +927,7 @@ export class InventoryService {
 
     await this.invalidateItemCache(tenantId);
     this.gateway.broadcastWasteUpdate(tenantId, 'waste.created', waste);
+    this.metricsService.incrementInventoryMovements();
 
     return waste;
   }

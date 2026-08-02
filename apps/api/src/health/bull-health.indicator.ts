@@ -10,7 +10,7 @@ export class BullHealthIndicator extends HealthIndicator {
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
     try {
-      const queueNames = ['audit-log', 'email', 'notification', 'kitchen'];
+      const queueNames = ['email', 'cleanup', 'notification', 'kitchen', 'print'];
       const details: Record<string, unknown> = {};
 
       for (const name of queueNames) {

@@ -6,9 +6,12 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app/app.module';
 import { AppLoggerService } from './common/logger/logger.service';
+import { BullBoardModule, BULL_BOARD_PATH } from './common/bull-board/bull-board.module';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  app.enableShutdownHooks(['SIGINT', 'SIGTERM'], { useProcessExit: true });
 
   const configService = app.get(ConfigService);
   const logger = app.get(AppLoggerService);
@@ -22,6 +25,8 @@ async function bootstrap(): Promise<void> {
   const corsCredentials = configService.get<boolean>('app.corsCredentials') ?? true;
   const nodeEnv = configService.get<string>('app.nodeEnv') ?? 'development';
   const isProduction = nodeEnv === 'production';
+  const shutdownTimeoutMs = configService.get<number>('app.shutdownTimeoutMs') ?? 15000;
+  const sentryEnabled = configService.get<boolean>('sentry.enabled', false);
 
   app.setGlobalPrefix(apiPrefix);
 
@@ -134,18 +139,89 @@ async function bootstrap(): Promise<void> {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('docs', app, document);
 
+  const bullBoardModule = app.get(BullBoardModule);
+  app.use(BULL_BOARD_PATH, bullBoardModule.createAuthMiddleware(), bullBoardModule.getRouter());
+
   await app.listen(port);
 
   logger.log(`Application is running on: http://localhost:${port}/${apiPrefix}/v1`);
   logger.log(`Swagger docs available at: http://localhost:${port}/docs`);
 
   const shutdownSignals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
+
+  let isShuttingDown = false;
+
+  // enableShutdownHooks() above handles the graceful close (destroy hooks,
+  // HTTP server close, shutdown hooks). These listeners only enforce the
+  // forced-exit deadline so a hung shutdown cannot block forever.
+  const beginShutdownWatchdog = (reason: string): void => {
+    if (isShuttingDown) {
+      return;
+    }
+    isShuttingDown = true;
+    logger.log(`Shutting down gracefully: ${reason}`);
+
+    const forceExitTimer = setTimeout(() => {
+      logger.error(
+        `Graceful shutdown did not complete within ${shutdownTimeoutMs}ms; forcing exit.`,
+      );
+      process.exit(1);
+    }, shutdownTimeoutMs);
+    forceExitTimer.unref();
+  };
+
   for (const signal of shutdownSignals) {
-    process.on(signal, async () => {
-      logger.log(`Received ${signal}, shutting down gracefully...`);
+    process.on(signal, () => beginShutdownWatchdog(`Received ${signal}`));
+  }
+
+  // Signal-based shutdown is handled by enableShutdownHooks(); the forced
+  // shutdown below is only for non-signal fatal conditions (unhandled
+  // rejections / uncaught exceptions) when Sentry's own handlers are disabled.
+  const forceShutdown = async (reason: string, exitCode: number): Promise<void> => {
+    if (isShuttingDown) {
+      return;
+    }
+    isShuttingDown = true;
+    logger.log(`Forced shutdown: ${reason}`);
+
+    const forceExitTimer = setTimeout(() => {
+      logger.error(
+        `Graceful shutdown did not complete within ${shutdownTimeoutMs}ms; forcing exit.`,
+      );
+      process.exit(1);
+    }, shutdownTimeoutMs);
+    forceExitTimer.unref();
+
+    try {
       await app.close();
+      clearTimeout(forceExitTimer);
       logger.log('Application shut down successfully');
-      process.exit(0);
+    } catch (error) {
+      logger.error('Error during graceful shutdown', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      process.exit(exitCode);
+    }
+  };
+
+  // Sentry's onUncaughtException/onUnhandledRejection integrations handle these when enabled.
+  // When Sentry is disabled we still need explicit handlers with fallback logging.
+  if (!sentryEnabled) {
+    process.on('unhandledRejection', (reason) => {
+      logger.error('Unhandled promise rejection detected', {
+        reason: reason instanceof Error ? reason.message : String(reason),
+        stack: reason instanceof Error ? reason.stack : undefined,
+      });
+      void forceShutdown('unhandledRejection', 1);
+    });
+
+    process.on('uncaughtException', (error: Error) => {
+      logger.error('Uncaught exception detected', {
+        error: error.message,
+        stack: error.stack,
+      });
+      void forceShutdown('uncaughtException', 1);
     });
   }
 }

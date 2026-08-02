@@ -8,4 +8,5 @@ export const appConfig = registerAs('app', () => ({
     ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
     : ['http://localhost:4200', 'http://localhost:3000'],
   corsCredentials: process.env.CORS_CREDENTIALS !== 'false',
+  shutdownTimeoutMs: parseInt(process.env.SHUTDOWN_TIMEOUT_MS || '15000', 10),
 }));

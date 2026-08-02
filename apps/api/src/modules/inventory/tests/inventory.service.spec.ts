@@ -12,6 +12,8 @@ import { createMockAuditLogs, MockAuditLogs } from '../../../test/mocks/audit-lo
 import { createMockCache, MockCache } from '../../../test/mocks/cache.mock';
 import { createMockQueue } from '../../../test/mocks/queue.mock';
 import { createMockEventEmitter, MockEventEmitter } from '../../../test/mocks/event-emitter.mock';
+import { MetricsService } from '../../../common/metrics/metrics.service';
+import { createMockMetrics } from '../../../test/mocks/metrics.mock';
 import { testTenantId, testUserId } from '../../../test/fixtures/auth.fixture';
 
 describe('InventoryService', () => {
@@ -38,6 +40,7 @@ describe('InventoryService', () => {
         { provide: QueueService, useValue: createMockQueue() },
         { provide: EventEmitter2, useValue: createMockEventEmitter() },
         { provide: InventoryGateway, useValue: mockGateway },
+        { provide: MetricsService, useValue: createMockMetrics() },
       ],
     }).compile();
 

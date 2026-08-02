@@ -1,10 +1,16 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as promClient from 'prom-client';
+import { PerformanceObserver, monitorEventLoopDelay } from 'perf_hooks';
 
 @Injectable()
-export class MetricsService implements OnModuleInit {
+export class MetricsService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(MetricsService.name);
   private registered = false;
+  private collectionInterval?: NodeJS.Timeout;
+  private readonly eventLoopHistogram = monitorEventLoopDelay({ resolution: 20 });
+  private lastCpuUsage = process.cpuUsage();
+  private lastCpuTime = Date.now();
 
   httpDuration: promClient.Histogram<string>;
   httpCount: promClient.Counter<string>;
@@ -21,6 +27,7 @@ export class MetricsService implements OnModuleInit {
   paymentsCompleted: promClient.Counter<string>;
   paymentsFailed: promClient.Counter<string>;
   paymentsRefunded: promClient.Counter<string>;
+  deadLetter: promClient.Counter<string>;
   eventLoopDelay: promClient.Gauge<string>;
   memoryUsage: promClient.Gauge<string>;
   cpuUsage: promClient.Gauge<string>;
@@ -113,6 +120,12 @@ export class MetricsService implements OnModuleInit {
       help: 'Total payments refunded',
     });
 
+    this.deadLetter = new promClient.Counter({
+      name: 'bull_queue_dead_letter_total',
+      help: 'Total jobs moved to the dead letter queue',
+      labelNames: ['queue'],
+    });
+
     this.eventLoopDelay = new promClient.Gauge({
       name: 'node_event_loop_delay_ms',
       help: 'Node.js event loop delay in ms',
@@ -144,6 +157,68 @@ export class MetricsService implements OnModuleInit {
       });
       this.registered = true;
     }
+    this.setupGcObserver();
+    this.startCollectionLoop();
+  }
+
+  onModuleDestroy() {
+    if (this.collectionInterval) {
+      clearInterval(this.collectionInterval);
+    }
+    this.eventLoopHistogram.disable();
+  }
+
+  private setupGcObserver() {
+    try {
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          const kind = (entry as unknown as { kind?: number }).kind;
+          this.gcDuration.set({ type: kind === 2 ? 'major' : 'minor' }, entry.duration);
+        }
+      });
+      observer.observe({ entryTypes: ['gc'] });
+    } catch (error) {
+      this.logger.warn(
+        `GC metric observer unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private startCollectionLoop() {
+    const intervalMs = this.configService.get<number>('metrics.collectIntervalMs', 10000);
+    if (!intervalMs || intervalMs <= 0) {
+      return;
+    }
+    this.eventLoopHistogram.enable();
+    this.collectionInterval = setInterval(() => {
+      this.eventLoopDelay.set(parseFloat(this.eventLoopHistogram.mean.toFixed(2)));
+      this.eventLoopHistogram.reset();
+
+      const memory = process.memoryUsage();
+      this.memoryUsage.set({ type: 'rss' }, memory.rss);
+      this.memoryUsage.set({ type: 'heapUsed' }, memory.heapUsed);
+      this.memoryUsage.set({ type: 'heapTotal' }, memory.heapTotal);
+      this.memoryUsage.set({ type: 'external' }, memory.external);
+
+      this.cpuUsage.set(this.measureCpuUsagePercent());
+    }, intervalMs);
+    this.collectionInterval.unref();
+  }
+
+  private measureCpuUsagePercent(): number {
+    const now = Date.now();
+    const usage = process.cpuUsage();
+    const userDelta = usage.user - this.lastCpuUsage.user;
+    const systemDelta = usage.system - this.lastCpuUsage.system;
+    const elapsedMs = now - this.lastCpuTime;
+    this.lastCpuUsage = usage;
+    this.lastCpuTime = now;
+    if (elapsedMs <= 0) {
+      return 0;
+    }
+    const cpuMs = (userDelta + systemDelta) / 1000;
+    const percent = (cpuMs / elapsedMs) * 100;
+    return parseFloat(Math.min(100, percent).toFixed(2));
   }
 
   observeHttpDuration(method: string, route: string, statusCode: number, duration: number) {
@@ -201,6 +276,10 @@ export class MetricsService implements OnModuleInit {
 
   incrementPaymentsRefunded() {
     this.paymentsRefunded.inc();
+  }
+
+  incrementBullQueueDeadLetter(queue: string) {
+    this.deadLetter.inc({ queue });
   }
 
   async getMetrics(): Promise<string> {

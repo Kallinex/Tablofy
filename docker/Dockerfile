@@ -8,6 +8,18 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
+# Production-only dependencies (no dev tooling) for the runtime stage
+FROM base AS deps-prod
+RUN apk add --no-cache libc6-compat openssl
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+COPY prisma.config.ts ./
+
+RUN npm ci --omit=dev
+RUN npx prisma generate
+
 # Build the application
 FROM base AS builder
 WORKDIR /app
@@ -29,17 +41,15 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs
 
 COPY --from=builder --chown=nestjs:nodejs /app/dist/apps/api ./app
-COPY --from=builder --chown=nestjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder --chown=nestjs:nodejs /app/node_modules/@prisma/client ./node_modules/@prisma/client
+COPY --from=deps-prod --chown=nestjs:nodejs /app/node_modules ./node_modules
 
 # Copy migration files for runtime migration deploy
 COPY --from=builder --chown=nestjs:nodejs /app/prisma/migrations ./prisma/migrations
 COPY --from=builder --chown=nestjs:nodejs /app/prisma/schema.prisma ./prisma/schema.prisma
-COPY --from=builder --chown=nestjs:nodejs /app/prisma/prisma.config.ts ./prisma/prisma.config.ts
+COPY --from=builder --chown=nestjs:nodejs /app/prisma.config.ts ./prisma.config.ts
 
 # Copy package.json for prisma CLI (needed for migrate deploy)
 COPY --from=builder --chown=nestjs:nodejs /app/package.json ./package.json
-COPY --from=builder --chown=nestjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 
 USER nestjs
 

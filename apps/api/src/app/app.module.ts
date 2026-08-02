@@ -86,6 +86,7 @@ import { LoggerModule } from '../common/logger/logger.module';
 import { MetricsModule } from '../common/metrics/metrics.module';
 import { SentryModule } from '../common/sentry/sentry.module';
 import { MonitoringModule } from '../common/monitoring/monitoring.module';
+import { BullBoardModule } from '../common/bull-board/bull-board.module';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -151,6 +152,7 @@ import {
     MetricsModule,
     SentryModule,
     MonitoringModule,
+    BullBoardModule,
     PrismaModule,
     RedisModule,
     DomainEventModule,
