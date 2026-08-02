@@ -11,7 +11,16 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { QueueService } from '../queues/queue.service';
 import { InventoryGateway } from './inventory.gateway';
-import { Prisma, StockMovementType, AdjustmentType, WasteType } from '@prisma/client';
+import {
+  Prisma,
+  StockMovementType,
+  AdjustmentType,
+  WasteType,
+  StockAdjustmentStatus,
+  InventoryCountStatus,
+} from '@prisma/client';
+import { buildPaginatedResponse } from '@tablofy/shared/utils';
+import { PAGINATION_DEFAULTS, CACHE_TTL } from '@tablofy/shared/constants';
 import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
 import { UpdateInventoryItemDto } from './dto/update-inventory-item.dto';
 import { QueryInventoryDto } from './dto/query-inventory.dto';
@@ -153,7 +162,7 @@ export class InventoryService {
       include: { children: true, _count: { select: { items: true } } },
     });
 
-    await this.cacheService.set(tenantId, cacheKey, categories, 300);
+    await this.cacheService.set(tenantId, cacheKey, categories, CACHE_TTL.MEDIUM);
     return categories;
   }
 
@@ -263,7 +272,7 @@ export class InventoryService {
       orderBy: { name: 'asc' },
     });
 
-    await this.cacheService.set(tenantId, cacheKey, units, 300);
+    await this.cacheService.set(tenantId, cacheKey, units, CACHE_TTL.MEDIUM);
     return units;
   }
 
@@ -372,7 +381,7 @@ export class InventoryService {
       include: { branch: true },
     });
 
-    await this.cacheService.set(tenantId, cacheKey, locations, 300);
+    await this.cacheService.set(tenantId, cacheKey, locations, CACHE_TTL.MEDIUM);
     return locations;
   }
 
@@ -513,7 +522,7 @@ export class InventoryService {
     });
 
     if (!item) throw new NotFoundException('Inventory item not found');
-    await this.cacheService.set(tenantId, cacheKey, item, 300);
+    await this.cacheService.set(tenantId, cacheKey, item, CACHE_TTL.MEDIUM);
     return item;
   }
 
@@ -585,7 +594,7 @@ export class InventoryService {
       },
     };
 
-    await this.cacheService.set(tenantId, cacheKey, result, 120);
+    await this.cacheService.set(tenantId, cacheKey, result, CACHE_TTL.LOW_STOCK);
     return result;
   }
 
@@ -795,7 +804,7 @@ export class InventoryService {
     const skip = (page - 1) * limit;
 
     const where: Prisma.StockAdjustmentWhereInput = { tenantId, deletedAt: null };
-    if (query.status) where.status = query.status as string;
+    if (query.status) where.status = query.status as StockAdjustmentStatus;
     if (query.type) where.type = query.type as AdjustmentType;
     if (query.inventoryItemId) where.inventoryItemId = query.inventoryItemId as string;
     if (query.branchId) where.branchId = query.branchId as string;
@@ -1016,7 +1025,7 @@ export class InventoryService {
     const skip = (page - 1) * limit;
 
     const where: Prisma.InventoryCountWhereInput = { tenantId };
-    if (query.status) where.status = query.status as string;
+    if (query.status) where.status = query.status as InventoryCountStatus;
     if (query.inventoryItemId) where.inventoryItemId = query.inventoryItemId as string;
     if (query.branchId) where.branchId = query.branchId as string;
 
@@ -1147,49 +1156,87 @@ export class InventoryService {
   // Low Stock Queries
   // ============================================
 
-  async getLowStockItems(tenantId: string) {
-    const items = await this.prisma.inventoryItem.findMany({
-      where: {
-        tenantId,
-        deletedAt: null,
-        isActive: true,
-        minStock: { not: null },
-      },
-      include: { category: true, unit: true, location: true },
-      orderBy: { currentQuantity: 'asc' },
-    });
+  async getLowStockItems(
+    tenantId: string,
+    page: number = PAGINATION_DEFAULTS.PAGE,
+    limit: number = PAGINATION_DEFAULTS.LIMIT,
+  ) {
+    const where: Prisma.InventoryItemWhereInput = {
+      tenantId,
+      deletedAt: null,
+      isActive: true,
+      minStock: { not: null },
+      currentQuantity: { lte: this.prisma.inventoryItem.fields.minStock },
+    };
+    const skip = (page - 1) * limit;
 
-    return items.filter((item) => Number(item.currentQuantity) <= Number(item.minStock!));
+    const [items, total] = await Promise.all([
+      this.prisma.inventoryItem.findMany({
+        where,
+        skip,
+        take: limit,
+        include: { category: true, unit: true, location: true },
+        orderBy: { currentQuantity: 'asc' },
+      }),
+      this.prisma.inventoryItem.count({ where }),
+    ]);
+
+    return buildPaginatedResponse(items, total, page, limit);
   }
 
-  async getCriticalStockItems(tenantId: string) {
-    const items = await this.prisma.inventoryItem.findMany({
-      where: {
-        tenantId,
-        deletedAt: null,
-        isActive: true,
-        reorderLevel: { not: null },
-      },
-      include: { category: true, unit: true, location: true },
-      orderBy: { currentQuantity: 'asc' },
-    });
+  async getCriticalStockItems(
+    tenantId: string,
+    page: number = PAGINATION_DEFAULTS.PAGE,
+    limit: number = PAGINATION_DEFAULTS.LIMIT,
+  ) {
+    const where: Prisma.InventoryItemWhereInput = {
+      tenantId,
+      deletedAt: null,
+      isActive: true,
+      reorderLevel: { not: null },
+      currentQuantity: { lte: this.prisma.inventoryItem.fields.reorderLevel },
+    };
+    const skip = (page - 1) * limit;
 
-    return items.filter((item) => Number(item.currentQuantity) <= Number(item.reorderLevel!));
+    const [items, total] = await Promise.all([
+      this.prisma.inventoryItem.findMany({
+        where,
+        skip,
+        take: limit,
+        include: { category: true, unit: true, location: true },
+        orderBy: { currentQuantity: 'asc' },
+      }),
+      this.prisma.inventoryItem.count({ where }),
+    ]);
+
+    return buildPaginatedResponse(items, total, page, limit);
   }
 
-  async getOutOfStockItems(tenantId: string) {
-    const items = await this.prisma.inventoryItem.findMany({
-      where: {
-        tenantId,
-        deletedAt: null,
-        isActive: true,
-        currentQuantity: { lte: 0 },
-      },
-      include: { category: true, unit: true, location: true },
-      orderBy: { name: 'asc' },
-    });
+  async getOutOfStockItems(
+    tenantId: string,
+    page: number = PAGINATION_DEFAULTS.PAGE,
+    limit: number = PAGINATION_DEFAULTS.LIMIT,
+  ) {
+    const where: Prisma.InventoryItemWhereInput = {
+      tenantId,
+      deletedAt: null,
+      isActive: true,
+      currentQuantity: { lte: 0 },
+    };
+    const skip = (page - 1) * limit;
 
-    return items;
+    const [items, total] = await Promise.all([
+      this.prisma.inventoryItem.findMany({
+        where,
+        skip,
+        take: limit,
+        include: { category: true, unit: true, location: true },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.inventoryItem.count({ where }),
+    ]);
+
+    return buildPaginatedResponse(items, total, page, limit);
   }
 
   // ============================================

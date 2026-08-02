@@ -119,6 +119,7 @@ const prismaModelNames = [
 
 function createMockDelegate() {
   return {
+    fields: {} as Record<string, unknown>,
     findUnique: jest.fn(),
     findFirst: jest.fn().mockResolvedValue(null),
     findMany: jest.fn().mockResolvedValue([]),

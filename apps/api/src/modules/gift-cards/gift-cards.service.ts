@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { I18nService } from '../../common/i18n/i18n.service';
+import { GiftCardIssueType } from '@prisma/client';
 import { CreateGiftCardDto } from './dto/create-gift-card.dto';
 import { RechargeGiftCardDto } from './dto/recharge-gift-card.dto';
 import { RedeemGiftCardDto } from './dto/redeem-gift-card.dto';
@@ -22,7 +23,7 @@ export class GiftCardsService {
         initialBalance: dto.initialBalance,
         currentBalance: dto.initialBalance,
         currency: dto.currency ?? 'USD',
-        issueType: dto.issueType ?? 'MANUAL',
+        issueType: (dto.issueType as GiftCardIssueType) ?? GiftCardIssueType.MANUAL,
         recipientName: dto.recipientName,
         recipientEmail: dto.recipientEmail,
         recipientPhone: dto.recipientPhone,

@@ -191,4 +191,101 @@ describe('InventoryService', () => {
       expect(prisma.inventoryItem.findMany).not.toHaveBeenCalled();
     });
   });
+
+  describe('getLowStockItems', () => {
+    beforeEach(() => {
+      prisma.inventoryItem.fields = { minStock: 'MIN_STOCK', reorderLevel: 'REORDER_LEVEL' };
+    });
+
+    it('should push the minStock threshold into the SQL WHERE', async () => {
+      prisma.inventoryItem.findMany.mockResolvedValue([{ id: 'item-1' }]);
+      prisma.inventoryItem.count.mockResolvedValue(1);
+
+      const result = await service.getLowStockItems(testTenantId, 1, 20);
+
+      expect(prisma.inventoryItem.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            tenantId: testTenantId,
+            minStock: { not: null },
+            currentQuantity: { lte: prisma.inventoryItem.fields.minStock },
+          }),
+          skip: 0,
+          take: 20,
+        }),
+      );
+      expect(result).toEqual(expect.objectContaining({ data: [{ id: 'item-1' }] }));
+    });
+
+    it('should return the paginated envelope with meta', async () => {
+      prisma.inventoryItem.findMany.mockResolvedValue([{ id: 'item-1' }]);
+      prisma.inventoryItem.count.mockResolvedValue(25);
+
+      const result = await service.getLowStockItems(testTenantId, 2, 20);
+
+      expect(prisma.inventoryItem.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 20, take: 20 }),
+      );
+      expect(result.meta).toEqual({
+        total: 25,
+        page: 2,
+        limit: 20,
+        totalPages: 2,
+        hasNext: false,
+        hasPrevious: true,
+      });
+    });
+  });
+
+  describe('getCriticalStockItems', () => {
+    beforeEach(() => {
+      prisma.inventoryItem.fields = { minStock: 'MIN_STOCK', reorderLevel: 'REORDER_LEVEL' };
+    });
+
+    it('should push the reorderLevel threshold into the SQL WHERE', async () => {
+      prisma.inventoryItem.findMany.mockResolvedValue([{ id: 'item-2' }]);
+      prisma.inventoryItem.count.mockResolvedValue(1);
+
+      const result = await service.getCriticalStockItems(testTenantId);
+
+      expect(prisma.inventoryItem.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            tenantId: testTenantId,
+            reorderLevel: { not: null },
+            currentQuantity: { lte: prisma.inventoryItem.fields.reorderLevel },
+          }),
+        }),
+      );
+      expect(result.meta.total).toBe(1);
+    });
+  });
+
+  describe('getOutOfStockItems', () => {
+    it('should filter currentQuantity lte 0 and return paginated envelope', async () => {
+      prisma.inventoryItem.findMany.mockResolvedValue([{ id: 'item-3' }]);
+      prisma.inventoryItem.count.mockResolvedValue(3);
+
+      const result = await service.getOutOfStockItems(testTenantId, 1, 20);
+
+      expect(prisma.inventoryItem.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            tenantId: testTenantId,
+            currentQuantity: { lte: 0 },
+          }),
+          skip: 0,
+          take: 20,
+        }),
+      );
+      expect(result.meta).toEqual({
+        total: 3,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+        hasNext: false,
+        hasPrevious: false,
+      });
+    });
+  });
 });

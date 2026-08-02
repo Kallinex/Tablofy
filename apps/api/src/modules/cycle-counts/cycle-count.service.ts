@@ -5,7 +5,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { QueueService } from '../queues/queue.service';
 import { CycleCountGateway } from './cycle-count.gateway';
-import { CycleCountStatus, CycleCountItemStatus, Prisma } from '@prisma/client';
+import { CycleCountStatus, CycleCountItemStatus, CycleCountType, Prisma } from '@prisma/client';
 import { CreateCycleCountDto } from './dto/create-cycle-count.dto';
 import { UpdateCycleCountDto } from './dto/update-cycle-count.dto';
 import { QueryCycleCountDto } from './dto/query-cycle-count.dto';
@@ -32,7 +32,7 @@ export class CycleCountService {
         countDate: new Date(dto.countDate),
         scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : undefined,
         status: dto.status ?? CycleCountStatus.SCHEDULED,
-        countType: dto.countType ?? 'FULL',
+        countType: (dto.countType as CycleCountType) ?? CycleCountType.FULL,
         notes: dto.notes,
         metadata: (dto.metadata as Prisma.InputJsonValue) ?? Prisma.DbNull,
       },
@@ -68,7 +68,7 @@ export class CycleCountService {
 
     const where: Prisma.CycleCountWhereInput = { tenantId, deletedAt: null };
     if (query.status) where.status = query.status;
-    if (query.countType) where.countType = query.countType;
+    if (query.countType) where.countType = query.countType as CycleCountType;
     if (query.warehouseId) where.warehouseId = query.warehouseId;
 
     const [data, total] = await Promise.all([
@@ -135,7 +135,7 @@ export class CycleCountService {
               : null
             : undefined,
         status: dto.status,
-        countType: dto.countType,
+        countType: dto.countType as CycleCountType,
         notes: dto.notes,
         metadata: dto.metadata !== undefined ? (dto.metadata as Prisma.InputJsonValue) : undefined,
       },

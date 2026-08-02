@@ -34,21 +34,31 @@ export class CacheService {
     await this.redisService.del(fullKey);
   }
 
+  private async scanPattern(pattern: string, count = 100): Promise<string[]> {
+    return this.redisService.scanKeys(pattern, count);
+  }
+
+  private async deleteBatch(keys: string[]): Promise<void> {
+    const batchSize = 100;
+    for (let i = 0; i < keys.length; i += batchSize) {
+      const batch = keys.slice(i, i + batchSize);
+      await this.redisService.del(...batch);
+    }
+  }
+
   async deletePattern(tenantId: string, pattern: string): Promise<void> {
     const fullPattern = this.buildKey(tenantId, pattern);
-    const client = await this.redisService.getClient();
-    const keys = await client.keys(fullPattern);
+    const keys = await this.scanPattern(fullPattern);
     if (keys.length > 0) {
-      await client.del(...keys);
+      await this.deleteBatch(keys);
     }
   }
 
   async invalidateTenantCache(tenantId: string): Promise<void> {
     const pattern = `${this.tenantPrefix}${tenantId}:*`;
-    const client = await this.redisService.getClient();
-    const keys = await client.keys(pattern);
+    const keys = await this.scanPattern(pattern);
     if (keys.length > 0) {
-      await client.del(...keys);
+      await this.deleteBatch(keys);
       this.logger.log(`Invalidated ${keys.length} cache entries for tenant ${tenantId}`);
     }
   }

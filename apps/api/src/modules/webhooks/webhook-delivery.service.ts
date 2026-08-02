@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AppLoggerService } from '../../common/logger/logger.service';
+import { WebhookDeliveryStatus, WebhookEventType } from '@prisma/client';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -77,7 +78,14 @@ export class WebhookDeliveryService {
     maxRetries: number,
   ): Promise<string> {
     const delivery = await this.prisma.webhookDelivery.create({
-      data: { webhookId, tenantId, eventType, eventId, payload: payload as object, maxRetries },
+      data: {
+        webhookId,
+        tenantId,
+        eventType: eventType as WebhookEventType,
+        eventId,
+        payload: payload as object,
+        maxRetries,
+      },
     });
     return delivery.id;
   }
@@ -91,7 +99,7 @@ export class WebhookDeliveryService {
     await this.prisma.webhookDelivery.update({
       where: { id: deliveryId },
       data: {
-        status: 'DELIVERED',
+        status: WebhookDeliveryStatus.DELIVERED,
         statusCode,
         responseBody,
         durationMs,
@@ -117,7 +125,7 @@ export class WebhookDeliveryService {
       await this.prisma.webhookDelivery.update({
         where: { id: deliveryId },
         data: {
-          status: 'DEAD_LETTER',
+          status: WebhookDeliveryStatus.DEAD_LETTER,
           attemptCount,
           errorMessage,
           statusCode,
@@ -169,7 +177,10 @@ export class WebhookDeliveryService {
   async cleanupOldDeliveries(retentionDays = 30): Promise<number> {
     const cutoff = new Date(Date.now() - retentionDays * 86400000);
     const result = await this.prisma.webhookDelivery.deleteMany({
-      where: { createdAt: { lt: cutoff }, status: { in: ['DELIVERED', 'DEAD_LETTER'] } },
+      where: {
+        createdAt: { lt: cutoff },
+        status: { in: [WebhookDeliveryStatus.DELIVERED, WebhookDeliveryStatus.DEAD_LETTER] },
+      },
     });
     return result.count;
   }

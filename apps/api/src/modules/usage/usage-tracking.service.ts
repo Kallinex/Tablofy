@@ -67,7 +67,7 @@ export class UsageTrackingService implements OnModuleInit {
   ): Promise<Array<{ productId: string; count: number }>> {
     const client = await this.redisService.getClient();
     const pattern = `usage:${tenantId}:${restaurantId}:products:*:count`;
-    const keys = await client.keys(pattern);
+    const keys = await this.redisService.scanKeys(pattern);
 
     const results: Array<{ productId: string; count: number }> = [];
     for (const key of keys) {
@@ -103,9 +103,13 @@ export class UsageTrackingService implements OnModuleInit {
   async resetUsage(tenantId: string, restaurantId: string): Promise<void> {
     const client = await this.redisService.getClient();
     const pattern = `usage:${tenantId}:${restaurantId}:*`;
-    const keys = await client.keys(pattern);
+    const keys = await this.redisService.scanKeys(pattern);
     if (keys.length > 0) {
-      await client.del(...keys);
+      const batchSize = 100;
+      for (let i = 0; i < keys.length; i += batchSize) {
+        const batch = keys.slice(i, i + batchSize);
+        await client.del(...batch);
+      }
     }
     this.logger.log(`Reset usage counters for restaurant ${restaurantId}`);
   }

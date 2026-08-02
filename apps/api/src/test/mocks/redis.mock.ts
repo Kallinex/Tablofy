@@ -6,6 +6,7 @@ export function createMockRedis() {
     onModuleDestroy: jest.fn().mockResolvedValue(undefined),
     getClient: jest.fn().mockResolvedValue({
       keys: jest.fn().mockResolvedValue([]),
+      scan: jest.fn().mockResolvedValue(['0', []]),
       del: jest.fn().mockResolvedValue(1),
       pipeline: jest.fn().mockReturnValue({
         del: jest.fn(),
@@ -17,6 +18,7 @@ export function createMockRedis() {
       quit: jest.fn().mockResolvedValue(undefined),
     }),
     ping: jest.fn().mockResolvedValue('PONG'),
+    scanKeys: jest.fn().mockResolvedValue([]),
     blacklistToken: jest.fn().mockResolvedValue(undefined),
     isTokenBlacklisted: jest.fn().mockResolvedValue(false),
     setSession: jest.fn().mockResolvedValue(undefined),

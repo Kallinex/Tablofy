@@ -3,7 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, CampaignType } from '@prisma/client';
 import { CrmAnalyticsQueryDto } from './dto/crm-analytics-query.dto';
 
 @Injectable()
@@ -118,7 +118,7 @@ export class CrmAnalyticsService {
         ...((where.createdAt as Prisma.DateTimeFilter) || {}),
         lte: new Date(query.endDate),
       };
-    if (query.type) where.type = query.type;
+    if (query.type) where.type = query.type as CampaignType;
 
     const campaigns = await this.prisma.campaign.findMany({
       where,
@@ -269,7 +269,7 @@ export class CrmAnalyticsService {
         ...((where.createdAt as Prisma.DateTimeFilter) || {}),
         lte: new Date(query.endDate),
       };
-    if (query.type) where.type = query.type;
+    if (query.type) where.type = query.type as CampaignType;
 
     const campaigns = await this.prisma.campaign.findMany({
       where,
@@ -327,7 +327,7 @@ export class CrmAnalyticsService {
         ...((where.createdAt as Prisma.DateTimeFilter) || {}),
         lte: new Date(query.endDate),
       };
-    if (query.type) where.type = query.type;
+    if (query.type) where.type = query.type as CampaignType;
 
     const campaigns = await this.prisma.campaign.findMany({
       where,

@@ -119,6 +119,8 @@ export const DAY_OF_WEEK = {
 } as const;
 
 export const CACHE_TTL = {
+  ORDERS: 30,
+  LOW_STOCK: 120,
   SHORT: 60,
   MEDIUM: 300,
   LONG: 3600,

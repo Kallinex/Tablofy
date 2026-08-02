@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { I18nService } from '../../common/i18n/i18n.service';
+import { BackupRecordType } from '@prisma/client';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -12,7 +13,7 @@ export class BackupService {
     private readonly i18n: I18nService,
   ) {}
 
-  async create(tenantId: string, type = 'FULL', lang: string) {
+  async create(tenantId: string, type: BackupRecordType = BackupRecordType.FULL, lang: string) {
     const inProgress = await this.prisma.backupRecord.findFirst({
       where: { tenantId, status: { in: ['PENDING', 'IN_PROGRESS'] } },
     });

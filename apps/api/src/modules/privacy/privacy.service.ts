@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { I18nService } from '../../common/i18n/i18n.service';
+import { ConsentType, ExportFormat } from '@prisma/client';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -26,7 +27,7 @@ export class PrivacyService {
     return this.prisma.consentRecord.create({
       data: {
         tenantId,
-        type: dto.type,
+        type: dto.type as ConsentType,
         granted: dto.granted,
         userId: dto.userId,
         customerId: dto.customerId,
@@ -97,7 +98,12 @@ export class PrivacyService {
     return this.prisma.cookiePreference.findFirst({ where });
   }
 
-  async requestDataExport(tenantId: string, userId: string, format = 'JSON', _lang: string) {
+  async requestDataExport(
+    tenantId: string,
+    userId: string,
+    format: ExportFormat = ExportFormat.JSON,
+    _lang: string,
+  ) {
     return this.prisma.dataExportRequest.create({
       data: { tenantId, userId, format, status: 'PENDING', requestType: 'FULL' },
     });

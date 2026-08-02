@@ -206,11 +206,11 @@ model Tenant {
   updatedAt          DateTime     @updatedAt
   deletedAt          DateTime?
 
-  users        User[]
-  subscription Subscription?
-  invitations  Invitation[]
-  auditLogs    AuditLog[]
-  restaurants  Restaurant[]
+  users                User[]
+  subscription         Subscription?
+  invitations          Invitation[]
+  auditLogs            AuditLog[]
+  restaurants          Restaurant[]
   customers            Customer[]
   scheduledReports     ScheduledReport[]
   reportExports        ReportExport[]
@@ -222,6 +222,8 @@ model Tenant {
   cookiePreferences    CookiePreference[]
   dataExportRequests   DataExportRequest[]
   backupRecords        BackupRecord[]
+  membershipHistory    MembershipHistory[]
+  eventLogs            EventLog[]
 
   @@index([status])
   @@index([deletedAt])
@@ -252,31 +254,33 @@ model User {
   updatedAt           DateTime   @updatedAt
   deletedAt           DateTime?
 
-  tenant             Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tenant             Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   refreshTokens      RefreshToken[]
   sessions           Session[]
-  invitedUsers       Invitation[]         @relation("InvitedBy")
+  invitedUsers       Invitation[]          @relation("InvitedBy")
   verificationTokens VerificationToken[]
   auditLogs          AuditLog[]
   orders             Order[]
   orderNotes         OrderNote[]
   statusChanges      OrderStatusHistory[]
   notifications      Notification[]
-  sentMessages       Message[]            @relation("MessageSender")
-  receivedMessages   Message[]            @relation("MessageRecipient")
+  sentMessages       Message[]             @relation("MessageSender")
+  receivedMessages   Message[]             @relation("MessageRecipient")
   feedback           Feedback[]
   reports            Report[]
   apiKeys            ApiKey[]
-  issuedGiftCards    GiftCard[]           @relation("IssuedGiftCards")
-  performedTxns     GiftCardTransaction[] @relation("PerformedTransactions")
-  consentRecords    ConsentRecord[]
+  issuedGiftCards    GiftCard[]            @relation("IssuedGiftCards")
+  performedTxns      GiftCardTransaction[] @relation("PerformedTransactions")
+  consentRecords     ConsentRecord[]
   dataExportRequests DataExportRequest[]
 
   @@unique([tenantId, email])
-  @@index([tenantId])
-  @@index([role])
   @@index([email])
   @@index([lockedUntil])
+  @@index([role])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("users")
 }
 
@@ -289,6 +293,8 @@ model RefreshToken {
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -299,13 +305,15 @@ model RefreshToken {
 }
 
 model Session {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   userId       String
   userAgent    String?
   ipAddress    String?
-  lastActiveAt DateTime @default(now())
+  lastActiveAt DateTime  @default(now())
   expiresAt    DateTime
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -328,12 +336,14 @@ model Subscription {
   maxBranches  Int                @default(1)
   monthlyPrice Decimal            @default(0) @db.Decimal(10, 2)
   createdAt    DateTime           @default(now())
+  deletedAt    DateTime?
   updatedAt    DateTime           @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
   @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("subscriptions")
 }
 
@@ -348,15 +358,17 @@ model Invitation {
   expiresAt  DateTime
   acceptedAt DateTime?
   createdAt  DateTime         @default(now())
+  deletedAt  DateTime?
   updatedAt  DateTime         @updatedAt
 
   tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  inviter User   @relation("InvitedBy", fields: [invitedBy], references: [id])
+  inviter User   @relation("InvitedBy", fields: [invitedBy], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, email])
+  @@index([status])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@index([token])
-  @@index([status])
   @@map("invitations")
 }
 
@@ -367,6 +379,8 @@ model VerificationToken {
   type      VerificationType
   expiresAt DateTime
   createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  deletedAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -389,16 +403,20 @@ model AuditLog {
   isArchived Boolean   @default(false)
   archivedAt DateTime?
   createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  @@index([tenantId])
-  @@index([userId])
   @@index([action])
-  @@index([resource, resourceId])
+  @@index([createdAt, isArchived])
   @@index([createdAt])
   @@index([isArchived])
+  @@index([resource, resourceId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
+  @@index([userId])
   @@map("audit_logs")
 }
 
@@ -444,9 +462,11 @@ model Restaurant {
   Customer          Customer[]
 
   @@unique([tenantId, slug])
-  @@index([tenantId])
-  @@index([isActive])
   @@index([deletedAt])
+  @@index([isActive])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("restaurants")
 }
 
@@ -471,23 +491,25 @@ model Branch {
   updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?
 
-  restaurant       Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  floors           Floor[]
-  areas            DiningArea[]
-  tables           Table[]
-  orders           Order[]
+  restaurant         Restaurant          @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  floors             Floor[]
+  areas              DiningArea[]
+  tables             Table[]
+  orders             Order[]
   inventoryLocations InventoryLocation[]
-  purchaseOrders   PurchaseOrder[]
-  goodsReceipts    GoodsReceipt[]
-  transfersFrom    BranchTransfer[]    @relation("TransferFromBranch")
-  transfersTo      BranchTransfer[]    @relation("TransferToBranch")
-  warehouseBranches WarehouseBranch[]
+  purchaseOrders     PurchaseOrder[]
+  goodsReceipts      GoodsReceipt[]
+  transfersFrom      BranchTransfer[]    @relation("TransferFromBranch")
+  transfersTo        BranchTransfer[]    @relation("TransferToBranch")
+  warehouseBranches  WarehouseBranch[]
 
   @@unique([restaurantId, slug])
-  @@index([restaurantId])
-  @@index([tenantId])
-  @@index([isActive])
   @@index([deletedAt])
+  @@index([isActive])
+  @@index([restaurantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("branches")
 }
 
@@ -508,10 +530,12 @@ model Floor {
   branch     Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
   areas      DiningArea[]
 
-  @@index([restaurantId])
   @@index([branchId])
-  @@index([tenantId])
   @@index([deletedAt])
+  @@index([restaurantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("floors")
 }
 
@@ -533,9 +557,11 @@ model DiningArea {
   tables Table[]
 
   @@index([branchId])
-  @@index([floorId])
-  @@index([tenantId])
   @@index([deletedAt])
+  @@index([floorId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("dining_areas")
 }
 
@@ -560,10 +586,12 @@ model Table {
 
   @@unique([branchId, number])
   @@index([branchId])
-  @@index([diningAreaId])
-  @@index([tenantId])
-  @@index([status])
   @@index([deletedAt])
+  @@index([diningAreaId])
+  @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("tables")
 }
 
@@ -582,9 +610,11 @@ model MenuCategory {
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   products   Product[]
 
-  @@index([restaurantId])
-  @@index([tenantId])
   @@index([deletedAt])
+  @@index([restaurantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("menu_categories")
 }
 
@@ -623,12 +653,14 @@ model Product {
   stationId String?
 
   @@unique([restaurantId, sku])
-  @@index([restaurantId])
-  @@index([tenantId])
-  @@index([menuCategoryId])
-  @@index([stationId])
-  @@index([isActive])
   @@index([deletedAt])
+  @@index([isActive])
+  @@index([menuCategoryId])
+  @@index([restaurantId])
+  @@index([stationId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("products")
 }
 
@@ -649,9 +681,11 @@ model VariantGroup {
   variants   ProductVariant[]
 
   @@unique([restaurantId, name, deletedAt])
-  @@index([restaurantId])
-  @@index([tenantId])
   @@index([deletedAt])
+  @@index([restaurantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("variant_groups")
 }
 
@@ -674,10 +708,12 @@ model ProductVariant {
   modifiers    ProductVariantModifier[]
 
   @@unique([variantGroupId, productId, name, deletedAt])
-  @@index([variantGroupId])
-  @@index([productId])
-  @@index([tenantId])
   @@index([deletedAt])
+  @@index([productId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
+  @@index([variantGroupId])
   @@map("product_variants")
 }
 
@@ -700,9 +736,11 @@ model ModifierGroup {
   modifiers  Modifier[]
 
   @@unique([restaurantId, name, deletedAt])
-  @@index([restaurantId])
-  @@index([tenantId])
   @@index([deletedAt])
+  @@index([restaurantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("modifier_groups")
 }
 
@@ -722,9 +760,11 @@ model Modifier {
   variantLinks  ProductVariantModifier[]
 
   @@unique([modifierGroupId, name, deletedAt])
-  @@index([modifierGroupId])
-  @@index([tenantId])
   @@index([deletedAt])
+  @@index([modifierGroupId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("modifiers")
 }
 
@@ -733,8 +773,10 @@ model ProductVariantModifier {
   variantId  String
   modifierId String
 
-  variant  ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  modifier Modifier       @relation(fields: [modifierId], references: [id], onDelete: Cascade)
+  updatedAt DateTime       @updatedAt
+  deletedAt DateTime?
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  modifier  Modifier       @relation(fields: [modifierId], references: [id], onDelete: Cascade)
 
   @@unique([variantId, modifierId])
   @@index([variantId])
@@ -758,9 +800,11 @@ model ProductTag {
   products   ProductTagAssignment[]
 
   @@unique([restaurantId, slug, deletedAt])
-  @@index([restaurantId])
-  @@index([tenantId])
   @@index([deletedAt])
+  @@index([restaurantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("product_tags")
 }
 
@@ -781,9 +825,11 @@ model Allergen {
   products   ProductAllergenAssignment[]
 
   @@unique([restaurantId, slug, deletedAt])
-  @@index([restaurantId])
-  @@index([tenantId])
   @@index([deletedAt])
+  @@index([restaurantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("allergens")
 }
 
@@ -792,8 +838,10 @@ model ProductTagAssignment {
   productId String
   tagId     String
 
-  product Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
-  tag     ProductTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  updatedAt DateTime   @updatedAt
+  deletedAt DateTime?
+  product   Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tag       ProductTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@unique([productId, tagId])
   @@index([productId])
@@ -806,8 +854,10 @@ model ProductAllergenAssignment {
   productId  String
   allergenId String
 
-  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  allergen Allergen @relation(fields: [allergenId], references: [id], onDelete: Cascade)
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  allergen  Allergen  @relation(fields: [allergenId], references: [id], onDelete: Cascade)
 
   @@unique([productId, allergenId])
   @@index([productId])
@@ -824,7 +874,9 @@ model ProductImage {
   sortOrder Int     @default(0)
   isPrimary Boolean @default(false)
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId])
   @@index([tenantId])
@@ -839,7 +891,9 @@ model ProductAvailability {
   startTime String
   endTime   String
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([productId, dayOfWeek, startTime])
   @@index([productId])
@@ -866,8 +920,10 @@ model NutritionalInfo {
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
   @@index([deletedAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("nutritional_info")
 }
 
@@ -880,6 +936,8 @@ model BusinessHours {
   closeTime    String
   isClosed     Boolean   @default(false)
 
+  updatedAt  DateTime   @updatedAt
+  deletedAt  DateTime?
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@unique([restaurantId, dayOfWeek])
@@ -889,21 +947,24 @@ model BusinessHours {
 }
 
 model BusinessException {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   restaurantId String
   tenantId     String
-  date         DateTime @db.Date
+  date         DateTime  @db.Date
   openTime     String?
   closeTime    String?
-  isClosed     Boolean  @default(true)
+  isClosed     Boolean   @default(true)
   reason       String?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
 
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
-  @@index([restaurantId])
-  @@index([tenantId])
   @@index([date])
+  @@index([restaurantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("business_exceptions")
 }
 
@@ -964,16 +1025,20 @@ model Order {
   kitchenTickets   KitchenTicket[]
 
   @@unique([restaurantId, orderNumber])
-  @@index([tenantId])
-  @@index([restaurantId])
   @@index([branchId])
-  @@index([tableId])
-  @@index([userId])
-  @@index([status])
-  @@index([orderType])
-  @@index([source])
   @@index([createdAt])
   @@index([deletedAt])
+  @@index([orderType])
+  @@index([restaurantId])
+  @@index([source])
+  @@index([status])
+  @@index([tableId])
+  @@index([tenantId, branchId, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId])
+  @@index([userId])
   @@map("orders")
 }
 
@@ -1000,6 +1065,7 @@ model OrderItem {
   voidedAt         DateTime?
   voidReason       String?
   createdAt        DateTime      @default(now())
+  deletedAt        DateTime?
   updatedAt        DateTime      @updatedAt
 
   order              Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -1007,10 +1073,11 @@ model OrderItem {
   modifiers          OrderItemModifier[]
   kitchenTicketItems KitchenTicketItem[]
 
+  @@index([kitchenStatus])
   @@index([orderId])
   @@index([productId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
-  @@index([kitchenStatus])
   @@map("order_items")
 }
 
@@ -1023,6 +1090,8 @@ model OrderItemModifier {
   quantity    Int     @default(1)
   price       Decimal @db.Decimal(10, 2)
 
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
   orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
 
   @@index([orderItemId])
@@ -1040,29 +1109,35 @@ model OrderStatusHistory {
   changedByUserId String?
   reason          String?
   createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  deletedAt       DateTime?
 
   order         Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
   changedByUser User? @relation(fields: [changedByUserId], references: [id], onDelete: SetNull)
 
-  @@index([orderId])
-  @@index([tenantId])
   @@index([createdAt])
+  @@index([orderId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("order_status_history")
 }
 
 model OrderNote {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   orderId   String
   tenantId  String
-  type      NoteType @default(GENERAL)
+  type      NoteType  @default(GENERAL)
   content   String
   userId    String?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
   user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@index([type])
   @@map("order_notes")
@@ -1078,6 +1153,7 @@ model KitchenTicket {
   printedAt    DateTime?
   completedAt  DateTime?
   createdAt    DateTime      @default(now())
+  deletedAt    DateTime?
   updatedAt    DateTime      @updatedAt
 
   station KitchenStation?     @relation(fields: [stationId], references: [id], onDelete: SetNull)
@@ -1087,11 +1163,12 @@ model KitchenTicket {
   stationId String?
 
   @@unique([orderId, ticketNumber])
-  @@index([orderId])
-  @@index([tenantId])
-  @@index([status])
-  @@index([stationId])
   @@index([createdAt])
+  @@index([orderId])
+  @@index([stationId])
+  @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("kitchen_tickets")
 }
 
@@ -1110,15 +1187,17 @@ model Payment {
   refundedAt   DateTime?
   refundReason String?
   createdAt    DateTime      @default(now())
+  deletedAt    DateTime?
   updatedAt    DateTime      @updatedAt
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  @@index([orderId])
-  @@index([tenantId])
-  @@index([method])
-  @@index([status])
   @@index([createdAt])
+  @@index([method])
+  @@index([orderId])
+  @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("payments")
 }
 
@@ -1136,14 +1215,16 @@ model Ingredient {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  products      ProductIngredient[]
-  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  products        ProductIngredient[]
+  inventoryItem   InventoryItem?      @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
   inventoryItemId String?
 
   @@unique([tenantId, name, deletedAt])
-  @@index([tenantId])
-  @@index([isActive])
   @@index([deletedAt])
+  @@index([isActive])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("ingredients")
 }
 
@@ -1161,13 +1242,15 @@ model Supplier {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  products ProductIngredient[]
-  detail   SupplierDetail?
+  products           ProductIngredient[]
+  detail             SupplierDetail?
   performanceMetrics SupplierPerformanceMetric[]
 
-  @@index([tenantId])
-  @@index([isActive])
   @@index([deletedAt])
+  @@index([isActive])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("suppliers")
 }
 
@@ -1179,6 +1262,8 @@ model ProductIngredient {
   tenantId     String
   quantity     Decimal @db.Decimal(10, 4)
 
+  updatedAt  DateTime   @updatedAt
+  deletedAt  DateTime?
   product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
   ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
   supplier   Supplier?  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
@@ -1192,21 +1277,24 @@ model ProductIngredient {
 }
 
 model Notification {
-  id        String   @id @default(uuid())
+  id        String           @id @default(uuid())
   tenantId  String
   userId    String
   title     String
   message   String
-  type      String
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
+  type      NotificationType
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  deletedAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([createdAt])
+  @@index([isRead])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@index([userId])
-  @@index([isRead])
-  @@index([createdAt])
   @@map("notifications")
 }
 
@@ -1221,8 +1309,10 @@ model Message {
   sentAt      DateTime  @default(now())
   readAt      DateTime?
 
-  sender    User @relation("MessageSender", fields: [senderId], references: [id], onDelete: Restrict)
-  recipient User @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: Restrict)
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  sender    User      @relation("MessageSender", fields: [senderId], references: [id], onDelete: Restrict)
+  recipient User      @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: Restrict)
 
   @@index([tenantId])
   @@index([senderId])
@@ -1233,44 +1323,49 @@ model Message {
 }
 
 model Report {
-  id          String    @id @default(uuid())
+  id          String       @id @default(uuid())
   tenantId    String
   userId      String?
-  type        String
+  type        ReportType
   title       String
   description String?
   parameters  Json?
   result      Json?
-  status      String    @default("PENDING")
+  status      ReportStatus @default(PENDING)
   generatedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime     @default(now())
+  deletedAt   DateTime?
+  updatedAt   DateTime     @updatedAt
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  @@index([tenantId])
-  @@index([userId])
-  @@index([type])
-  @@index([status])
   @@index([createdAt])
+  @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
+  @@index([type])
+  @@index([userId])
   @@map("reports")
 }
 
 model Feedback {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   tenantId  String
   userId    String?
   rating    Int
   comment   String?
   source    String?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([createdAt])
+  @@index([rating])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@index([userId])
-  @@index([rating])
-  @@index([createdAt])
   @@map("feedback")
 }
 
@@ -1290,9 +1385,11 @@ model TaxRate {
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@unique([restaurantId, name, deletedAt])
-  @@index([restaurantId])
-  @@index([tenantId])
   @@index([deletedAt])
+  @@index([restaurantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("tax_rates")
 }
 
@@ -1312,9 +1409,11 @@ model ServiceCharge {
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@unique([restaurantId, name, deletedAt])
-  @@index([restaurantId])
-  @@index([tenantId])
   @@index([deletedAt])
+  @@index([restaurantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("service_charges")
 }
 
@@ -1330,37 +1429,41 @@ model Unit {
   deletedAt    DateTime?
 
   @@unique([tenantId, name, deletedAt])
-  @@index([tenantId])
   @@index([deletedAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("units")
 }
 
 model Campaign {
-  id          String    @id @default(uuid())
+  id          String         @id @default(uuid())
   tenantId    String
   name        String
   description String?
-  type        String
-  status      String    @default("DRAFT")
+  type        CampaignType
+  status      CampaignStatus @default(DRAFT)
   startsAt    DateTime?
   endsAt      DateTime?
-  budget      Decimal?  @db.Decimal(10, 2)
+  budget      Decimal?       @db.Decimal(10, 2)
   metadata    Json?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
   deletedAt   DateTime?
 
-  templates    CampaignTemplate[]
-  recipients   CampaignRecipient[]
-  analytics    CampaignAnalytics?
-  approval     CampaignApproval?
+  templates  CampaignTemplate[]
+  recipients CampaignRecipient[]
+  analytics  CampaignAnalytics?
+  approval   CampaignApproval?
 
+  @@index([deletedAt])
+  @@index([endsAt])
+  @@index([startsAt])
+  @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
   @@index([tenantId])
   @@index([type])
-  @@index([status])
-  @@index([startsAt])
-  @@index([endsAt])
-  @@index([deletedAt])
   @@map("campaigns")
 }
 
@@ -1388,12 +1491,14 @@ model KitchenStation {
   tickets     KitchenTicket[]
   ticketItems KitchenTicketItem[]
 
-  @@unique([restaurantId, slug])
   @@unique([restaurantId, name])
-  @@index([tenantId])
-  @@index([restaurantId])
-  @@index([isActive])
+  @@unique([restaurantId, slug])
   @@index([displayOrder])
+  @@index([isActive])
+  @@index([restaurantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("kitchen_stations")
 }
 
@@ -1409,18 +1514,20 @@ model KitchenTicketItem {
   notes       String?
   sortOrder   Int              @default(0)
   createdAt   DateTime         @default(now())
+  deletedAt   DateTime?
   updatedAt   DateTime         @updatedAt
 
   ticket    KitchenTicket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   orderItem OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
   station   KitchenStation? @relation(fields: [stationId], references: [id], onDelete: SetNull)
 
-  @@index([ticketId])
   @@index([orderItemId])
-  @@index([tenantId])
+  @@index([startedAt])
   @@index([stationId])
   @@index([status])
-  @@index([startedAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
+  @@index([ticketId])
   @@map("kitchen_ticket_items")
 }
 
@@ -1519,23 +1626,24 @@ model Customer {
   updatedAt         DateTime       @updatedAt
   deletedAt         DateTime?
 
-  tenant            Tenant                      @relation(fields: [tenantId], references: [id])
-  restaurant        Restaurant?                 @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
-  addresses         CustomerAddress[]
-  preferences       CustomerPreference[]
-  visitHistory      VisitHistory[]
+  tenant              Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  restaurant          Restaurant?                 @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
+  addresses           CustomerAddress[]
+  preferences         CustomerPreference[]
+  visitHistory        VisitHistory[]
   loyaltyTransactions LoyaltyPointsTransaction[]
-  memberships       Membership[]
-  rewards           Reward[]
-  wallets           Wallet[]
-  referralsMade     Referral[]                  @relation("ReferralMade")
-  referralsUsed     Referral[]                  @relation("ReferralUsed")
-  segmentAssignments CustomerSegmentAssignment[]
-  analytics         CustomerAnalytics?
-  timelineEntries   CrmTimelineEntry[]
-  communicationLogs CommunicationLog[]
-  campaignRecipients CampaignRecipient[]
-  promotionUsages   PromotionUsage[]
+  memberships         Membership[]
+  rewards             Reward[]
+  wallets             Wallet[]
+  referralsMade       Referral[]                  @relation("ReferralMade")
+  referralsUsed       Referral[]                  @relation("ReferralUsed")
+  segmentAssignments  CustomerSegmentAssignment[]
+  analytics           CustomerAnalytics?
+  timelineEntries     CrmTimelineEntry[]
+  communicationLogs   CommunicationLog[]
+  campaignRecipients  CampaignRecipient[]
+  promotionUsages     PromotionUsage[]
+  membershipHistory   MembershipHistory[]
 
   @@unique([tenantId, email])
   @@index([tenantId, status])
@@ -1546,7 +1654,7 @@ model Customer {
 }
 
 model CustomerAddress {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   customerId String
   tenantId   String
   label      String?
@@ -1555,167 +1663,189 @@ model CustomerAddress {
   state      String?
   zipCode    String?
   country    String?
-  isDefault  Boolean  @default(false)
+  isDefault  Boolean   @default(false)
   latitude   Float?
   longitude  Float?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+  updatedAt  DateTime  @updatedAt
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@map("customer_addresses")
 }
 
 model CustomerPreference {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   customerId String
   tenantId   String
   key        String
   value      String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+  updatedAt  DateTime  @updatedAt
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@unique([customerId, key])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@map("customer_preferences")
 }
 
 model VisitHistory {
-  id         String     @id @default(uuid())
-  customerId String
-  tenantId   String
+  id           String    @id @default(uuid())
+  customerId   String
+  tenantId     String
   restaurantId String?
-  branchId   String?
-  orderId    String?
+  branchId     String?
+  orderId      String?
   visitedAt  DateTime   @default(now())
-  totalSpent Decimal?   @default(0)
-  itemsCount Int?       @default(0)
-  createdAt  DateTime   @default(now())
+  totalSpent Decimal?   @db.Decimal(10, 2) @default(0)
+  itemsCount   Int?      @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
+  @@index([customerId, visitedAt])
   @@index([customerId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@index([visitedAt])
-  @@index([customerId, visitedAt])
   @@map("visit_history")
 }
 
 model LoyaltyProgram {
-  id                 String   @id @default(uuid())
-  tenantId           String   @unique
-  pointsPerCurrency  Decimal  @default(10)
-  currencyPerPoint   Decimal  @default(0.1)
-  minPointsRedeem    Int      @default(100)
+  id                 String    @id @default(uuid())
+  tenantId           String    @unique
+  pointsPerCurrency  Decimal   @default(10)
+  currencyPerPoint   Decimal   @default(0.1)
+  minPointsRedeem    Int       @default(100)
   maxPointsRedeem    Int?
-  pointsExpireDays   Int      @default(365)
-  earnEnabled        Boolean  @default(true)
-  redeemEnabled      Boolean  @default(true)
-  welcomeBonusPoints Int      @default(0)
-  referrerPoints     Int      @default(50)
-  referredPoints     Int      @default(25)
-  birthdayPoints     Int      @default(100)
-  anniversaryPoints  Int      @default(50)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  pointsExpireDays   Int       @default(365)
+  earnEnabled        Boolean   @default(true)
+  redeemEnabled      Boolean   @default(true)
+  welcomeBonusPoints Int       @default(0)
+  referrerPoints     Int       @default(50)
+  referredPoints     Int       @default(25)
+  birthdayPoints     Int       @default(100)
+  anniversaryPoints  Int       @default(50)
+  createdAt          DateTime  @default(now())
+  deletedAt          DateTime?
+  updatedAt          DateTime  @updatedAt
 
   tiers LoyaltyTier[]
 
+  @@index([tenantId, createdAt])
   @@map("loyalty_programs")
 }
 
 model LoyaltyTier {
-  id              String         @id @default(uuid())
-  programId       String
-  tenantId        String
-  tier            MembershipTier
-  minPoints       Int            @default(0)
-  maxPoints       Int            @default(1000)
-  multiplier      Decimal        @default(1)
-  discountPercent Decimal        @default(0)
-  priorityService Boolean        @default(false)
-  freeDelivery    Boolean        @default(false)
-  birthdayReward  Boolean        @default(true)
-  anniversaryReward Boolean      @default(true)
-  metadata        Json?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id                String         @id @default(uuid())
+  programId         String
+  tenantId          String
+  tier              MembershipTier
+  minPoints         Int            @default(0)
+  maxPoints         Int            @default(1000)
+  multiplier        Decimal        @default(1)
+  discountPercent   Decimal        @default(0)
+  priorityService   Boolean        @default(false)
+  freeDelivery      Boolean        @default(false)
+  birthdayReward    Boolean        @default(true)
+  anniversaryReward Boolean        @default(true)
+  metadata          Json?
+  createdAt         DateTime       @default(now())
+  deletedAt         DateTime?
+  updatedAt         DateTime       @updatedAt
 
   program LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
 
   @@unique([programId, tier])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@map("loyalty_tiers")
 }
 
 model LoyaltyPointsTransaction {
-  id          String                 @id @default(uuid())
-  customerId  String
-  tenantId    String
-  restaurantId String?
-  points      Int
-  type        LoyaltyTransactionType
-  description String?
-  referenceId String?
+  id            String                 @id @default(uuid())
+  customerId    String
+  tenantId      String
+  restaurantId  String?
+  points        Int
+  type          LoyaltyTransactionType
+  description   String?
+  referenceId   String?
   referenceType String?
-  balanceAfter Int
-  expiresAt   DateTime?
-  metadata    Json?
-  createdAt   DateTime               @default(now())
+  balanceAfter  Int
+  expiresAt     DateTime?
+  metadata      Json?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  deletedAt     DateTime?
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
-  @@index([customerId])
-  @@index([tenantId])
   @@index([customerId, createdAt])
+  @@index([customerId])
   @@index([expiresAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("loyalty_points_transactions")
 }
 
 model Membership {
-  id              String         @id @default(uuid())
-  customerId      String
-  tenantId        String
-  tier            MembershipTier @default(BRONZE)
-  points          Int            @default(0)
-  lifetimePoints  Int            @default(0)
-  totalVisits     Int            @default(0)
-  totalSpent      Decimal        @default(0)
-  joinedAt        DateTime       @default(now())
-  lastActivityAt  DateTime?
-  tierUpgradedAt  DateTime?
+  id               String         @id @default(uuid())
+  customerId       String
+  tenantId         String
+  tier             MembershipTier @default(BRONZE)
+  points           Int            @default(0)
+  lifetimePoints   Int            @default(0)
+  totalVisits      Int            @default(0)
+  totalSpent      Decimal        @db.Decimal(10, 2) @default(0)
+  joinedAt         DateTime       @default(now())
+  lastActivityAt   DateTime?
+  tierUpgradedAt   DateTime?
   tierDowngradedAt DateTime?
-  expiresAt       DateTime?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  expiresAt        DateTime?
+  createdAt        DateTime       @default(now())
+  deletedAt        DateTime?
+  updatedAt        DateTime       @updatedAt
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@unique([customerId, tenantId])
+  @@index([points])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@index([tier])
-  @@index([points])
   @@map("memberships")
 }
 
 model MembershipHistory {
-  id          String         @id @default(uuid())
-  customerId  String
-  tenantId    String
-  fromTier    MembershipTier
-  toTier      MembershipTier
-  reason      String?
-  pointsAtTime Int           @default(0)
-  changedAt   DateTime       @default(now())
-  createdAt   DateTime       @default(now())
+  id           String         @id @default(uuid())
+  customerId   String
+  tenantId     String
+  fromTier     MembershipTier
+  toTier       MembershipTier
+  reason       String?
+  pointsAtTime Int            @default(0)
+  changedAt    DateTime       @default(now())
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  deletedAt    DateTime?
 
-  @@index([customerId])
-  @@index([tenantId])
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   @@index([changedAt])
+  @@index([customerId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("membership_history")
 }
 
@@ -1739,60 +1869,67 @@ model Reward {
   expiredAt       DateTime?
   metadata        Json?
   createdAt       DateTime     @default(now())
+  deletedAt       DateTime?
   updatedAt       DateTime     @updatedAt
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
-  @@index([tenantId])
-  @@index([status])
-  @@index([type])
   @@index([expiredAt])
+  @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
+  @@index([type])
   @@map("rewards")
 }
 
 model Wallet {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   customerId String
   tenantId   String
-  balance    Decimal  @default(0)
-  currency   Currency @default(USD)
-  isActive   Boolean  @default(true)
-  version    Int      @default(1)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  balance    Decimal  @db.Decimal(10, 2) @default(0)
+  currency   Currency  @default(USD)
+  isActive   Boolean   @default(true)
+  version    Int       @default(1)
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+  updatedAt  DateTime  @updatedAt
 
   customer     Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
   transactions WalletTransaction[]
 
   @@unique([customerId, tenantId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@map("wallets")
 }
 
 model WalletTransaction {
-  id          String                @id @default(uuid())
-  walletId    String
-  tenantId    String
-  customerId  String
-  type        WalletTransactionType
-  amount      Decimal
-  balanceBefore Decimal
-  balanceAfter  Decimal
-  description String?
-  referenceId String?
+  id            String                @id @default(uuid())
+  walletId      String
+  tenantId      String
+  customerId    String
+  type          WalletTransactionType
+  amount      Decimal  @db.Decimal(10, 2)
+  balanceBefore Decimal @db.Decimal(10, 2)
+  balanceAfter  Decimal  @db.Decimal(10, 2)
+  description   String?
+  referenceId   String?
   referenceType String?
-  currency    Currency              @default(USD)
-  metadata    Json?
-  createdAt   DateTime              @default(now())
+  currency      Currency              @default(USD)
+  metadata      Json?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  deletedAt     DateTime?
 
   wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
-  @@index([walletId])
-  @@index([customerId])
-  @@index([type])
-  @@index([tenantId])
   @@index([createdAt])
+  @@index([customerId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
+  @@index([type])
+  @@index([walletId])
   @@map("wallet_transactions")
 }
 
@@ -1811,16 +1948,18 @@ model Referral {
   rewardExpiresAt DateTime?
   metadata        Json?
   createdAt       DateTime       @default(now())
+  deletedAt       DateTime?
   updatedAt       DateTime       @updatedAt
 
-  referrer Customer @relation("ReferralMade", fields: [referrerId], references: [id], onDelete: Cascade)
+  referrer Customer  @relation("ReferralMade", fields: [referrerId], references: [id], onDelete: Cascade)
   referred Customer? @relation("ReferralUsed", fields: [referredId], references: [id], onDelete: SetNull)
 
   @@unique([code])
-  @@index([referrerId])
   @@index([referredId])
-  @@index([tenantId])
+  @@index([referrerId])
   @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("referrals")
 }
 
@@ -1834,26 +1973,30 @@ model CustomerSegment {
   isDynamic   Boolean     @default(false)
   isActive    Boolean     @default(true)
   createdAt   DateTime    @default(now())
+  deletedAt   DateTime?
   updatedAt   DateTime    @updatedAt
 
   assignments CustomerSegmentAssignment[]
 
   @@unique([tenantId, name])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@index([type])
   @@map("customer_segments")
 }
 
 model CustomerSegmentAssignment {
-  id          String   @id @default(uuid())
-  customerId  String
-  segmentId   String
-  tenantId    String
-  assignedAt  DateTime @default(now())
-  expiresAt   DateTime?
+  id         String    @id @default(uuid())
+  customerId String
+  segmentId  String
+  tenantId   String
+  assignedAt DateTime  @default(now())
+  expiresAt  DateTime?
 
-  customer Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  segment  CustomerSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  updatedAt DateTime        @updatedAt
+  deletedAt DateTime?
+  customer  Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  segment   CustomerSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
 
   @@unique([customerId, segmentId])
   @@index([segmentId])
@@ -1862,30 +2005,31 @@ model CustomerSegmentAssignment {
 }
 
 model CustomerAnalytics {
-  id                 String   @id @default(uuid())
-  customerId         String   @unique
-  tenantId           String
-  lifetimeValue      Decimal  @default(0)
-  averageOrderValue  Decimal  @default(0)
+  id                   String    @id @default(uuid())
+  customerId           String    @unique
+  tenantId             String
+  lifetimeValue      Decimal  @db.Decimal(10, 2) @default(0)
+  averageOrderValue  Decimal  @db.Decimal(10, 2) @default(0)
   visitFrequency     Int      @default(0)
   totalVisits        Int      @default(0)
-  totalSpend         Decimal  @default(0)
-  totalOrders        Int      @default(0)
-  favoriteProductId  String?
-  favoriteCategoryId String?
-  favoriteProductName String?
+  totalSpend         Decimal  @db.Decimal(10, 2) @default(0)
+  totalOrders          Int       @default(0)
+  favoriteProductId    String?
+  favoriteCategoryId   String?
+  favoriteProductName  String?
   favoriteCategoryName String?
-  lastVisitAt        DateTime?
-  lastOrderAt        DateTime?
-  rewardUsageCount   Int      @default(0)
-  rewardPointsEarned Int      @default(0)
-  rewardPointsRedeemed Int    @default(0)
-  daysSinceLastVisit Int      @default(0)
-  metadata           Json?
-  computedAt         DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  lastVisitAt          DateTime?
+  lastOrderAt          DateTime?
+  rewardUsageCount     Int       @default(0)
+  rewardPointsEarned   Int       @default(0)
+  rewardPointsRedeemed Int       @default(0)
+  daysSinceLastVisit   Int       @default(0)
+  metadata             Json?
+  computedAt           DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  deletedAt DateTime?
+  customer  Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([lifetimeValue])
@@ -1966,147 +2110,159 @@ enum PromotionStatus {
 // ============================================
 
 model CrmTimelineEntry {
-  id          String             @id @default(uuid())
-  tenantId    String
-  customerId  String
-  type        TimelineEventType
-  title       String
-  description String?
-  metadata    Json?
-  referenceId String?
+  id            String            @id @default(uuid())
+  tenantId      String
+  customerId    String
+  type          TimelineEventType
+  title         String
+  description   String?
+  metadata      Json?
+  referenceId   String?
   referenceType String?
-  createdAt   DateTime           @default(now())
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  deletedAt     DateTime?
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
+  @@index([createdAt])
   @@index([customerId, createdAt])
+  @@index([tenantId, createdAt])
   @@index([tenantId, customerId])
   @@index([tenantId, type])
-  @@index([createdAt])
   @@map("crm_timeline_entries")
 }
 
 model CommunicationTemplate {
-  id          String             @id @default(uuid())
-  tenantId    String
-  name        String
-  channel     CommunicationChannel @default(EMAIL)
-  subject     String?
-  body        String
-  variables   Json?
-  isActive    Boolean            @default(true)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  deletedAt   DateTime?
+  id        String               @id @default(uuid())
+  tenantId  String
+  name      String
+  channel   CommunicationChannel @default(EMAIL)
+  subject   String?
+  body      String
+  variables Json?
+  isActive  Boolean              @default(true)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  deletedAt DateTime?
 
   @@unique([tenantId, name])
-  @@index([tenantId])
   @@index([channel])
   @@index([deletedAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("communication_templates")
 }
 
 model CommunicationLog {
-  id            String              @id @default(uuid())
-  tenantId      String
-  customerId    String?
-  campaignId    String?
-  channel       CommunicationChannel
-  recipient     String
-  subject       String?
-  body          String?
-  status        CommunicationStatus @default(PENDING)
-  sentAt        DateTime?
-  deliveredAt   DateTime?
-  openedAt      DateTime?
-  clickedAt     DateTime?
-  errorMessage  String?
-  retryCount    Int                 @default(0)
-  metadata      Json?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  id           String               @id @default(uuid())
+  tenantId     String
+  customerId   String?
+  campaignId   String?
+  channel      CommunicationChannel
+  recipient    String
+  subject      String?
+  body         String?
+  status       CommunicationStatus  @default(PENDING)
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  openedAt     DateTime?
+  clickedAt    DateTime?
+  errorMessage String?
+  retryCount   Int                  @default(0)
+  metadata     Json?
+  createdAt    DateTime             @default(now())
+  deletedAt    DateTime?
+  updatedAt    DateTime             @updatedAt
 
   customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
-  @@index([tenantId])
-  @@index([customerId])
   @@index([campaignId])
   @@index([channel])
-  @@index([status])
   @@index([createdAt])
+  @@index([customerId])
+  @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("communication_logs")
 }
 
 model CampaignTemplate {
-  id             String         @id @default(uuid())
-  campaignId     String
-  tenantId       String
-  channel        CampaignType   @default(EMAIL)
-  subject        String?
-  body           String
-  variables      Json?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id         String       @id @default(uuid())
+  campaignId String
+  tenantId   String
+  channel    CampaignType @default(EMAIL)
+  subject    String?
+  body       String
+  variables  Json?
+  createdAt  DateTime     @default(now())
+  deletedAt  DateTime?
+  updatedAt  DateTime     @updatedAt
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([campaignId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@map("campaign_templates")
 }
 
 model CampaignRecipient {
-  id              String           @id @default(uuid())
-  campaignId      String
-  tenantId        String
-  customerId      String?
-  recipient       String
-  channel         CampaignType     @default(EMAIL)
-  status          CommunicationStatus @default(PENDING)
-  sentAt          DateTime?
-  deliveredAt     DateTime?
-  openedAt        DateTime?
-  clickedAt       DateTime?
-  errorMessage    String?
-  metadata        Json?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id           String              @id @default(uuid())
+  campaignId   String
+  tenantId     String
+  customerId   String?
+  recipient    String
+  channel      CampaignType        @default(EMAIL)
+  status       CommunicationStatus @default(PENDING)
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  openedAt     DateTime?
+  clickedAt    DateTime?
+  errorMessage String?
+  metadata     Json?
+  createdAt    DateTime            @default(now())
+  deletedAt    DateTime?
+  updatedAt    DateTime            @updatedAt
 
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   @@index([campaignId])
   @@index([customerId])
-  @@index([tenantId])
   @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("campaign_recipients")
 }
 
 model CampaignAnalytics {
-  id             String   @id @default(uuid())
-  campaignId     String   @unique
-  tenantId       String
-  totalRecipients Int     @default(0)
-  sentCount      Int      @default(0)
-  deliveredCount Int      @default(0)
-  openedCount    Int      @default(0)
-  clickedCount   Int      @default(0)
-  bouncedCount   Int      @default(0)
-  failedCount    Int      @default(0)
-  conversionCount Int     @default(0)
+  id               String   @id @default(uuid())
+  campaignId       String   @unique
+  tenantId         String
+  totalRecipients  Int      @default(0)
+  sentCount        Int      @default(0)
+  deliveredCount   Int      @default(0)
+  openedCount      Int      @default(0)
+  clickedCount     Int      @default(0)
+  bouncedCount     Int      @default(0)
+  failedCount      Int      @default(0)
+  conversionCount  Int      @default(0)
   revenueGenerated Decimal? @db.Decimal(10, 2)
-  metadata       Json?
-  computedAt     DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  metadata         Json?
+  computedAt       DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  deletedAt DateTime?
+  campaign  Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@map("campaign_analytics")
 }
 
 model CampaignApproval {
-  id         String   @id @default(uuid())
+  id         String         @id @default(uuid())
   campaignId String
   tenantId   String
   approvedBy String?
@@ -2114,13 +2270,15 @@ model CampaignApproval {
   rejectedBy String?
   rejectedAt DateTime?
   reason     String?
-  status     String   @default("PENDING")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  status     ApprovalStatus @default(PENDING)
+  createdAt  DateTime       @default(now())
+  deletedAt  DateTime?
+  updatedAt  DateTime       @updatedAt
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@unique([campaignId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@map("campaign_approvals")
 }
@@ -2153,27 +2311,31 @@ model Promotion {
   updatedAt        DateTime        @updatedAt
   deletedAt        DateTime?
 
-  branchRestrictions  PromotionBranchRestriction[]
-  productRestrictions PromotionProductRestriction[]
+  branchRestrictions   PromotionBranchRestriction[]
+  productRestrictions  PromotionProductRestriction[]
   categoryRestrictions PromotionCategoryRestriction[]
-  usages              PromotionUsage[]
+  usages               PromotionUsage[]
 
   @@unique([tenantId, code])
+  @@index([code])
+  @@index([deletedAt])
+  @@index([startsAt, endsAt])
+  @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
   @@index([tenantId])
   @@index([type])
-  @@index([status])
-  @@index([code])
-  @@index([startsAt, endsAt])
-  @@index([deletedAt])
   @@map("promotions")
 }
 
 model PromotionBranchRestriction {
-  id           String @id @default(uuid())
-  promotionId  String
-  branchId     String
-  tenantId     String
+  id          String @id @default(uuid())
+  promotionId String
+  branchId    String
+  tenantId    String
 
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
   promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
 
   @@unique([promotionId, branchId])
@@ -2183,11 +2345,13 @@ model PromotionBranchRestriction {
 }
 
 model PromotionProductRestriction {
-  id           String @id @default(uuid())
-  promotionId  String
-  productId    String
-  tenantId     String
+  id          String @id @default(uuid())
+  promotionId String
+  productId   String
+  tenantId    String
 
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
   promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
 
   @@unique([promotionId, productId])
@@ -2197,11 +2361,13 @@ model PromotionProductRestriction {
 }
 
 model PromotionCategoryRestriction {
-  id           String @id @default(uuid())
-  promotionId  String
-  categoryId   String
-  tenantId     String
+  id          String @id @default(uuid())
+  promotionId String
+  categoryId  String
+  tenantId    String
 
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
   promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
 
   @@unique([promotionId, categoryId])
@@ -2211,15 +2377,17 @@ model PromotionCategoryRestriction {
 }
 
 model PromotionUsage {
-  id          String   @id @default(uuid())
-  promotionId String
-  customerId  String
-  orderId     String?
-  tenantId    String
-  discountAmount Decimal @db.Decimal(10, 2)
-  usedAt      DateTime @default(now())
-  metadata    Json?
+  id             String   @id @default(uuid())
+  promotionId    String
+  customerId     String
+  orderId        String?
+  tenantId       String
+  discountAmount Decimal  @db.Decimal(10, 2)
+  usedAt         DateTime @default(now())
+  metadata       Json?
 
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
   promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
   customer  Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
@@ -2232,29 +2400,33 @@ model PromotionUsage {
 }
 
 model EventRule {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   tenantId    String
   name        String
   event       String
   condition   Json?
   action      Json?
-  isActive    Boolean  @default(true)
+  isActive    Boolean   @default(true)
   description String?
   metadata    Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
+  eventLogs EventLog[]
+
   @@unique([tenantId, name])
-  @@index([tenantId])
+  @@index([deletedAt])
   @@index([event])
   @@index([isActive])
-  @@index([deletedAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("event_rules")
 }
 
 model EventLog {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   tenantId    String
   event       String
   ruleId      String?
@@ -2262,13 +2434,19 @@ model EventLog {
   payload     Json?
   result      String?
   error       String?
-  processedAt DateTime @default(now())
-  createdAt   DateTime @default(now())
+  processedAt DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
 
-  @@index([tenantId])
+  tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rule   EventRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
   @@index([event])
-  @@index([ruleId])
   @@index([processedAt])
+  @@index([ruleId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("event_logs")
 }
 
@@ -2363,15 +2541,15 @@ enum InventoryUnitType {
 // ── INVENTORY CATEGORY ──
 
 model InventoryCategory {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   tenantId    String
   name        String
   description String?
   parentId    String?
-  isActive    Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
   parent   InventoryCategory?  @relation("InventoryCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
@@ -2379,39 +2557,43 @@ model InventoryCategory {
   items    InventoryItem[]
 
   @@unique([tenantId, name, deletedAt])
-  @@index([tenantId])
-  @@index([parentId])
-  @@index([isActive])
   @@index([deletedAt])
+  @@index([isActive])
+  @@index([parentId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("inventory_categories")
 }
 
 // ── INVENTORY UNIT ──
 
 model InventoryUnit {
-  id          String   @id @default(uuid())
-  tenantId    String
-  name        String
+  id           String            @id @default(uuid())
+  tenantId     String
+  name         String
   abbreviation String
-  type        InventoryUnitType @default(UNIT)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  deletedAt   DateTime?
+  type         InventoryUnitType @default(UNIT)
+  isActive     Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?
 
   items InventoryItem[]
 
   @@unique([tenantId, name, deletedAt])
-  @@index([tenantId])
-  @@index([isActive])
   @@index([deletedAt])
+  @@index([isActive])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("inventory_units")
 }
 
 // ── INVENTORY LOCATION ──
 
 model InventoryLocation {
-  id          String               @id @default(uuid())
+  id          String                @id @default(uuid())
   tenantId    String
   branchId    String?
   name        String
@@ -2422,105 +2604,111 @@ model InventoryLocation {
   updatedAt   DateTime              @updatedAt
   deletedAt   DateTime?
 
-  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  branch Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
   items  InventoryItem[]
 
   @@unique([tenantId, name, branchId, deletedAt])
-  @@index([tenantId])
   @@index([branchId])
-  @@index([isActive])
   @@index([deletedAt])
+  @@index([isActive])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("inventory_locations")
 }
 
 // ── INVENTORY ITEM ──
 
 model InventoryItem {
-  id             String    @id @default(uuid())
-  tenantId       String
-  name           String
-  description    String?
-  sku            String?
-  barcode        String?
-  internalCode   String?
-  categoryId     String?
-  unitId         String?
-  locationId     String?
-  currentQuantity Decimal  @default(0) @db.Decimal(12, 4)
-  reservedQuantity Decimal @default(0) @db.Decimal(12, 4)
-  availableQuantity Decimal @default(0) @db.Decimal(12, 4)
-  minStock       Decimal?  @db.Decimal(12, 4)
-  maxStock       Decimal?  @db.Decimal(12, 4)
-  reorderLevel   Decimal?  @db.Decimal(12, 4)
-  unitCost       Decimal?  @db.Decimal(12, 4)
-  averageCost    Decimal?  @db.Decimal(12, 4)
-  lastCost       Decimal?  @db.Decimal(12, 4)
-  isActive       Boolean   @default(true)
-  isPurchasable  Boolean   @default(true)
-  isManufactured Boolean   @default(false)
-  image          String?
-  metadata       Json?
-  version        Int       @default(1)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  deletedAt      DateTime?
+  id                String    @id @default(uuid())
+  tenantId          String
+  name              String
+  description       String?
+  sku               String?
+  barcode           String?
+  internalCode      String?
+  categoryId        String?
+  unitId            String?
+  locationId        String?
+  currentQuantity   Decimal   @default(0) @db.Decimal(12, 4)
+  reservedQuantity  Decimal   @default(0) @db.Decimal(12, 4)
+  availableQuantity Decimal   @default(0) @db.Decimal(12, 4)
+  minStock          Decimal?  @db.Decimal(12, 4)
+  maxStock          Decimal?  @db.Decimal(12, 4)
+  reorderLevel      Decimal?  @db.Decimal(12, 4)
+  unitCost          Decimal?  @db.Decimal(12, 4)
+  averageCost       Decimal?  @db.Decimal(12, 4)
+  lastCost          Decimal?  @db.Decimal(12, 4)
+  isActive          Boolean   @default(true)
+  isPurchasable     Boolean   @default(true)
+  isManufactured    Boolean   @default(false)
+  image             String?
+  metadata          Json?
+  version           Int       @default(1)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
 
-  category   InventoryCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  unit       InventoryUnit?      @relation(fields: [unitId], references: [id], onDelete: SetNull)
-  location   InventoryLocation?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  batches    InventoryBatch[]
-  movements  StockMovement[]
-  adjustments StockAdjustment[]
-  waste      WasteEntry[]
-  counts     InventoryCount[]
-  alerts     ExpirationAlert[]
-  poItems    PurchaseOrderItem[]
-  grItems    GoodsReceiptItem[]
-  transferItems BranchTransferItem[]
-  recipeItems   RecipeItem[]
-  ingredients   Ingredient[]
-  forecasts     InventoryForecast[]
+  category           InventoryCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  unit               InventoryUnit?       @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  location           InventoryLocation?   @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  batches            InventoryBatch[]
+  movements          StockMovement[]
+  adjustments        StockAdjustment[]
+  waste              WasteEntry[]
+  counts             InventoryCount[]
+  alerts             ExpirationAlert[]
+  poItems            PurchaseOrderItem[]
+  grItems            GoodsReceiptItem[]
+  transferItems      BranchTransferItem[]
+  recipeItems        RecipeItem[]
+  ingredients        Ingredient[]
+  forecasts          InventoryForecast[]
   reorderSuggestions ReorderSuggestion[]
   consumptionRecords ConsumptionRecord[]
-  barcodes      Barcode[]
-  valuations    InventoryValuation[]
-  cycleCountItems CycleCountItem[]
+  barcodes           Barcode[]
+  valuations         InventoryValuation[]
+  cycleCountItems    CycleCountItem[]
 
   @@unique([tenantId, sku, deletedAt])
-  @@index([tenantId])
+  @@index([barcode])
   @@index([categoryId])
-  @@index([unitId])
+  @@index([deletedAt])
+  @@index([isActive])
   @@index([locationId])
   @@index([sku])
-  @@index([barcode])
-  @@index([isActive])
-  @@index([deletedAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
+  @@index([unitId])
   @@map("inventory_items")
 }
 
 // ── INVENTORY BATCH (Expiration Tracking) ──
 
 model InventoryBatch {
-  id             String   @id @default(uuid())
+  id              String    @id @default(uuid())
   inventoryItemId String
-  tenantId       String
-  batchNumber    String?
-  lotNumber      String?
-  expiryDate     DateTime?
-  quantity       Decimal  @db.Decimal(12, 4)
-  unitCost       Decimal? @db.Decimal(12, 4)
-  receivedAt     DateTime @default(now())
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  tenantId        String
+  batchNumber     String?
+  lotNumber       String?
+  expiryDate      DateTime?
+  quantity        Decimal   @db.Decimal(12, 4)
+  unitCost        Decimal?  @db.Decimal(12, 4)
+  receivedAt      DateTime  @default(now())
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  deletedAt       DateTime?
+  updatedAt       DateTime  @updatedAt
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
-  @@index([inventoryItemId])
-  @@index([tenantId])
-  @@index([expiryDate])
   @@index([batchNumber])
+  @@index([expiryDate])
+  @@index([inventoryItemId])
   @@index([lotNumber])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("inventory_batches")
 }
 
@@ -2529,77 +2717,83 @@ model InventoryBatch {
 // to maintain backward compatibility with Phase 3 modules.
 
 model SupplierDetail {
-  id           String    @id @default(uuid())
-  supplierId   String    @unique
+  id           String         @id @default(uuid())
+  supplierId   String         @unique
   tenantId     String
   code         String?
   taxId        String?
   paymentTerms String?
-  creditLimit  Decimal?  @db.Decimal(12, 2)
-  currency     String    @default("USD")
+  creditLimit  Decimal?       @db.Decimal(12, 2)
+  currency     String         @default("USD")
   notes        String?
   rating       Int?
-  isPreferred  Boolean   @default(false)
+  isPreferred  Boolean        @default(false)
   website      String?
-  status       String    @default("ACTIVE")
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  status       SupplierStatus @default(ACTIVE)
+  createdAt    DateTime       @default(now())
+  deletedAt    DateTime?
+  updatedAt    DateTime       @updatedAt
 
-  supplier   Supplier           @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  contacts   SupplierContact[]
-  documents  SupplierDocument[]
-  orders     PurchaseOrder[]
+  supplier           Supplier                    @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  contacts           SupplierContact[]
+  documents          SupplierDocument[]
+  orders             PurchaseOrder[]
   performanceMetrics SupplierPerformanceMetric[]
 
-  @@index([tenantId])
-  @@index([supplierId])
   @@index([code])
   @@index([isPreferred])
+  @@index([supplierId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("supplier_details")
 }
 
 // ── SUPPLIER CONTACT ──
 
 model SupplierContact {
-  id         String   @id @default(uuid())
+  id               String    @id @default(uuid())
   supplierDetailId String
-  tenantId   String
-  name       String
-  email      String?
-  phone      String?
-  role       String?
-  isPrimary  Boolean  @default(false)
-  notes      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  tenantId         String
+  name             String
+  email            String?
+  phone            String?
+  role             String?
+  isPrimary        Boolean   @default(false)
+  notes            String?
+  createdAt        DateTime  @default(now())
+  deletedAt        DateTime?
+  updatedAt        DateTime  @updatedAt
 
   supplierDetail SupplierDetail @relation(fields: [supplierDetailId], references: [id], onDelete: Cascade)
 
-  @@index([supplierDetailId])
-  @@index([tenantId])
   @@index([isPrimary])
+  @@index([supplierDetailId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("supplier_contacts")
 }
 
 // ── SUPPLIER DOCUMENT ──
 
 model SupplierDocument {
-  id         String   @id @default(uuid())
+  id               String    @id @default(uuid())
   supplierDetailId String
-  tenantId   String
-  name       String
-  fileUrl    String
-  type       String?
-  expiryDate DateTime?
-  notes      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  tenantId         String
+  name             String
+  fileUrl          String
+  type             String?
+  expiryDate       DateTime?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  deletedAt        DateTime?
+  updatedAt        DateTime  @updatedAt
 
   supplierDetail SupplierDetail @relation(fields: [supplierDetailId], references: [id], onDelete: Cascade)
 
-  @@index([supplierDetailId])
-  @@index([tenantId])
   @@index([expiryDate])
+  @@index([supplierDetailId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("supplier_documents")
 }
 
@@ -2632,46 +2826,50 @@ model PurchaseOrder {
   updatedAt         DateTime            @updatedAt
   deletedAt         DateTime?
 
-  supplierDetail    SupplierDetail?     @relation(fields: [supplierDetailId], references: [id], onDelete: SetNull)
-  branch            Branch?             @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  items             PurchaseOrderItem[]
-  goodsReceipts     GoodsReceipt[]
-  approval          PurchaseOrderApproval?
+  supplierDetail SupplierDetail?        @relation(fields: [supplierDetailId], references: [id], onDelete: SetNull)
+  branch         Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  items          PurchaseOrderItem[]
+  goodsReceipts  GoodsReceipt[]
+  approval       PurchaseOrderApproval?
 
   @@unique([tenantId, poNumber, deletedAt])
-  @@index([tenantId])
-  @@index([supplierDetailId])
   @@index([branchId])
-  @@index([status])
-  @@index([orderDate])
-  @@index([expectedDate])
   @@index([deletedAt])
+  @@index([expectedDate])
+  @@index([orderDate])
+  @@index([status])
+  @@index([supplierDetailId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("purchase_orders")
 }
 
 // ── PURCHASE ORDER ITEM ──
 
 model PurchaseOrderItem {
-  id               String   @id @default(uuid())
+  id               String    @id @default(uuid())
   purchaseOrderId  String
   inventoryItemId  String?
   tenantId         String
   description      String?
-  quantity         Decimal  @db.Decimal(12, 4)
-  unitPrice        Decimal  @db.Decimal(12, 4)
-  receivedQuantity Decimal  @default(0) @db.Decimal(12, 4)
-  lineTotal        Decimal? @db.Decimal(12, 4)
+  quantity         Decimal   @db.Decimal(12, 4)
+  unitPrice        Decimal   @db.Decimal(12, 4)
+  receivedQuantity Decimal   @default(0) @db.Decimal(12, 4)
+  lineTotal        Decimal?  @db.Decimal(12, 4)
   notes            String?
-  sortOrder        Int      @default(0)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  sortOrder        Int       @default(0)
+  createdAt        DateTime  @default(now())
+  deletedAt        DateTime?
+  updatedAt        DateTime  @updatedAt
 
-  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  purchaseOrder PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem?     @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
   receipts      GoodsReceiptItem[]
 
-  @@index([purchaseOrderId])
   @@index([inventoryItemId])
+  @@index([purchaseOrderId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@map("purchase_order_items")
 }
@@ -2679,21 +2877,23 @@ model PurchaseOrderItem {
 // ── PURCHASE ORDER APPROVAL ──
 
 model PurchaseOrderApproval {
-  id              String   @id @default(uuid())
-  purchaseOrderId String   @unique
+  id              String         @id @default(uuid())
+  purchaseOrderId String         @unique
   tenantId        String
   approvedById    String?
   approvedAt      DateTime?
   rejectedById    String?
   rejectedAt      DateTime?
   reason          String?
-  status          String   @default("PENDING")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  status          ApprovalStatus @default(PENDING)
+  createdAt       DateTime       @default(now())
+  deletedAt       DateTime?
+  updatedAt       DateTime       @updatedAt
 
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
 
   @@index([purchaseOrderId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@map("purchase_order_approvals")
 }
@@ -2701,57 +2901,61 @@ model PurchaseOrderApproval {
 // ── GOODS RECEIPT ──
 
 model GoodsReceipt {
-  id               String             @id @default(uuid())
-  grnNumber        String
-  purchaseOrderId  String
-  tenantId         String
-  branchId         String?
-  receivedDate     DateTime           @default(now())
-  status           GoodsReceiptStatus @default(PENDING)
-  notes            String?
-  receivedById     String?
-  metadata         Json?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  deletedAt        DateTime?
+  id              String             @id @default(uuid())
+  grnNumber       String
+  purchaseOrderId String
+  tenantId        String
+  branchId        String?
+  receivedDate    DateTime           @default(now())
+  status          GoodsReceiptStatus @default(PENDING)
+  notes           String?
+  receivedById    String?
+  metadata        Json?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  deletedAt       DateTime?
 
-  purchaseOrder PurchaseOrder    @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  branch        Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  purchaseOrder PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  branch        Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull)
   items         GoodsReceiptItem[]
 
   @@unique([tenantId, grnNumber, deletedAt])
-  @@index([tenantId])
-  @@index([purchaseOrderId])
   @@index([branchId])
-  @@index([receivedDate])
   @@index([deletedAt])
+  @@index([purchaseOrderId])
+  @@index([receivedDate])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("goods_receipts")
 }
 
 // ── GOODS RECEIPT ITEM ──
 
 model GoodsReceiptItem {
-  id               String   @id @default(uuid())
-  goodsReceiptId   String
+  id                  String    @id @default(uuid())
+  goodsReceiptId      String
   purchaseOrderItemId String?
-  inventoryItemId  String?
-  tenantId         String
-  quantityReceived Decimal  @db.Decimal(12, 4)
-  unitPrice        Decimal? @db.Decimal(12, 4)
-  batchNumber      String?
-  lotNumber        String?
-  expiryDate       DateTime?
-  notes            String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  inventoryItemId     String?
+  tenantId            String
+  quantityReceived    Decimal   @db.Decimal(12, 4)
+  unitPrice           Decimal?  @db.Decimal(12, 4)
+  batchNumber         String?
+  lotNumber           String?
+  expiryDate          DateTime?
+  notes               String?
+  createdAt           DateTime  @default(now())
+  deletedAt           DateTime?
+  updatedAt           DateTime  @updatedAt
 
-  goodsReceipt    GoodsReceipt      @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  goodsReceipt      GoodsReceipt       @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
   purchaseOrderItem PurchaseOrderItem? @relation(fields: [purchaseOrderItemId], references: [id], onDelete: SetNull)
-  inventoryItem   InventoryItem?    @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  inventoryItem     InventoryItem?     @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
 
   @@index([goodsReceiptId])
-  @@index([purchaseOrderItemId])
   @@index([inventoryItemId])
+  @@index([purchaseOrderItemId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@map("goods_receipt_items")
 }
@@ -2759,87 +2963,94 @@ model GoodsReceiptItem {
 // ── STOCK MOVEMENT ──
 
 model StockMovement {
-  id               String            @id @default(uuid())
-  inventoryItemId  String
-  tenantId         String
-  branchId         String?
-  type             StockMovementType
-  quantity         Decimal           @db.Decimal(12, 4)
-  unitCost         Decimal?          @db.Decimal(12, 4)
-  totalCost        Decimal?          @db.Decimal(12, 4)
-  referenceType    String?
-  referenceId      String?
-  batchNumber      String?
-  lotNumber        String?
-  notes            String?
-  recordedById     String?
-  createdAt        DateTime          @default(now())
+  id              String            @id @default(uuid())
+  inventoryItemId String
+  tenantId        String
+  branchId        String?
+  type            StockMovementType
+  quantity        Decimal           @db.Decimal(12, 4)
+  unitCost        Decimal?          @db.Decimal(12, 4)
+  totalCost       Decimal?          @db.Decimal(12, 4)
+  referenceType   String?
+  referenceId     String?
+  batchNumber     String?
+  lotNumber       String?
+  notes           String?
+  recordedById    String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
-  @@index([inventoryItemId])
-  @@index([tenantId])
   @@index([branchId])
-  @@index([type])
-  @@index([referenceType, referenceId])
   @@index([createdAt])
+  @@index([inventoryItemId])
+  @@index([referenceType, referenceId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
+  @@index([type])
   @@map("stock_movements")
 }
 
 // ── BRANCH TRANSFER ──
 
 model BranchTransfer {
-  id              String         @id @default(uuid())
-  transferNumber  String
-  tenantId        String
-  fromBranchId    String
-  toBranchId      String
-  status          TransferStatus @default(DRAFT)
-  requestedById   String?
-  approvedById    String?
-  approvedAt      DateTime?
-  receivedById    String?
-  receivedAt      DateTime?
-  cancelledById   String?
-  cancelledAt     DateTime?
-  cancelReason    String?
-  notes           String?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  deletedAt       DateTime?
+  id             String         @id @default(uuid())
+  transferNumber String
+  tenantId       String
+  fromBranchId   String
+  toBranchId     String
+  status         TransferStatus @default(DRAFT)
+  requestedById  String?
+  approvedById   String?
+  approvedAt     DateTime?
+  receivedById   String?
+  receivedAt     DateTime?
+  cancelledById  String?
+  cancelledAt    DateTime?
+  cancelReason   String?
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
 
-  fromBranch Branch @relation("TransferFromBranch", fields: [fromBranchId], references: [id], onDelete: Cascade)
-  toBranch   Branch @relation("TransferToBranch", fields: [toBranchId], references: [id], onDelete: Cascade)
+  fromBranch Branch               @relation("TransferFromBranch", fields: [fromBranchId], references: [id], onDelete: Cascade)
+  toBranch   Branch               @relation("TransferToBranch", fields: [toBranchId], references: [id], onDelete: Cascade)
   items      BranchTransferItem[]
 
   @@unique([tenantId, transferNumber, deletedAt])
-  @@index([tenantId])
-  @@index([fromBranchId])
-  @@index([toBranchId])
-  @@index([status])
   @@index([deletedAt])
+  @@index([fromBranchId])
+  @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
+  @@index([toBranchId])
   @@map("branch_transfers")
 }
 
 // ── BRANCH TRANSFER ITEM ──
 
 model BranchTransferItem {
-  id                String   @id @default(uuid())
-  branchTransferId  String
-  inventoryItemId   String?
-  tenantId          String
-  quantity          Decimal  @db.Decimal(12, 4)
-  receivedQuantity  Decimal  @default(0) @db.Decimal(12, 4)
-  unitCost          Decimal? @db.Decimal(12, 4)
-  notes             String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id               String    @id @default(uuid())
+  branchTransferId String
+  inventoryItemId  String?
+  tenantId         String
+  quantity         Decimal   @db.Decimal(12, 4)
+  receivedQuantity Decimal   @default(0) @db.Decimal(12, 4)
+  unitCost         Decimal?  @db.Decimal(12, 4)
+  notes            String?
+  createdAt        DateTime  @default(now())
+  deletedAt        DateTime?
+  updatedAt        DateTime  @updatedAt
 
   branchTransfer BranchTransfer @relation(fields: [branchTransferId], references: [id], onDelete: Cascade)
   inventoryItem  InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
 
   @@index([branchTransferId])
   @@index([inventoryItemId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@map("branch_transfer_items")
 }
@@ -2847,56 +3058,60 @@ model BranchTransferItem {
 // ── RECIPE ──
 
 model Recipe {
-  id                 String   @id @default(uuid())
+  id                 String    @id @default(uuid())
   tenantId           String
   name               String
   description        String?
   productId          String?
-  yield              Decimal? @db.Decimal(10, 2)
+  yield              Decimal?  @db.Decimal(10, 2)
   servingUnit        String?
   preparationTime    Int?
   cookingTime        Int?
   instructions       String?
-  version            Int      @default(1)
-  cost               Decimal? @db.Decimal(12, 4)
-  foodCostPercentage Decimal? @db.Decimal(5, 2)
-  isActive           Boolean  @default(true)
+  version            Int       @default(1)
+  cost               Decimal?  @db.Decimal(12, 4)
+  foodCostPercentage Decimal?  @db.Decimal(5, 2)
+  isActive           Boolean   @default(true)
   metadata           Json?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
   deletedAt          DateTime?
 
-  product Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  product Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
   items   RecipeItem[]
 
   @@unique([tenantId, name, deletedAt])
-  @@index([tenantId])
-  @@index([productId])
-  @@index([isActive])
   @@index([deletedAt])
+  @@index([isActive])
+  @@index([productId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("recipes")
 }
 
 // ── RECIPE ITEM ──
 
 model RecipeItem {
-  id              String  @id @default(uuid())
+  id              String    @id @default(uuid())
   recipeId        String
   inventoryItemId String?
   tenantId        String
-  quantity        Decimal @db.Decimal(12, 4)
+  quantity        Decimal   @db.Decimal(12, 4)
   unit            String?
-  wastePercentage Decimal? @db.Decimal(5, 2)
+  wastePercentage Decimal?  @db.Decimal(5, 2)
   notes           String?
-  sortOrder       Int     @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  sortOrder       Int       @default(0)
+  createdAt       DateTime  @default(now())
+  deletedAt       DateTime?
+  updatedAt       DateTime  @updatedAt
 
-  recipe        Recipe        @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recipe        Recipe         @relation(fields: [recipeId], references: [id], onDelete: Cascade)
   inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
 
-  @@index([recipeId])
   @@index([inventoryItemId])
+  @@index([recipeId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@map("recipe_items")
 }
@@ -2904,34 +3119,36 @@ model RecipeItem {
 // ── STOCK ADJUSTMENT ──
 
 model StockAdjustment {
-  id               String           @id @default(uuid())
-  inventoryItemId  String
-  tenantId         String
-  branchId         String?
-  type             AdjustmentType
-  reason           AdjustmentReason
-  quantity         Decimal          @db.Decimal(12, 4)
-  unitCost         Decimal?         @db.Decimal(12, 4)
-  totalCost        Decimal?         @db.Decimal(12, 4)
-  referenceNumber  String?
-  notes            String?
-  status           String           @default("PENDING")
-  approvedById     String?
-  approvedAt       DateTime?
-  createdById      String?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  deletedAt        DateTime?
+  id              String                @id @default(uuid())
+  inventoryItemId String
+  tenantId        String
+  branchId        String?
+  type            AdjustmentType
+  reason          AdjustmentReason
+  quantity        Decimal               @db.Decimal(12, 4)
+  unitCost        Decimal?              @db.Decimal(12, 4)
+  totalCost       Decimal?              @db.Decimal(12, 4)
+  referenceNumber String?
+  notes           String?
+  status          StockAdjustmentStatus @default(PENDING)
+  approvedById    String?
+  approvedAt      DateTime?
+  createdById     String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  deletedAt       DateTime?
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
-  @@index([inventoryItemId])
-  @@index([tenantId])
   @@index([branchId])
-  @@index([type])
+  @@index([deletedAt])
+  @@index([inventoryItemId])
   @@index([reason])
   @@index([status])
-  @@index([deletedAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
+  @@index([type])
   @@map("stock_adjustments")
 }
 
@@ -2956,66 +3173,73 @@ model WasteEntry {
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
-  @@index([inventoryItemId])
-  @@index([tenantId])
   @@index([branchId])
-  @@index([type])
   @@index([createdAt])
   @@index([deletedAt])
+  @@index([inventoryItemId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
+  @@index([type])
   @@map("waste_entries")
 }
 
 // ── INVENTORY COUNT ──
 
 model InventoryCount {
-  id               String    @id @default(uuid())
+  id               String               @id @default(uuid())
   inventoryItemId  String
   tenantId         String
   branchId         String?
   countType        CountType
-  expectedQuantity Decimal   @db.Decimal(12, 4)
-  actualQuantity   Decimal   @db.Decimal(12, 4)
-  variance         Decimal   @db.Decimal(12, 4)
-  unitCost         Decimal?  @db.Decimal(12, 4)
-  varianceCost     Decimal?  @db.Decimal(12, 4)
+  expectedQuantity Decimal              @db.Decimal(12, 4)
+  actualQuantity   Decimal              @db.Decimal(12, 4)
+  variance         Decimal              @db.Decimal(12, 4)
+  unitCost         Decimal?             @db.Decimal(12, 4)
+  varianceCost     Decimal?             @db.Decimal(12, 4)
   notes            String?
   countedById      String?
-  countedAt        DateTime  @default(now())
-  status           String    @default("PENDING")
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  countedAt        DateTime             @default(now())
+  status           InventoryCountStatus @default(PENDING)
+  createdAt        DateTime             @default(now())
+  deletedAt        DateTime?
+  updatedAt        DateTime             @updatedAt
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
-  @@index([inventoryItemId])
-  @@index([tenantId])
   @@index([branchId])
-  @@index([countType])
   @@index([countedAt])
+  @@index([countType])
+  @@index([inventoryItemId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("inventory_counts")
 }
 
 // ── EXPIRATION ALERT ──
 
 model ExpirationAlert {
-  id              String    @id @default(uuid())
+  id              String              @id @default(uuid())
   inventoryItemId String
   tenantId        String
   batchNumber     String?
   expiryDate      DateTime
-  alertType       String    @default("WARNING")
+  alertType       ExpirationAlertType @default(WARNING)
   message         String?
-  sentAt          DateTime  @default(now())
+  sentAt          DateTime            @default(now())
   resolvedAt      DateTime?
-  createdAt       DateTime  @default(now())
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  deletedAt       DateTime?
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
-  @@index([inventoryItemId])
-  @@index([tenantId])
-  @@index([expiryDate])
   @@index([alertType])
+  @@index([expiryDate])
+  @@index([inventoryItemId])
   @@index([resolvedAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("expiration_alerts")
 }
 
@@ -3119,65 +3343,69 @@ enum ConsumptionPeriod {
 // ── WAREHOUSE ──
 
 model Warehouse {
-  id            String          @id @default(uuid())
-  tenantId      String
-  name          String
-  code          String
-  type          WarehouseType   @default(BRANCH)
-  status        WarehouseStatus @default(ACTIVE)
-  address       String?
-  city          String?
-  country       String?
-  capacity      Decimal?        @db.Decimal(12, 4)
-  capacityUnit  String?
-  managerName   String?
-  managerId     String?
-  isDefault     Boolean         @default(false)
-  branchId      String?
-  metadata      Json?
-  version       Int             @default(1)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  deletedAt     DateTime?
+  id           String          @id @default(uuid())
+  tenantId     String
+  name         String
+  code         String
+  type         WarehouseType   @default(BRANCH)
+  status       WarehouseStatus @default(ACTIVE)
+  address      String?
+  city         String?
+  country      String?
+  capacity     Decimal?        @db.Decimal(12, 4)
+  capacityUnit String?
+  managerName  String?
+  managerId    String?
+  isDefault    Boolean         @default(false)
+  branchId     String?
+  metadata     Json?
+  version      Int             @default(1)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  deletedAt    DateTime?
 
-  zones     WarehouseZone[]
-  bins      StorageBin[]
-  branches  WarehouseBranch[]
+  zones    WarehouseZone[]
+  bins     StorageBin[]
+  branches WarehouseBranch[]
 
   @@unique([tenantId, code, deletedAt])
-  @@index([tenantId])
   @@index([branchId])
-  @@index([type])
   @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
+  @@index([type])
   @@map("warehouses")
 }
 
 // ── WAREHOUSE ZONE ──
 
 model WarehouseZone {
-  id          String            @id @default(uuid())
-  warehouseId String
-  tenantId    String
-  name        String
-  code        String
-  type        WarehouseZoneType @default(STORAGE)
-  capacity    Decimal?          @db.Decimal(12, 4)
+  id           String            @id @default(uuid())
+  warehouseId  String
+  tenantId     String
+  name         String
+  code         String
+  type         WarehouseZoneType @default(STORAGE)
+  capacity     Decimal?          @db.Decimal(12, 4)
   capacityUnit String?
-  isActive    Boolean           @default(true)
-  sortOrder   Int               @default(0)
-  metadata    Json?
-  version     Int               @default(1)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  deletedAt   DateTime?
+  isActive     Boolean           @default(true)
+  sortOrder    Int               @default(0)
+  metadata     Json?
+  version      Int               @default(1)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?
 
   warehouse Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
   bins      StorageBin[]
 
   @@unique([warehouseId, code, deletedAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
   @@index([tenantId])
-  @@index([warehouseId])
   @@index([type])
+  @@index([warehouseId])
   @@map("warehouse_zones")
 }
 
@@ -3210,37 +3438,42 @@ model StorageBin {
   warehouse Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
 
   @@unique([warehouseId, code, deletedAt])
-  @@index([tenantId])
-  @@index([zoneId])
-  @@index([warehouseId])
-  @@index([type])
   @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
+  @@index([type])
+  @@index([warehouseId])
+  @@index([zoneId])
   @@map("storage_bins")
 }
 
 // ── WAREHOUSE-BRANCH MAPPING ──
 
 model WarehouseBranch {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   warehouseId String
   branchId    String
   tenantId    String
-  isDefault   Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  isDefault   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
 
   warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
   branch    Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@unique([warehouseId, branchId])
-  @@index([tenantId])
   @@index([branchId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("warehouse_branches")
 }
 
 // ── BARCODE / QR ──
 
 model Barcode {
-  id              String     @id @default(uuid())
+  id              String      @id @default(uuid())
   inventoryItemId String
   tenantId        String
   barcode         String?
@@ -3250,6 +3483,7 @@ model Barcode {
   labelTemplate   String?
   metadata        Json?
   createdAt       DateTime    @default(now())
+  deletedAt       DateTime?
   updatedAt       DateTime    @updatedAt
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
@@ -3257,87 +3491,96 @@ model Barcode {
   @@unique([barcode, tenantId])
   @@unique([qrCode, tenantId])
   @@index([inventoryItemId])
-  @@index([tenantId])
   @@index([isPrimary])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("barcodes")
 }
 
 // ── INVENTORY FORECAST ──
 
 model InventoryForecast {
-  id              String          @id @default(uuid())
+  id              String            @id @default(uuid())
   inventoryItemId String
   tenantId        String
   forecastDate    DateTime
-  quantity        Decimal         @db.Decimal(12, 4)
-  confidence      Decimal?        @db.Decimal(5, 4)
-  method          ForecastMethod  @default(MOVING_AVERAGE)
+  quantity        Decimal           @db.Decimal(12, 4)
+  confidence      Decimal?          @db.Decimal(5, 4)
+  method          ForecastMethod    @default(MOVING_AVERAGE)
   period          ConsumptionPeriod @default(DAILY)
   factors         Json?
-  createdAt       DateTime        @default(now())
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
-  @@index([inventoryItemId])
-  @@index([tenantId])
   @@index([forecastDate])
+  @@index([inventoryItemId])
   @@index([method])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("inventory_forecasts")
 }
 
 // ── REORDER SUGGESTION ──
 
 model ReorderSuggestion {
-  id              String        @id @default(uuid())
-  inventoryItemId String
-  tenantId        String
-  warehouseId     String?
-  suggestedQuantity Decimal     @db.Decimal(12, 4)
-  suggestedDate   DateTime
-  currentStock    Decimal       @db.Decimal(12, 4)
-  minStock        Decimal?      @db.Decimal(12, 4)
-  maxStock        Decimal?      @db.Decimal(12, 4)
-  safetyStock     Decimal?      @db.Decimal(12, 4)
-  leadTimeDays    Int           @default(1)
-  eoq             Decimal?      @db.Decimal(12, 4)
-  priority        String?
-  status          ReorderStatus @default(PENDING)
-  approvedById    String?
-  approvedAt      DateTime?
-  notes           String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id                String        @id @default(uuid())
+  inventoryItemId   String
+  tenantId          String
+  warehouseId       String?
+  suggestedQuantity Decimal       @db.Decimal(12, 4)
+  suggestedDate     DateTime
+  currentStock      Decimal       @db.Decimal(12, 4)
+  minStock          Decimal?      @db.Decimal(12, 4)
+  maxStock          Decimal?      @db.Decimal(12, 4)
+  safetyStock       Decimal?      @db.Decimal(12, 4)
+  leadTimeDays      Int           @default(1)
+  eoq               Decimal?      @db.Decimal(12, 4)
+  priority          String?
+  status            ReorderStatus @default(PENDING)
+  approvedById      String?
+  approvedAt        DateTime?
+  notes             String?
+  createdAt         DateTime      @default(now())
+  deletedAt         DateTime?
+  updatedAt         DateTime      @updatedAt
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
   @@index([inventoryItemId])
-  @@index([tenantId])
   @@index([status])
   @@index([suggestedDate])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("reorder_suggestions")
 }
 
 // ── CONSUMPTION RECORD ──
 
 model ConsumptionRecord {
-  id              String           @id @default(uuid())
+  id              String            @id @default(uuid())
   inventoryItemId String
   tenantId        String
   date            DateTime
-  quantity        Decimal          @db.Decimal(12, 4)
-  unitCost        Decimal?         @db.Decimal(12, 4)
-  totalCost       Decimal?         @db.Decimal(12, 4)
+  quantity        Decimal           @db.Decimal(12, 4)
+  unitCost        Decimal?          @db.Decimal(12, 4)
+  totalCost       Decimal?          @db.Decimal(12, 4)
   period          ConsumptionPeriod @default(DAILY)
   source          String?
   referenceId     String?
-  createdAt       DateTime         @default(now())
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
-  @@index([inventoryItemId])
-  @@index([tenantId])
   @@index([date])
+  @@index([inventoryItemId])
   @@index([period])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("consumption_records")
 }
 
@@ -3350,7 +3593,7 @@ model CycleCount {
   countDate     DateTime
   scheduledDate DateTime?
   status        CycleCountStatus @default(SCHEDULED)
-  countType     String           @default("FULL")
+  countType     CycleCountType   @default(FULL)
   notes         String?
   approvedById  String?
   approvedAt    DateTime?
@@ -3363,10 +3606,12 @@ model CycleCount {
 
   items CycleCountItem[]
 
+  @@index([countDate])
+  @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
   @@index([tenantId])
   @@index([warehouseId])
-  @@index([status])
-  @@index([countDate])
   @@map("cycle_counts")
 }
 
@@ -3387,10 +3632,11 @@ model CycleCountItem {
   verifiedAt       DateTime?
   metadata         Json?
   createdAt        DateTime             @default(now())
+  deletedAt        DateTime?
   updatedAt        DateTime             @updatedAt
 
-  cycleCount     CycleCount     @relation(fields: [cycleCountId], references: [id], onDelete: Cascade)
-  inventoryItem  InventoryItem  @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  cycleCount    CycleCount    @relation(fields: [cycleCountId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
   @@unique([cycleCountId, inventoryItemId])
   @@index([cycleCountId])
@@ -3402,125 +3648,137 @@ model CycleCountItem {
 // ── SUPPLIER PERFORMANCE ──
 
 model SupplierPerformanceMetric {
-  id              String   @id @default(uuid())
-  tenantId        String
-  supplierId      String?
+  id               String    @id @default(uuid())
+  tenantId         String
+  supplierId       String?
   supplierDetailId String?
-  periodStart     DateTime
-  periodEnd       DateTime
-  leadTimeAvg     Decimal? @db.Decimal(8, 2)
-  fillRate        Decimal? @db.Decimal(5, 2)
-  deliveryAccuracy Decimal? @db.Decimal(5, 2)
-  rejectedItems   Int      @default(0)
-  averageDelay    Decimal? @db.Decimal(8, 2)
-  totalOrders     Int      @default(0)
-  onTimeDeliveries Int     @default(0)
-  qualityScore    Decimal? @db.Decimal(5, 2)
-  costScore       Decimal? @db.Decimal(5, 2)
-  overallScore    Decimal? @db.Decimal(5, 2)
-  rank            Int?
-  metadata        Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  periodStart      DateTime
+  periodEnd        DateTime
+  leadTimeAvg      Decimal?  @db.Decimal(8, 2)
+  fillRate         Decimal?  @db.Decimal(5, 2)
+  deliveryAccuracy Decimal?  @db.Decimal(5, 2)
+  rejectedItems    Int       @default(0)
+  averageDelay     Decimal?  @db.Decimal(8, 2)
+  totalOrders      Int       @default(0)
+  onTimeDeliveries Int       @default(0)
+  qualityScore     Decimal?  @db.Decimal(5, 2)
+  costScore        Decimal?  @db.Decimal(5, 2)
+  overallScore     Decimal?  @db.Decimal(5, 2)
+  rank             Int?
+  metadata         Json?
+  createdAt        DateTime  @default(now())
+  deletedAt        DateTime?
+  updatedAt        DateTime  @updatedAt
 
   supplier       Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   supplierDetail SupplierDetail? @relation(fields: [supplierDetailId], references: [id], onDelete: SetNull)
 
-  @@index([tenantId])
-  @@index([supplierId])
-  @@index([supplierDetailId])
-  @@index([periodStart, periodEnd])
   @@index([overallScore])
+  @@index([periodStart, periodEnd])
+  @@index([supplierDetailId])
+  @@index([supplierId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("supplier_performance_metrics")
 }
 
 // ── INVENTORY VALUATION ──
 
 model InventoryValuation {
-  id              String         @id @default(uuid())
+  id              String          @id @default(uuid())
   inventoryItemId String
   tenantId        String
   valuationDate   DateTime
   method          ValuationMethod @default(WEIGHTED_AVERAGE)
-  unitCost        Decimal        @db.Decimal(12, 4)
-  totalValue      Decimal        @db.Decimal(16, 4)
-  quantity        Decimal        @db.Decimal(12, 4)
-  currency        Currency       @default(USD)
+  unitCost        Decimal         @db.Decimal(12, 4)
+  totalValue      Decimal         @db.Decimal(16, 4)
+  quantity        Decimal         @db.Decimal(12, 4)
+  currency        Currency        @default(USD)
   metadata        Json?
-  createdAt       DateTime       @default(now())
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 
+  @@index([method])
+  @@index([valuationDate])
   @@index([inventoryItemId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
-   @@index([valuationDate])
-   @@index([method])
-   @@map("inventory_valuations")
+  @@map("inventory_valuations")
 }
 
 model ScheduledReport {
-  id          String    @id @default(uuid())
-  tenantId    String
-  name        String
-  type        String
-  format      String
-  schedule    String
-  recipients  Json      @default("[]")
-  config      Json      @default("{}")
-  isActive    Boolean   @default(true)
-  lastRunAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  id         String       @id @default(uuid())
+  tenantId   String
+  name       String
+  type       ReportType
+  format     ReportFormat
+  schedule   String
+  recipients Json         @default("[]")
+  config     Json         @default("{}")
+  isActive   Boolean      @default(true)
+  lastRunAt  DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  deletedAt  DateTime?
 
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, isActive])
   @@map("scheduled_reports")
 }
 
 model ReportExport {
-  id            String    @id @default(uuid())
-  tenantId      String
-  type          String
-  reportType    String
-  periodStart   DateTime?
-  periodEnd     DateTime?
-  config        Json      @default("{}")
-  filePath      String?
-  fileSize      Int?
-  status        String    @default("PENDING")
-  errorMessage  String?
-  createdAt     DateTime  @default(now())
-  completedAt   DateTime?
-  deletedAt     DateTime?
+  id           String             @id @default(uuid())
+  tenantId     String
+  type         ReportFormat
+  reportType   ReportType
+  periodStart  DateTime?
+  periodEnd    DateTime?
+  config       Json               @default("{}")
+  filePath     String?
+  fileSize     Int?
+  status       ReportExportStatus @default(PENDING)
+  errorMessage String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  completedAt  DateTime?
+  deletedAt    DateTime?
 
-  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, status])
   @@map("report_exports")
 }
 
 model AnalyticsDashboard {
-  id          String    @id @default(uuid())
-  tenantId    String
-  name        String    @default("Default")
-  config      Json      @default("{}")
-  layout      Json      @default("{}")
-  isDefault   Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  id        String    @id @default(uuid())
+  tenantId  String
+  name      String    @default("Default")
+  config    Json      @default("{}")
+  layout    Json      @default("{}")
+  isDefault Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, name])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
   @@index([tenantId])
   @@map("analytics_dashboards")
 }
 
 model WebhookRegistration {
-  id              String          @id @default(uuid())
+  id              String    @id @default(uuid())
   tenantId        String
   name            String
   url             String
@@ -3529,52 +3787,56 @@ model WebhookRegistration {
   secretHash      String
   secretPrefix    String
   encryptedSecret String?
-  isActive        Boolean         @default(true)
-  retryCount      Int             @default(3)
-  timeoutMs       Int             @default(30000)
-  headers         Json            @default("{}")
-  metadata        Json            @default("{}")
+  isActive        Boolean   @default(true)
+  retryCount      Int       @default(3)
+  timeoutMs       Int       @default(30000)
+  headers         Json      @default("{}")
+  metadata        Json      @default("{}")
   lastDeliveredAt DateTime?
   lastFailureAt   DateTime?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
-  tenant          Tenant          @relation(fields: [tenantId], references: [id])
-  deliveries      WebhookDelivery[]
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
 
   @@unique([tenantId, name])
-  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
   @@index([tenantId, isActive])
+  @@index([tenantId])
   @@map("webhook_registrations")
 }
 
 model WebhookDelivery {
-  id              String              @id @default(uuid())
-  webhookId       String
-  tenantId        String
-  eventType       String
-  eventId         String
-  payload         Json
-  status          String              @default("PENDING")
-  attemptCount    Int                 @default(0)
-  maxRetries      Int                 @default(3)
-  statusCode      Int?
-  responseBody    String?
-  durationMs      Int?
-  errorMessage    String?
-  nextRetryAt     DateTime?
-  completedAt     DateTime?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  id           String                @id @default(uuid())
+  webhookId    String
+  tenantId     String
+  eventType    WebhookEventType
+  eventId      String
+  payload      Json
+  status       WebhookDeliveryStatus @default(PENDING)
+  attemptCount Int                   @default(0)
+  maxRetries   Int                   @default(3)
+  statusCode   Int?
+  responseBody String?
+  durationMs   Int?
+  errorMessage String?
+  nextRetryAt  DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime              @default(now())
+  deletedAt    DateTime?
+  updatedAt    DateTime              @updatedAt
 
-  registration    WebhookRegistration @relation(fields: [webhookId], references: [id])
+  registration WebhookRegistration @relation(fields: [webhookId], references: [id], onDelete: Cascade)
 
-  @@index([webhookId])
-  @@index([tenantId, status])
   @@index([eventType])
   @@index([nextRetryAt])
   @@index([status, nextRetryAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  @@index([webhookId])
   @@map("webhook_deliveries")
 }
 
@@ -3596,119 +3858,130 @@ model ApiKey {
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
-  tenant          Tenant    @relation(fields: [tenantId], references: [id])
-  createdBy       User      @relation(fields: [createdById], references: [id])
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User   @relation(fields: [createdById], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
-  @@index([keyPrefix])
   @@unique([tenantId, name])
+  @@index([keyPrefix])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("api_keys")
 }
 
 model GiftCard {
-  id              String               @id @default(uuid())
-  tenantId        String
-  code            String               @unique
-  initialBalance  Decimal              @default(0)
-  currentBalance  Decimal              @default(0)
-  currency        Currency             @default(USD)
-  status          String               @default("ACTIVE")
-  issueType       String               @default("MANUAL")
-  recipientName   String?
-  recipientEmail  String?
-  recipientPhone  String?
-  message         String?
-  expiresAt       DateTime?
-  issuedById      String?
-  issuedAt        DateTime             @default(now())
-  redeemedAt      DateTime?
-  metadata        Json                 @default("{}")
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-  deletedAt       DateTime?
+  id             String            @id @default(uuid())
+  tenantId       String
+  code           String            @unique
+  initialBalance Decimal           @default(0)
+  currentBalance Decimal           @default(0)
+  currency       Currency          @default(USD)
+  status         GiftCardStatus    @default(ACTIVE)
+  issueType      GiftCardIssueType @default(MANUAL)
+  recipientName  String?
+  recipientEmail String?
+  recipientPhone String?
+  message        String?
+  expiresAt      DateTime?
+  issuedById     String?
+  issuedAt       DateTime          @default(now())
+  redeemedAt     DateTime?
+  metadata       Json              @default("{}")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  deletedAt      DateTime?
 
-  tenant          Tenant               @relation(fields: [tenantId], references: [id])
-  transactions    GiftCardTransaction[]
-  issuedBy        User?                @relation("IssuedGiftCards", fields: [issuedById], references: [id])
+  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  transactions GiftCardTransaction[]
+  issuedBy     User?                 @relation("IssuedGiftCards", fields: [issuedById], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
   @@index([code])
-  @@index([status])
   @@index([expiresAt])
+  @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId])
   @@map("gift_cards")
 }
 
 model GiftCardTransaction {
-  id            String    @id @default(uuid())
+  id            String                  @id @default(uuid())
   giftCardId    String
   tenantId      String
-  type          String
-  amount        Decimal   @default(0)
-  balanceBefore Decimal   @default(0)
-  balanceAfter  Decimal   @default(0)
-  currency      Currency  @default(USD)
+  type          GiftCardTransactionType
+  amount        Decimal                 @default(0)
+  balanceBefore Decimal                 @default(0)
+  balanceAfter  Decimal                 @default(0)
+  currency      Currency                @default(USD)
   referenceId   String?
   referenceType String?
   description   String?
   performedById String?
-  metadata      Json      @default("{}")
-  createdAt     DateTime  @default(now())
+  metadata      Json                    @default("{}")
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  deletedAt     DateTime?
 
-  giftCard      GiftCard  @relation(fields: [giftCardId], references: [id])
-  performedBy   User?     @relation("PerformedTransactions", fields: [performedById], references: [id])
+  giftCard    GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+  performedBy User?    @relation("PerformedTransactions", fields: [performedById], references: [id], onDelete: Cascade)
 
+  @@index([createdAt])
   @@index([giftCardId])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@index([type])
-  @@index([createdAt])
   @@map("gift_card_transactions")
 }
 
 model ConsentRecord {
-  id          String    @id @default(uuid())
+  id          String      @id @default(uuid())
   tenantId    String
   userId      String?
   customerId  String?
-  type        String
-  granted     Boolean   @default(false)
+  type        ConsentType
+  granted     Boolean     @default(false)
   ipAddress   String?
   userAgent   String?
-  consentDate DateTime  @default(now())
+  consentDate DateTime    @default(now())
   expiresAt   DateTime?
   revokedAt   DateTime?
-  metadata    Json      @default("{}")
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  metadata    Json        @default("{}")
+  createdAt   DateTime    @default(now())
+  deletedAt   DateTime?
+  updatedAt   DateTime    @updatedAt
 
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
-  user        User?     @relation(fields: [userId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
-  @@index([userId])
-  @@index([customerId])
-  @@index([type])
   @@index([consentDate])
+  @@index([customerId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
+  @@index([type])
+  @@index([userId])
   @@map("consent_records")
 }
 
 model CookiePreference {
-  id              String   @id @default(uuid())
-  tenantId        String
-  userId          String?
-  visitorId       String?
-  necessary       Boolean  @default(true)
-  functional      Boolean  @default(true)
-  analytics       Boolean  @default(false)
-  marketing       Boolean  @default(false)
-  thirdParty      Boolean  @default(false)
-  ipAddress       String?
-  userAgent       String?
-  preferencesSet  DateTime @default(now())
-  lastUpdated     DateTime @updatedAt
-  createdAt       DateTime @default(now())
+  id             String    @id @default(uuid())
+  tenantId       String
+  userId         String?
+  visitorId      String?
+  necessary      Boolean   @default(true)
+  functional     Boolean   @default(true)
+  analytics      Boolean   @default(false)
+  marketing      Boolean   @default(false)
+  thirdParty     Boolean   @default(false)
+  ipAddress      String?
+  userAgent      String?
+  preferencesSet DateTime  @default(now())
+  lastUpdated    DateTime  @updatedAt
+  createdAt      DateTime  @default(now())
+  deletedAt      DateTime?
 
-  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@index([userId])
   @@index([visitorId])
@@ -3716,67 +3989,247 @@ model CookiePreference {
 }
 
 model DataExportRequest {
-  id          String    @id @default(uuid())
-  tenantId    String
-  userId      String
-  status      String    @default("PENDING")
-  requestType String    @default("FULL")
-  format      String    @default("JSON")
-  filePath    String?
-  fileSize    Int?
-  expiresAt   DateTime?
-  completedAt DateTime?
+  id           String             @id @default(uuid())
+  tenantId     String
+  userId       String
+  status       BackupRecordStatus @default(PENDING)
+  requestType  BackupRecordType   @default(FULL)
+  format       ExportFormat       @default(JSON)
+  filePath     String?
+  fileSize     Int?
+  expiresAt    DateTime?
+  completedAt  DateTime?
   errorMessage String?
-  metadata    Json      @default("{}")
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  metadata     Json               @default("{}")
+  createdAt    DateTime           @default(now())
+  deletedAt    DateTime?
+  updatedAt    DateTime           @updatedAt
 
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
-  user        User      @relation(fields: [userId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([status])
+  @@index([tenantId, createdAt])
   @@index([tenantId])
   @@index([userId])
-  @@index([status])
   @@map("data_export_requests")
 }
 
 model BackupRecord {
-  id              String   @id @default(uuid())
-  tenantId        String
-  type            String   @default("FULL")
-  status          String   @default("PENDING")
-  filePath        String?
-  fileSize        Int?
-  checksum        String?
-  metadata        Json     @default("{}")
-  retentionDays   Int      @default(30)
-  expiresAt       DateTime?
-  startedAt       DateTime?
-  completedAt     DateTime?
-  errorMessage    String?
-  verifiedAt      DateTime?
-  verifiedBy      String?
+  id                 String             @id @default(uuid())
+  tenantId           String
+  type               BackupRecordType   @default(FULL)
+  status             BackupRecordStatus @default(PENDING)
+  filePath           String?
+  fileSize           Int?
+  checksum           String?
+  metadata           Json               @default("{}")
+  retentionDays      Int                @default(30)
+  expiresAt          DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  errorMessage       String?
+  verifiedAt         DateTime?
+  verifiedBy         String?
   verificationStatus String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt          DateTime           @default(now())
+  deletedAt          DateTime?
+  updatedAt          DateTime           @updatedAt
 
-  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
-  @@index([status])
   @@index([createdAt])
+  @@index([status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId])
   @@map("backup_records")
 }
 
 model RevokedToken {
-  id        String   @id @default(uuid())
-  jti       String   @unique
+  id        String    @id @default(uuid())
+  jti       String    @unique
   tenantId  String?
   userId    String?
   expiresAt DateTime
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
-  @@index([jti])
   @@index([expiresAt])
+  @@index([jti])
+  @@index([tenantId, createdAt])
   @@map("revoked_tokens")
+}
+
+enum NotificationType {
+  ORDER
+  PAYMENT
+  RESERVATION
+  CUSTOMER
+  CAMPAIGN
+  INVENTORY
+  SYSTEM
+  ALERT
+  BILLING
+  SECURITY
+  LOW_STOCK
+  EXPIRY
+  BIRTHDAY
+  REFERRAL
+  MEMBERSHIP
+  GENERAL
+}
+
+enum ReportType {
+  SALES
+  INVENTORY
+  KITCHEN
+  FINANCIAL
+  CUSTOM
+}
+
+enum ReportStatus {
+  PENDING
+  GENERATED
+  FAILED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum GiftCardStatus {
+  ACTIVE
+  REDEEMED
+  EXPIRED
+  DEACTIVATED
+}
+
+enum GiftCardIssueType {
+  MANUAL
+  SYSTEM
+  BULK
+}
+
+enum GiftCardTransactionType {
+  ISSUE
+  RECHARGE
+  REDEEM
+  REFUND
+  VOID
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  RETRYING
+  DELIVERED
+  DEAD_LETTER
+}
+
+enum WebhookEventType {
+  ORDERS_CREATED          @map("orders.created")
+  ORDERS_UPDATED          @map("orders.updated")
+  ORDERS_COMPLETED        @map("orders.completed")
+  ORDERS_CANCELLED        @map("orders.cancelled")
+  CUSTOMERS_CREATED       @map("customers.created")
+  CUSTOMERS_UPDATED       @map("customers.updated")
+  CUSTOMERS_DELETED       @map("customers.deleted")
+  INVENTORY_LOW_STOCK     @map("inventory.low_stock")
+  INVENTORY_OUT_OF_STOCK  @map("inventory.out_of_stock")
+  INVENTORY_RECEIVED      @map("inventory.received")
+  PAYMENTS_COMPLETED      @map("payments.completed")
+  PAYMENTS_FAILED         @map("payments.failed")
+  PAYMENTS_REFUNDED       @map("payments.refunded")
+  LOYALTY_POINTS_EARNED   @map("loyalty.points_earned")
+  LOYALTY_POINTS_REDEEMED @map("loyalty.points_redeemed")
+  LOYALTY_TIER_CHANGED    @map("loyalty.tier_changed")
+  CAMPAIGNS_SENT          @map("campaigns.sent")
+  CAMPAIGNS_OPENED        @map("campaigns.opened")
+  CAMPAIGNS_CLICKED       @map("campaigns.clicked")
+  SUPPLIERS_CREATED       @map("suppliers.created")
+  SUPPLIERS_UPDATED       @map("suppliers.updated")
+  TRANSFERS_CREATED       @map("transfers.created")
+  TRANSFERS_COMPLETED     @map("transfers.completed")
+}
+
+enum BackupRecordType {
+  FULL
+  INCREMENTAL
+  MANUAL
+  AUTOMATED
+}
+
+enum BackupRecordStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  EXPIRED
+}
+
+enum ExportFormat {
+  JSON
+  CSV
+  EXCEL
+  PDF
+}
+
+enum SupplierStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum StockAdjustmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum InventoryCountStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  VERIFIED
+  PENDING
+}
+
+enum ExpirationAlertType {
+  WARNING
+  CRITICAL
+  EXPIRED
+}
+
+enum CycleCountType {
+  FULL
+  CYCLE
+  PHYSICAL
+  SPOT
+}
+
+enum ReportFormat {
+  CSV
+  EXCEL
+  PDF
+}
+
+enum ReportExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ConsentType {
+  MARKETING_EMAIL
+  SMS
+  PUSH_NOTIFICATIONS
+  DATA_PROCESSING
+  THIRD_PARTY_SHARING
 }

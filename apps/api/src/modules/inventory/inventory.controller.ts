@@ -272,17 +272,23 @@ export class InventoryController {
   // ============================================
 
   @Get('low-stock')
-  async getLowStockItems(@CurrentUser() user: CurrentUserData) {
-    return this.inventoryService.getLowStockItems(user.tenantId!);
+  async getLowStockItems(@Query() query: QueryInventoryDto, @CurrentUser() user: CurrentUserData) {
+    return this.inventoryService.getLowStockItems(user.tenantId!, query.page, query.limit);
   }
 
   @Get('critical-stock')
-  async getCriticalStockItems(@CurrentUser() user: CurrentUserData) {
-    return this.inventoryService.getCriticalStockItems(user.tenantId!);
+  async getCriticalStockItems(
+    @Query() query: QueryInventoryDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.inventoryService.getCriticalStockItems(user.tenantId!, query.page, query.limit);
   }
 
   @Get('out-of-stock')
-  async getOutOfStockItems(@CurrentUser() user: CurrentUserData) {
-    return this.inventoryService.getOutOfStockItems(user.tenantId!);
+  async getOutOfStockItems(
+    @Query() query: QueryInventoryDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.inventoryService.getOutOfStockItems(user.tenantId!, query.page, query.limit);
   }
 }

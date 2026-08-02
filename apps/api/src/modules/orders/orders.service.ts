@@ -14,7 +14,6 @@ import {
   Prisma,
   OrderStatus as PrismaOrderStatus,
   OrderType,
-  PaymentStatus,
   KitchenStatus as PrismaKitchenStatus,
 } from '@prisma/client';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -27,12 +26,8 @@ import { SplitOrderDto } from './dto/split-order.dto';
 import { MergeOrdersDto } from './dto/merge-orders.dto';
 import { MoveTableDto } from './dto/move-table.dto';
 import { ChangeStatusDto } from './dto/change-status.dto';
-import {
-  OrderStatus,
-  validateTransition,
-  isTerminalStatus,
-  isPayableStatus,
-} from './order-state-machine';
+import { OrderStatus, validateTransition, isTerminalStatus } from './order-state-machine';
+import { CACHE_TTL } from '@tablofy/shared/constants';
 
 type OrderWithIncludes = Prisma.OrderGetPayload<{
   include: {
@@ -235,7 +230,7 @@ export class OrdersService {
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
 
-    await this.cacheService.set(tenantId, listKey, result, 30);
+    await this.cacheService.set(tenantId, listKey, result, CACHE_TTL.ORDERS);
     return result;
   }
 
@@ -263,7 +258,7 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
-    await this.cacheService.set(tenantId, `one:${id}`, order, 30);
+    await this.cacheService.set(tenantId, `one:${id}`, order, CACHE_TTL.ORDERS);
     return order as OrderWithIncludes;
   }
 
@@ -594,7 +589,7 @@ export class OrdersService {
     dto: AddPaymentDto,
     tenantId: string,
     userId: string,
-    meta?: { ipAddress?: string; userAgent?: string },
+    _meta?: { ipAddress?: string; userAgent?: string },
   ) {
     const result = await this.paymentsService.charge(
       id,
@@ -621,7 +616,7 @@ export class OrdersService {
     tenantId: string,
     userId: string,
     reason?: string,
-    meta?: { ipAddress?: string; userAgent?: string },
+    _meta?: { ipAddress?: string; userAgent?: string },
   ) {
     const result = await this.paymentsService.refund(paymentId, tenantId, userId, reason);
 

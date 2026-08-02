@@ -7,7 +7,7 @@ import {
   Min,
   MaxLength,
 } from 'class-validator';
-import { Currency } from '@prisma/client';
+import { Currency, GiftCardIssueType } from '@prisma/client';
 
 export class CreateGiftCardDto {
   @IsNumber()
@@ -41,6 +41,6 @@ export class CreateGiftCardDto {
   expiresAt?: string;
 
   @IsOptional()
-  @IsString()
-  issueType?: string;
+  @IsEnum(GiftCardIssueType)
+  issueType?: GiftCardIssueType;
 }

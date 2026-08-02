@@ -75,29 +75,53 @@ describe('CacheService', () => {
   });
 
   describe('deletePattern', () => {
-    it('should delete keys matching pattern', async () => {
-      const mockClient = { keys: jest.fn().mockResolvedValue(['k1', 'k2']), del: jest.fn() };
-      redis.getClient.mockResolvedValue(mockClient);
+    it('should delete keys matching pattern via SCAN', async () => {
+      redis.scanKeys.mockResolvedValue(['k1', 'k2']);
 
       await service.deletePattern('tenant-1', 'test:*');
 
-      expect(mockClient.keys).toHaveBeenCalledWith('cache:tenant-1:test:*');
-      expect(mockClient.del).toHaveBeenCalledWith('k1', 'k2');
+      expect(redis.scanKeys).toHaveBeenCalledWith('cache:tenant-1:test:*', 100);
+      expect(redis.del).toHaveBeenCalledWith('k1', 'k2');
+      expect(redis.getClient).not.toHaveBeenCalled();
+    });
+
+    it('should not call del when no keys match', async () => {
+      redis.scanKeys.mockResolvedValue([]);
+
+      await service.deletePattern('tenant-1', 'test:*');
+
+      expect(redis.del).not.toHaveBeenCalled();
+    });
+
+    it('should delete in batches of 100 for large result sets', async () => {
+      const keys = Array.from({ length: 250 }, (_, i) => `k${i}`);
+      redis.scanKeys.mockResolvedValue(keys);
+
+      await service.deletePattern('tenant-1', 'test:*');
+
+      expect(redis.del).toHaveBeenCalledTimes(3);
+      expect(redis.del).toHaveBeenNthCalledWith(1, ...keys.slice(0, 100));
+      expect(redis.del).toHaveBeenNthCalledWith(3, ...keys.slice(200, 250));
     });
   });
 
   describe('invalidateTenantCache', () => {
-    it('should delete all keys for a tenant', async () => {
-      const mockClient = {
-        keys: jest.fn().mockResolvedValue(['cache:tenant-1:k1', 'cache:tenant-1:k2']),
-        del: jest.fn(),
-      };
-      redis.getClient.mockResolvedValue(mockClient);
+    it('should delete all keys for a tenant via SCAN', async () => {
+      redis.scanKeys.mockResolvedValue(['cache:tenant-1:k1', 'cache:tenant-1:k2']);
 
       await service.invalidateTenantCache('tenant-1');
 
-      expect(mockClient.keys).toHaveBeenCalledWith('cache:tenant-1:*');
-      expect(mockClient.del).toHaveBeenCalledWith('cache:tenant-1:k1', 'cache:tenant-1:k2');
+      expect(redis.scanKeys).toHaveBeenCalledWith('cache:tenant-1:*', 100);
+      expect(redis.del).toHaveBeenCalledWith('cache:tenant-1:k1', 'cache:tenant-1:k2');
+      expect(redis.getClient).not.toHaveBeenCalled();
+    });
+
+    it('should not call del when no keys match', async () => {
+      redis.scanKeys.mockResolvedValue([]);
+
+      await service.invalidateTenantCache('tenant-1');
+
+      expect(redis.del).not.toHaveBeenCalled();
     });
   });
 
