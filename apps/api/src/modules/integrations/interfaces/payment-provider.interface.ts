@@ -15,15 +15,41 @@ export interface RefundData {
   reason?: string;
 }
 
+export interface ConfirmedPayment {
+  status: 'succeeded' | 'pending' | 'failed';
+  transactionId?: string;
+}
+
+export interface GatewayWebhookEvent {
+  provider: 'stripe' | 'paymob';
+  type: 'payment.succeeded' | 'payment.failed' | 'refund.succeeded' | 'refund.partial';
+  reference: string;
+  amount?: number;
+  currency?: string;
+  refundedAmount?: number;
+  raw: unknown;
+}
+
 export interface PaymentProvider extends IntegrationProvider {
   createPaymentIntent(
     data: PaymentIntentData,
+    idempotencyKey?: string,
   ): Promise<IntegrationResult<{ id: string; clientSecret?: string; status: string }>>;
   confirmPayment(
     paymentIntentId: string,
-  ): Promise<IntegrationResult<{ status: string; transactionId?: string }>>;
-  refundPayment(data: RefundData): Promise<IntegrationResult<{ id: string; status: string }>>;
+    idempotencyKey?: string,
+  ): Promise<IntegrationResult<ConfirmedPayment>>;
+  refundPayment(
+    data: RefundData,
+    idempotencyKey?: string,
+  ): Promise<IntegrationResult<{ id: string; status: string }>>;
+  voidPayment(
+    paymentIntentId: string,
+    idempotencyKey?: string,
+  ): Promise<IntegrationResult<{ id: string; status: string }>>;
   getPaymentStatus(
     transactionId: string,
   ): Promise<IntegrationResult<{ status: string; amount: number; currency: string }>>;
+  verifyWebhookSignature(payload: string | Buffer, signature: string): boolean;
+  parseWebhookEvent(payload: unknown): GatewayWebhookEvent | null;
 }

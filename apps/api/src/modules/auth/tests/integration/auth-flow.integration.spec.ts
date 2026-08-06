@@ -7,6 +7,7 @@ import { AuthService } from '../../auth.service';
 import { PrismaService } from '../../../../prisma/prisma.service';
 import { RedisService } from '../../../../redis/redis.service';
 import { AuditLogsService } from '../../../audit-logs/audit-logs.service';
+import { QueueService } from '../../../queues/queue.service';
 import { createMockPrisma, MockPrisma } from '../../../../test/mocks/prisma.mock';
 import { createMockRedis, MockRedis } from '../../../../test/mocks/redis.mock';
 import { createMockAuditLogs, MockAuditLogs } from '../../../../test/mocks/audit-log.mock';
@@ -28,6 +29,10 @@ describe('Auth Flow — Integration', () => {
         { provide: PrismaService, useValue: createMockPrisma() },
         { provide: RedisService, useValue: createMockRedis() },
         { provide: AuditLogsService, useValue: createMockAuditLogs() },
+        {
+          provide: QueueService,
+          useValue: { addJob: jest.fn().mockResolvedValue({ id: 'email-1' }) },
+        },
         {
           provide: JwtService,
           useValue: {

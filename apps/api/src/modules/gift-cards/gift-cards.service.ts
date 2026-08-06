@@ -121,26 +121,35 @@ export class GiftCardsService {
     lang: string,
     performedById?: string,
   ) {
-    const giftCard = await this.findOne(tenantId, id, lang);
-    if (giftCard.status !== 'ACTIVE') {
-      throw new BadRequestException(this.i18n.t('giftCard.deactivated', lang));
-    }
-    if (giftCard.expiresAt && new Date() > giftCard.expiresAt) {
-      throw new BadRequestException(this.i18n.t('giftCard.expired', lang));
-    }
-    if (Number(giftCard.currentBalance) < dto.amount) {
-      throw new BadRequestException(this.i18n.t('giftCard.insufficientBalance', lang));
-    }
+    const [updated] = await this.prisma.$transaction(async (tx) => {
+      const giftCard = await tx.giftCard.findFirst({ where: { id, tenantId } });
+      if (!giftCard) {
+        throw new NotFoundException(this.i18n.t('giftCard.notFound', lang));
+      }
+      if (giftCard.status !== 'ACTIVE') {
+        throw new BadRequestException(this.i18n.t('giftCard.deactivated', lang));
+      }
+      if (giftCard.expiresAt && new Date() > giftCard.expiresAt) {
+        throw new BadRequestException(this.i18n.t('giftCard.expired', lang));
+      }
 
-    const balanceBefore = Number(giftCard.currentBalance);
-    const balanceAfter = balanceBefore - dto.amount;
+      const result = await tx.giftCard.updateMany({
+        where: {
+          id,
+          tenantId,
+          status: 'ACTIVE',
+          currentBalance: { gte: dto.amount },
+        },
+        data: { currentBalance: { decrement: dto.amount } },
+      });
+      if (result.count === 0) {
+        throw new BadRequestException(this.i18n.t('giftCard.insufficientBalance', lang));
+      }
 
-    const [updated] = await Promise.all([
-      this.prisma.giftCard.update({
-        where: { id },
-        data: { currentBalance: balanceAfter },
-      }),
-      this.prisma.giftCardTransaction.create({
+      const balanceBefore = Number(giftCard.currentBalance);
+      const balanceAfter = balanceBefore - dto.amount;
+
+      await tx.giftCardTransaction.create({
         data: {
           giftCardId: id,
           tenantId,
@@ -153,8 +162,10 @@ export class GiftCardsService {
           description: dto.description,
           performedById,
         },
-      }),
-    ]);
+      });
+
+      return [{ ...giftCard, currentBalance: balanceAfter }];
+    });
 
     return updated;
   }

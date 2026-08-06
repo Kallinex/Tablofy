@@ -309,7 +309,21 @@ export class SupplierAnalyticsService {
     const cached = await this.cacheService.get(tenantId, cacheKey);
     if (cached) return cached;
 
-    const result = await this.prisma.$queryRawUnsafe<
+    const where: Prisma.Sql[] = [
+      Prisma.sql`po."tenantId" = ${tenantId}`,
+      Prisma.sql`poi."inventoryItemId" IS NOT NULL`,
+    ];
+    if (query.startDate) {
+      where.push(Prisma.sql`po."createdAt" >= ${new Date(query.startDate)}`);
+    }
+    if (query.endDate) {
+      where.push(Prisma.sql`po."createdAt" <= ${new Date(query.endDate)}`);
+    }
+    if (query.supplierId) {
+      where.push(Prisma.sql`po."supplierDetailId" = ${query.supplierId}`);
+    }
+
+    const result = await this.prisma.$queryRaw<
       Array<{
         inventoryItemId: string;
         itemName: string;
@@ -317,24 +331,18 @@ export class SupplierAnalyticsService {
         supplierName: string;
         unitPrice: number;
       }>
-    >(
-      `SELECT poi.inventory_item_id as "inventoryItemId", ii.name as "itemName",
-              po.supplier_detail_id as "supplierDetailId", COALESCE(sd.company_name, sd.name, 'Unknown') as "supplierName",
-              poi.unit_price as "unitPrice"
-       FROM purchase_order_items poi
-       JOIN purchase_orders po ON po.id = poi.purchase_order_id
-       LEFT JOIN supplier_details sd ON sd.id = po.supplier_detail_id
-       LEFT JOIN inventory_items ii ON ii.id = poi.inventory_item_id
-       WHERE po.tenant_id = $1 AND poi.inventory_item_id IS NOT NULL
-       ${query.startDate ? `AND po.created_at >= $2` : ''}
-       ${query.endDate ? `AND po.created_at <= $3` : ''}
-       ${query.supplierId ? `AND po.supplier_detail_id = $4` : ''}
-       ORDER BY ii.name`,
-      tenantId,
-      ...(query.startDate ? [new Date(query.startDate)] : []),
-      ...(query.endDate ? [new Date(query.endDate)] : []),
-      ...(query.supplierId ? [query.supplierId] : []),
-    );
+    >(Prisma.sql`
+      SELECT poi."inventoryItemId" as "inventoryItemId", ii.name as "itemName",
+             po."supplierDetailId" as "supplierDetailId", COALESCE(s.name, 'Unknown') as "supplierName",
+             poi."unitPrice" as "unitPrice"
+      FROM purchase_order_items poi
+      JOIN purchase_orders po ON po.id = poi."purchaseOrderId"
+      LEFT JOIN supplier_details sd ON sd.id = po."supplierDetailId"
+      LEFT JOIN suppliers s ON s.id = sd."supplierId"
+      LEFT JOIN inventory_items ii ON ii.id = poi."inventoryItemId"
+      WHERE ${Prisma.join(where, ' AND ')}
+      ORDER BY ii.name
+    `);
 
     const itemMap = new Map<
       string,
@@ -460,48 +468,56 @@ export class SupplierAnalyticsService {
     const cached = await this.cacheService.get(tenantId, cacheKey);
     if (cached) return cached;
 
-    const result = await this.prisma.$queryRawUnsafe<
+    const where: Prisma.Sql[] = [Prisma.sql`"tenantId" = ${tenantId}`];
+    if (query.startDate) {
+      where.push(Prisma.sql`"createdAt" >= ${new Date(query.startDate)}`);
+    }
+    if (query.endDate) {
+      where.push(Prisma.sql`"createdAt" <= ${new Date(query.endDate)}`);
+    }
+    if (query.supplierId) {
+      where.push(Prisma.sql`"supplierDetailId" = ${query.supplierId}`);
+    }
+
+    const result = await this.prisma.$queryRaw<
       Array<{
         period: string;
         totalSpend: number;
         orderCount: bigint;
       }>
-    >(
-      `SELECT TO_CHAR("createdAt", 'YYYY-MM') as period, SUM(total) as "totalSpend", COUNT(*) as "orderCount"
-       FROM purchase_orders WHERE "tenantId" = $1
-       ${query.startDate ? `AND "createdAt" >= $2` : ''}
-       ${query.endDate ? `AND "createdAt" <= $3` : ''}
-       ${query.supplierId ? `AND "supplierDetailId" = $4` : ''}
-       GROUP BY TO_CHAR("createdAt", 'YYYY-MM') ORDER BY period ASC`,
-      tenantId,
-      ...(query.startDate ? [new Date(query.startDate)] : []),
-      ...(query.endDate ? [new Date(query.endDate)] : []),
-      ...(query.supplierId ? [query.supplierId] : []),
-    );
+    >(Prisma.sql`
+      SELECT TO_CHAR("createdAt", 'YYYY-MM') as period, SUM(total) as "totalSpend", COUNT(*) as "orderCount"
+      FROM purchase_orders WHERE ${Prisma.join(where, ' AND ')}
+      GROUP BY TO_CHAR("createdAt", 'YYYY-MM') ORDER BY period ASC
+    `);
 
-    const supplierData = await this.prisma.$queryRawUnsafe<
+    const supplierWhere: Prisma.Sql[] = [Prisma.sql`po."tenantId" = ${tenantId}`];
+    if (query.startDate) {
+      supplierWhere.push(Prisma.sql`po."createdAt" >= ${new Date(query.startDate)}`);
+    }
+    if (query.endDate) {
+      supplierWhere.push(Prisma.sql`po."createdAt" <= ${new Date(query.endDate)}`);
+    }
+    if (query.supplierId) {
+      supplierWhere.push(Prisma.sql`po."supplierDetailId" = ${query.supplierId}`);
+    }
+
+    const supplierData = await this.prisma.$queryRaw<
       Array<{
         supplierDetailId: string;
         supplierName: string;
         totalSpend: number;
         orderCount: bigint;
       }>
-    >(
-      `SELECT po."supplierDetailId" as "supplierDetailId", COALESCE(s.name, 'Unknown') as "supplierName",
-              SUM(po.total) as "totalSpend", COUNT(*) as "orderCount"
-       FROM purchase_orders po
-       LEFT JOIN supplier_details sd ON sd.id = po."supplierDetailId"
-       LEFT JOIN suppliers s ON s.id = sd."supplierId"
-       WHERE po."tenantId" = $1
-       ${query.startDate ? `AND po."createdAt" >= $2` : ''}
-       ${query.endDate ? `AND po."createdAt" <= $3` : ''}
-       ${query.supplierId ? `AND po."supplierDetailId" = $4` : ''}
-       GROUP BY po."supplierDetailId", s.name ORDER BY "totalSpend" DESC`,
-      tenantId,
-      ...(query.startDate ? [new Date(query.startDate)] : []),
-      ...(query.endDate ? [new Date(query.endDate)] : []),
-      ...(query.supplierId ? [query.supplierId] : []),
-    );
+    >(Prisma.sql`
+      SELECT po."supplierDetailId" as "supplierDetailId", COALESCE(s.name, 'Unknown') as "supplierName",
+             SUM(po.total) as "totalSpend", COUNT(*) as "orderCount"
+      FROM purchase_orders po
+      LEFT JOIN supplier_details sd ON sd.id = po."supplierDetailId"
+      LEFT JOIN suppliers s ON s.id = sd."supplierId"
+      WHERE ${Prisma.join(supplierWhere, ' AND ')}
+      GROUP BY po."supplierDetailId", s.name ORDER BY "totalSpend" DESC
+    `);
 
     const result2 = {
       trends: result.map((r) => ({

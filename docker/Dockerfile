@@ -40,6 +40,9 @@ ENV PORT=3000
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs
 
+# OpenSSL is required at runtime by the Prisma engine during `prisma migrate deploy`
+RUN apk add --no-cache openssl
+
 COPY --from=builder --chown=nestjs:nodejs /app/dist/apps/api ./app
 COPY --from=deps-prod --chown=nestjs:nodejs /app/node_modules ./node_modules
 
@@ -51,6 +54,10 @@ COPY --from=builder --chown=nestjs:nodejs /app/prisma.config.ts ./prisma.config.
 # Copy package.json for prisma CLI (needed for migrate deploy)
 COPY --from=builder --chown=nestjs:nodejs /app/package.json ./package.json
 
+# Writable runtime log directory for the non-root runtime user
+RUN mkdir -p /app/logs \
+ && chown -R nestjs:nodejs /app/logs
+
 USER nestjs
 
 EXPOSE 3000
@@ -58,4 +65,7 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/v1/health || exit 1
 
-CMD ["node", "app/main.js"]
+# Apply pending migrations at startup, then start the API. `prisma` is shipped as a
+# production dependency via deps-prod node_modules so `npx prisma migrate deploy`
+# is available in the runtime image.
+CMD ["sh", "-c", "npx prisma migrate deploy && node app/main.js"]

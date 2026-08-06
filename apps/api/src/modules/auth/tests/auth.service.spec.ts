@@ -7,10 +7,12 @@ import { AuthService } from '../auth.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { RedisService } from '../../../redis/redis.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
+import { QueueService } from '../../queues/queue.service';
 import { createMockPrisma, MockPrisma } from '../../../test/mocks/prisma.mock';
 import { createMockRedis, MockRedis } from '../../../test/mocks/redis.mock';
 import { createMockAuditLogs, MockAuditLogs } from '../../../test/mocks/audit-log.mock';
 import { buildUser, buildAuthUser } from '../../../test/factories/user.factory';
+import { generateTotp } from '../totp';
 
 jest.mock('bcrypt');
 
@@ -29,6 +31,10 @@ describe('AuthService', () => {
         { provide: PrismaService, useValue: createMockPrisma() },
         { provide: RedisService, useValue: createMockRedis() },
         { provide: AuditLogsService, useValue: createMockAuditLogs() },
+        {
+          provide: QueueService,
+          useValue: { addJob: jest.fn().mockResolvedValue({ id: 'email-1' }) },
+        },
         {
           provide: JwtService,
           useValue: {
@@ -466,6 +472,256 @@ describe('AuthService', () => {
       const result = await service.validateUserById('nonexist');
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('two-factor authentication', () => {
+    const twoFactorSecret = generateTotpSecretForTests();
+
+    function generateTotpSecretForTests(): string {
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+      let secret = '';
+      for (let i = 0; i < 32; i += 1) {
+        secret += alphabet[Math.floor(Math.random() * alphabet.length)];
+      }
+      return secret;
+    }
+
+    function buildTwoFactorUser() {
+      return {
+        id: 'user-1',
+        email: 'mfa@test.com',
+        firstName: 'Mfa',
+        lastName: 'User',
+        role: 'OWNER',
+        tenantId: 'tenant-1',
+        password: 'hashed-password',
+        status: 'ACTIVE',
+        emailVerified: true,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        twoFactorEnabled: true,
+        twoFactorSecret,
+      };
+    }
+
+    describe('login', () => {
+      it('should require a two-factor code when 2FA is enabled', async () => {
+        prisma.user.findFirst.mockResolvedValue(buildTwoFactorUser());
+        (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+        prisma.tenant.findUnique.mockResolvedValue({
+          id: 'tenant-1',
+          status: 'ACTIVE',
+          subscription: { status: 'ACTIVE' },
+        });
+
+        await expect(service.login('mfa@test.com', 'CorrectPass123!')).rejects.toThrow(
+          'Two-factor authentication code is required',
+        );
+      });
+
+      it('should reject an invalid two-factor code and audit the failure', async () => {
+        prisma.user.findFirst.mockResolvedValue(buildTwoFactorUser());
+        (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+        prisma.tenant.findUnique.mockResolvedValue({
+          id: 'tenant-1',
+          status: 'ACTIVE',
+          subscription: { status: 'ACTIVE' },
+        });
+
+        await expect(
+          service.login('mfa@test.com', 'CorrectPass123!', undefined, '000000'),
+        ).rejects.toThrow('Invalid two-factor authentication code');
+
+        expect(auditLogs.log).toHaveBeenCalledWith(
+          expect.objectContaining({ action: 'LOGIN_2FA_FAILED' }),
+        );
+      });
+
+      it('should login successfully with a valid two-factor code', async () => {
+        prisma.user.findFirst.mockResolvedValue(buildTwoFactorUser());
+        (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+        prisma.tenant.findUnique.mockResolvedValue({
+          id: 'tenant-1',
+          status: 'ACTIVE',
+          subscription: { status: 'ACTIVE' },
+        });
+        prisma.user.update.mockResolvedValue(buildTwoFactorUser());
+        jwtService.sign.mockReturnValue('mock-2fa-token');
+        prisma.refreshToken.create.mockResolvedValue({ token: 'mock-refresh-2fa' } as never);
+
+        const code = generateTotp(twoFactorSecret);
+        const result = await service.login('mfa@test.com', 'CorrectPass123!', undefined, code);
+
+        expect(result.user.email).toBe('mfa@test.com');
+        expect(result.tokens.accessToken).toBe('mock-2fa-token');
+        expect(auditLogs.log).toHaveBeenCalledWith(
+          expect.objectContaining({ action: 'USER_LOGIN' }),
+        );
+        expect(JSON.stringify(result.user)).not.toContain(twoFactorSecret);
+      });
+
+      it('should ignore two-factor code when 2FA is disabled', async () => {
+        const user = buildTwoFactorUser();
+        user.twoFactorEnabled = false;
+        prisma.user.findFirst.mockResolvedValue(user);
+        (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+        prisma.tenant.findUnique.mockResolvedValue({
+          id: 'tenant-1',
+          status: 'ACTIVE',
+          subscription: { status: 'ACTIVE' },
+        });
+        prisma.user.update.mockResolvedValue(user);
+        jwtService.sign.mockReturnValue('mock-token');
+        prisma.refreshToken.create.mockResolvedValue({ token: 'mock-refresh' } as never);
+
+        const result = await service.login('mfa@test.com', 'CorrectPass123!', undefined, '000000');
+
+        expect(result.user.email).toBe('mfa@test.com');
+      });
+    });
+
+    describe('getTwoFactorStatus', () => {
+      it('should return enabled status', async () => {
+        prisma.user.findUnique.mockResolvedValue({ twoFactorEnabled: true });
+
+        const result = await service.getTwoFactorStatus('user-1');
+
+        expect(result).toEqual({ enabled: true });
+      });
+
+      it('should throw when user not found', async () => {
+        prisma.user.findUnique.mockResolvedValue(null);
+
+        await expect(service.getTwoFactorStatus('user-1')).rejects.toThrow(UnauthorizedException);
+      });
+    });
+
+    describe('setupTwoFactor', () => {
+      it('should generate and persist a TOTP secret with an otpauth URL', async () => {
+        prisma.user.findUnique.mockResolvedValue({
+          email: 'owner@test.com',
+          twoFactorEnabled: false,
+        });
+        prisma.user.update.mockResolvedValue({});
+
+        const result = await service.setupTwoFactor('user-1');
+
+        expect(result.secret).toMatch(/^[A-Z2-7]{32}$/);
+        expect(result.otpauthUrl).toContain('otpauth://totp/');
+        expect(result.otpauthUrl).toContain('owner%40test.com');
+        expect(prisma.user.update).toHaveBeenCalledWith({
+          where: { id: 'user-1' },
+          data: { twoFactorSecret: result.secret },
+        });
+      });
+
+      it('should throw when 2FA is already enabled', async () => {
+        prisma.user.findUnique.mockResolvedValue({
+          email: 'owner@test.com',
+          twoFactorEnabled: true,
+        });
+
+        await expect(service.setupTwoFactor('user-1')).rejects.toThrow(BadRequestException);
+        expect(prisma.user.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('enableTwoFactor', () => {
+      it('should enable 2FA with a valid code and audit', async () => {
+        prisma.user.findUnique.mockResolvedValue({
+          tenantId: 'tenant-1',
+          twoFactorEnabled: false,
+          twoFactorSecret,
+        });
+        prisma.user.update.mockResolvedValue({});
+
+        const code = generateTotp(twoFactorSecret);
+        const result = await service.enableTwoFactor('user-1', code);
+
+        expect(result).toEqual({ enabled: true });
+        expect(prisma.user.update).toHaveBeenCalledWith({
+          where: { id: 'user-1' },
+          data: { twoFactorEnabled: true },
+        });
+        expect(auditLogs.log).toHaveBeenCalledWith(
+          expect.objectContaining({ action: 'TWO_FACTOR_ENABLED' }),
+        );
+      });
+
+      it('should reject an invalid code', async () => {
+        prisma.user.findUnique.mockResolvedValue({
+          tenantId: 'tenant-1',
+          twoFactorEnabled: false,
+          twoFactorSecret,
+        });
+
+        await expect(service.enableTwoFactor('user-1', '000000')).rejects.toThrow(
+          BadRequestException,
+        );
+      });
+
+      it('should throw when already enabled', async () => {
+        prisma.user.findUnique.mockResolvedValue({
+          tenantId: 'tenant-1',
+          twoFactorEnabled: true,
+          twoFactorSecret,
+        });
+
+        await expect(service.enableTwoFactor('user-1', '000000')).rejects.toThrow(
+          BadRequestException,
+        );
+      });
+    });
+
+    describe('disableTwoFactor', () => {
+      it('should disable 2FA, clear the secret, revoke sessions, and audit', async () => {
+        prisma.user.findUnique.mockResolvedValue({
+          tenantId: 'tenant-1',
+          twoFactorEnabled: true,
+          twoFactorSecret,
+        });
+        prisma.user.update.mockResolvedValue({});
+        prisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+
+        const code = generateTotp(twoFactorSecret);
+        const result = await service.disableTwoFactor('user-1', code);
+
+        expect(result).toEqual({ enabled: false });
+        expect(prisma.user.update).toHaveBeenCalledWith({
+          where: { id: 'user-1' },
+          data: { twoFactorEnabled: false, twoFactorSecret: null },
+        });
+        expect(prisma.refreshToken.updateMany).toHaveBeenCalled();
+        expect(redis.deleteUserSessions).toHaveBeenCalledWith('user-1');
+        expect(auditLogs.log).toHaveBeenCalledWith(
+          expect.objectContaining({ action: 'TWO_FACTOR_DISABLED' }),
+        );
+      });
+
+      it('should reject an invalid code', async () => {
+        prisma.user.findUnique.mockResolvedValue({
+          tenantId: 'tenant-1',
+          twoFactorEnabled: true,
+          twoFactorSecret,
+        });
+
+        await expect(service.disableTwoFactor('user-1', '000000')).rejects.toThrow(
+          BadRequestException,
+        );
+      });
+
+      it('should throw when 2FA is not enabled', async () => {
+        prisma.user.findUnique.mockResolvedValue({
+          tenantId: 'tenant-1',
+          twoFactorEnabled: false,
+          twoFactorSecret: null,
+        });
+
+        await expect(service.disableTwoFactor('user-1', '000000')).rejects.toThrow(
+          BadRequestException,
+        );
+      });
     });
   });
 });

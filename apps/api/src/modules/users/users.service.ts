@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -6,6 +12,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { Prisma, UserRole, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { BCRYPT_ROUNDS } from '@tablofy/shared/constants';
+import { canAssignRole, canManageUser } from '../../common/rbac/role-policy';
 
 @Injectable()
 export class UsersService {
@@ -36,8 +43,14 @@ export class UsersService {
     dto: CreateUserDto,
     creatorId: string,
     tenantId: string,
+    creatorRole: UserRole,
     meta?: { ipAddress?: string; userAgent?: string },
   ) {
+    const targetRole = dto.role ?? UserRole.STAFF;
+    if (!canAssignRole(creatorRole, targetRole)) {
+      throw new ForbiddenException(`Role ${targetRole} cannot be assigned by ${creatorRole}`);
+    }
+
     const existingUser = await this.prisma.user.findFirst({
       where: { email: dto.email.toLowerCase(), tenantId },
     });
@@ -55,7 +68,7 @@ export class UsersService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         phone: dto.phone,
-        role: dto.role ?? 'STAFF',
+        role: targetRole,
         tenantId,
       },
       select: this.defaultSelect,
@@ -130,9 +143,20 @@ export class UsersService {
     dto: UpdateUserDto,
     tenantId: string,
     editorId: string,
+    editorRole: UserRole,
     meta?: { ipAddress?: string; userAgent?: string },
   ) {
     const existing = await this.findOne(id, tenantId);
+
+    if (!canManageUser(editorRole, existing.role)) {
+      throw new ForbiddenException(
+        `Users with role ${existing.role} cannot be managed by ${editorRole}`,
+      );
+    }
+
+    if (dto.role !== undefined && !canAssignRole(editorRole, dto.role)) {
+      throw new ForbiddenException(`Role ${dto.role} cannot be assigned by ${editorRole}`);
+    }
 
     if (dto.email && dto.email.toLowerCase() !== existing.email) {
       const emailTaken = await this.prisma.user.findFirst({
@@ -178,9 +202,16 @@ export class UsersService {
     id: string,
     tenantId: string,
     deleterId: string,
+    deleterRole: UserRole,
     meta?: { ipAddress?: string; userAgent?: string },
   ): Promise<void> {
-    await this.findOne(id, tenantId);
+    const existing = await this.findOne(id, tenantId);
+
+    if (!canManageUser(deleterRole, existing.role)) {
+      throw new ForbiddenException(
+        `Users with role ${existing.role} cannot be deleted by ${deleterRole}`,
+      );
+    }
 
     await this.prisma.user.update({
       where: { id },
@@ -201,6 +232,7 @@ export class UsersService {
     id: string,
     tenantId: string,
     restorerId: string,
+    restorerRole: UserRole,
     meta?: { ipAddress?: string; userAgent?: string },
   ) {
     const user = await this.prisma.user.findFirst({
@@ -213,6 +245,12 @@ export class UsersService {
     }
     if (!user.deletedAt) {
       throw new ConflictException('User is not deleted');
+    }
+
+    if (!canManageUser(restorerRole, user.role)) {
+      throw new ForbiddenException(
+        `Users with role ${user.role} cannot be restored by ${restorerRole}`,
+      );
     }
 
     const restored = await this.prisma.user.update({

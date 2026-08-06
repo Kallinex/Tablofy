@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { createHmac } from 'crypto';
 import { PaymentsService } from '../payments.service';
 import { StripeProvider } from '../providers/stripe.provider';
 import { PaymobProvider } from '../providers/paymob.provider';
@@ -323,7 +324,31 @@ describe('PaymentsService', () => {
                   id: 'payment-3',
                   method: PaymentMethod.CREDIT_CARD,
                   amount: 70,
+                  status: PaymentStatus.PENDING,
                 }),
+              update: jest
+                .fn()
+                .mockResolvedValueOnce({
+                  ...mockPayment,
+                  id: 'payment-2',
+                  method: PaymentMethod.CASH,
+                  amount: 30,
+                })
+                .mockResolvedValueOnce({
+                  ...mockPayment,
+                  id: 'payment-3',
+                  method: PaymentMethod.CREDIT_CARD,
+                  amount: 70,
+                  status: PaymentStatus.COMPLETED,
+                }),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              findUnique: jest.fn().mockResolvedValue({
+                ...mockPayment,
+                id: 'payment-3',
+                method: PaymentMethod.CREDIT_CARD,
+                amount: 70,
+                status: PaymentStatus.COMPLETED,
+              }),
             },
             order: {
               update: jest.fn().mockResolvedValue({}),
@@ -420,6 +445,333 @@ describe('PaymentsService', () => {
       const result = await service.reconcile('tenant-1', '2025-01-01', '2025-12-31');
       expect(result.localPayments).toBe(1);
       expect(result.mismatches).toBe(0);
+    });
+  });
+
+  describe('charge (gateway methods)', () => {
+    const pendingCardPayment = {
+      ...mockPayment,
+      method: PaymentMethod.CREDIT_CARD,
+      status: PaymentStatus.PENDING,
+    };
+
+    function mockIntentTx(created: Record<string, unknown> = pendingCardPayment) {
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            order: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            payment: { create: jest.fn().mockResolvedValue(created) },
+          };
+          return cb(tx);
+        },
+      );
+    }
+
+    function stubProvider(behavior: {
+      create?: { success: boolean; data?: { id: string; status: string }; error?: string };
+      confirm?: {
+        success: boolean;
+        data?: { status: string; transactionId?: string };
+        error?: string;
+      };
+    }) {
+      (service as unknown as { providerRegistry: Map<string, unknown> }).providerRegistry.set(
+        'stripe',
+        {
+          mode: 'mock',
+          initialize: async () => undefined,
+          createPaymentIntent: jest.fn().mockResolvedValue(
+            behavior.create ?? {
+              success: true,
+              data: { id: 'pi_stub_1', status: 'requires_confirmation' },
+            },
+          ),
+          confirmPayment: jest.fn().mockResolvedValue(
+            behavior.confirm ?? {
+              success: true,
+              data: { status: 'succeeded', transactionId: 'txn_stub_1' },
+            },
+          ),
+        },
+      );
+    }
+
+    it('should complete payment only when the gateway confirms succeeded', async () => {
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+
+      prisma.$transaction.mockImplementationOnce(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            order: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            payment: { create: jest.fn().mockResolvedValue(pendingCardPayment) },
+          };
+          return cb(tx);
+        },
+      );
+      prisma.$transaction.mockImplementationOnce(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            order: {
+              findFirst: jest.fn().mockResolvedValue(mockOrder),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              update: jest.fn().mockResolvedValue({}),
+            },
+            payment: {
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              findUnique: jest.fn().mockResolvedValue({
+                ...mockPayment,
+                method: PaymentMethod.CREDIT_CARD,
+                status: PaymentStatus.COMPLETED,
+              }),
+            },
+            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          };
+          return cb(tx);
+        },
+      );
+
+      const dto: CreatePaymentDto = {
+        orderId: 'order-1',
+        method: PaymentMethod.CREDIT_CARD,
+        amount: 50,
+      };
+
+      const result = await service.charge('order-1', dto, 'tenant-1', 'user-1');
+      expect(result.status).toBe(PaymentStatus.COMPLETED);
+      expect(metrics.incrementPaymentsCompleted).toHaveBeenCalled();
+    });
+
+    it('should keep payment PENDING when gateway requires async confirmation', async () => {
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+      mockIntentTx();
+      stubProvider({ confirm: { success: true, data: { status: 'pending' } } });
+      prisma.payment.update.mockResolvedValue({
+        ...pendingCardPayment,
+        gatewayRef: 'pi_stub_1',
+        gatewayData: {},
+      });
+
+      const dto: CreatePaymentDto = {
+        orderId: 'order-1',
+        method: PaymentMethod.CREDIT_CARD,
+        amount: 50,
+      };
+
+      const result = await service.charge('order-1', dto, 'tenant-1', 'user-1');
+      expect(result.status).toBe(PaymentStatus.PENDING);
+      expect(metrics.incrementPaymentsCompleted).not.toHaveBeenCalled();
+      expect(metrics.incrementPaymentsFailed).not.toHaveBeenCalled();
+    });
+
+    it('should mark payment FAILED when the gateway rejects', async () => {
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+      mockIntentTx();
+      stubProvider({ create: { success: false, error: 'Gateway rejected payment' } });
+      prisma.payment.update.mockResolvedValue({
+        ...pendingCardPayment,
+        status: PaymentStatus.FAILED,
+      });
+
+      const dto: CreatePaymentDto = {
+        orderId: 'order-1',
+        method: PaymentMethod.CREDIT_CARD,
+        amount: 50,
+      };
+
+      const result = await service.charge('order-1', dto, 'tenant-1', 'user-1');
+      expect(result.status).toBe(PaymentStatus.FAILED);
+      expect(metrics.incrementPaymentsFailed).toHaveBeenCalled();
+    });
+
+    it('should refuse mock gateway in production', async () => {
+      (
+        service as unknown as { configService: { get: (k: string) => string | undefined } }
+      ).configService = { get: (k: string) => (k === 'app.nodeEnv' ? 'production' : undefined) };
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+
+      const dto: CreatePaymentDto = {
+        orderId: 'order-1',
+        method: PaymentMethod.CREDIT_CARD,
+        amount: 50,
+      };
+
+      await expect(service.charge('order-1', dto, 'tenant-1', 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should replay an existing payment for the same idempotency key', async () => {
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+      prisma.payment.findFirst.mockResolvedValue({
+        ...mockPayment,
+        method: PaymentMethod.CREDIT_CARD,
+        status: PaymentStatus.COMPLETED,
+        idempotencyKey: 'idem-1',
+      });
+
+      const dto: CreatePaymentDto = {
+        orderId: 'order-1',
+        method: PaymentMethod.CREDIT_CARD,
+        amount: 50,
+        idempotencyKey: 'idem-1',
+      };
+
+      const result = await service.charge('order-1', dto, 'tenant-1', 'user-1');
+      expect(result.status).toBe(PaymentStatus.COMPLETED);
+      expect(prisma.payment.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleGatewayWebhook', () => {
+    let webhookService: PaymentsService;
+    let webhookPrisma: Record<string, jest.Mock>;
+
+    const pendingGatewayPayment = {
+      ...mockPayment,
+      id: 'payment-webhook-1',
+      method: PaymentMethod.CREDIT_CARD,
+      status: PaymentStatus.PENDING,
+      gatewayRef: 'pi_webhook_1',
+      amount: 50,
+    };
+
+    const completedGatewayPayment = {
+      ...pendingGatewayPayment,
+      status: PaymentStatus.COMPLETED,
+      processedAt: new Date(),
+    };
+
+    beforeEach(async () => {
+      webhookPrisma = {
+        order: {
+          findFirst: jest.fn(),
+          findUnique: jest.fn(),
+          update: jest.fn(),
+          updateMany: jest.fn(),
+        },
+        payment: {
+          findFirst: jest.fn(),
+          findMany: jest.fn(),
+          findUnique: jest.fn(),
+          create: jest.fn(),
+          update: jest.fn(),
+          count: jest.fn(),
+        },
+        orderStatusHistory: {
+          create: jest.fn(),
+        },
+        $transaction: jest.fn(),
+      };
+
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          PaymentsService,
+          {
+            provide: StripeProvider,
+            useValue: new StripeProvider({
+              mode: 'live',
+              secretKey: 'sk_live_123',
+              webhookSecret: 'whsec_test',
+            }),
+          },
+          { provide: PaymobProvider, useValue: new PaymobProvider() },
+          { provide: PrismaService, useValue: webhookPrisma },
+          { provide: AuditLogsService, useValue: { log: jest.fn() } },
+          { provide: MetricsService, useValue: metrics },
+          { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        ],
+      }).compile();
+
+      webhookService = module.get<PaymentsService>(PaymentsService);
+      await webhookService.onModuleInit();
+    });
+
+    function validStripeSignature(payload: string): string {
+      const timestamp = '1700000000';
+      const digest = createHmac('sha256', 'whsec_test')
+        .update(`${timestamp}.${payload}`)
+        .digest('hex');
+      return `t=${timestamp},v1=${digest}`;
+    }
+
+    it('should reject an invalid signature', async () => {
+      await expect(
+        webhookService.handleGatewayWebhook(
+          'stripe',
+          JSON.stringify({ type: 'payment_intent.succeeded' }),
+          't=1,v1=bad',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should complete a pending payment on payment_intent.succeeded', async () => {
+      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
+      webhookPrisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            order: {
+              findFirst: jest.fn().mockResolvedValue(mockOrder),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              update: jest.fn().mockResolvedValue({}),
+            },
+            payment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          };
+          return cb(tx);
+        },
+      );
+
+      const payload = JSON.stringify({
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_webhook_1', amount: 5000, currency: 'usd' } },
+      });
+
+      const result = await webhookService.handleGatewayWebhook(
+        'stripe',
+        payload,
+        validStripeSignature(payload),
+      );
+      expect(result.type).toBe('payment.succeeded');
+      expect(metrics.incrementPaymentsCompleted).toHaveBeenCalled();
+    });
+
+    it('should ignore webhook for an already completed payment', async () => {
+      webhookPrisma.payment.findFirst.mockResolvedValue(completedGatewayPayment);
+
+      const payload = JSON.stringify({
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_webhook_1', amount: 5000, currency: 'usd' } },
+      });
+
+      const result = await webhookService.handleGatewayWebhook(
+        'stripe',
+        payload,
+        validStripeSignature(payload),
+      );
+      expect(result.type).toBe('payment.succeeded');
+      expect(webhookPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should mark a pending payment FAILED on payment_intent.payment_failed', async () => {
+      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.payment.update.mockResolvedValue({
+        ...pendingGatewayPayment,
+        status: PaymentStatus.FAILED,
+      });
+
+      const payload = JSON.stringify({
+        type: 'payment_intent.payment_failed',
+        data: { object: { id: 'pi_webhook_1' } },
+      });
+
+      const result = await webhookService.handleGatewayWebhook(
+        'stripe',
+        payload,
+        validStripeSignature(payload),
+      );
+      expect(result.type).toBe('payment.failed');
+      expect(metrics.incrementPaymentsFailed).toHaveBeenCalled();
     });
   });
 });

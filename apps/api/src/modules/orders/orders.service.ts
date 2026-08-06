@@ -1174,10 +1174,13 @@ export class OrdersService {
     userId: string,
     meta?: { ipAddress?: string; userAgent?: string },
   ) {
-    await this.prisma.order.update({
-      where: { id },
+    const result = await this.prisma.order.updateMany({
+      where: { id, tenantId },
       data: { deletedAt: new Date() },
     });
+    if (result.count === 0) {
+      throw new NotFoundException('Order not found');
+    }
 
     await this.auditLogsService.log({
       action: 'ORDER_DELETED',

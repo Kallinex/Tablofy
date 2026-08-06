@@ -9,12 +9,12 @@ import { AppLoggerService } from './common/logger/logger.service';
 import { BullBoardModule, BULL_BOARD_PATH } from './common/bull-board/bull-board.module';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
 
   app.enableShutdownHooks(['SIGINT', 'SIGTERM'], { useProcessExit: true });
 
   const configService = app.get(ConfigService);
-  const logger = app.get(AppLoggerService);
+  const logger = await app.resolve(AppLoggerService);
   logger.setContext('Bootstrap');
 
   app.useLogger(logger);
@@ -141,6 +141,8 @@ async function bootstrap(): Promise<void> {
 
   const bullBoardModule = app.get(BullBoardModule);
   app.use(BULL_BOARD_PATH, bullBoardModule.createAuthMiddleware(), bullBoardModule.getRouter());
+
+  await app.init();
 
   await app.listen(port);
 

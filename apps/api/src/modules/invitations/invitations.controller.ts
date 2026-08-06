@@ -9,7 +9,7 @@ import { SkipTenantCheck } from '../../common/decorators/skip-tenant.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Request } from 'express';
 import { Req } from '@nestjs/common';
-import { InvitationStatus } from '@prisma/client';
+import { InvitationStatus, UserRole } from '@prisma/client';
 
 @ApiTags('invitations')
 @ApiBearerAuth()
@@ -24,7 +24,7 @@ export class InvitationsController {
     @CurrentUser() user: CurrentUserData,
     @Req() req: Request,
   ) {
-    return this.invitationsService.create(dto, user.tenantId!, user.id, {
+    return this.invitationsService.create(dto, user.tenantId!, user.id, user.role as UserRole, {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });

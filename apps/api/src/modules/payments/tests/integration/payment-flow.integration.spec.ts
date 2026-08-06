@@ -153,6 +153,32 @@ describe('PaymentFlowIntegration', () => {
               id: 'payment-3',
               method: PaymentMethod.CREDIT_CARD,
               amount: 70,
+              status: PaymentStatus.PENDING,
+            }),
+          update: jest
+            .fn()
+            .mockResolvedValueOnce({
+              ...mockCompletedPayment,
+              id: 'payment-2',
+              method: PaymentMethod.CASH,
+              amount: 30,
+            })
+            .mockResolvedValueOnce({
+              ...mockCompletedPayment,
+              id: 'payment-3',
+              method: PaymentMethod.CREDIT_CARD,
+              amount: 70,
+              status: PaymentStatus.COMPLETED,
+            }),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({
+              ...mockCompletedPayment,
+              id: 'payment-3',
+              method: PaymentMethod.CREDIT_CARD,
+              amount: 70,
+              status: PaymentStatus.COMPLETED,
             }),
         },
         order: { update: jest.fn().mockResolvedValue({}) },

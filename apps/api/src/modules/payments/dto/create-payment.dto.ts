@@ -30,4 +30,9 @@ export class CreatePaymentDto {
   @IsString()
   @MaxLength(200)
   reference?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  idempotencyKey?: string;
 }

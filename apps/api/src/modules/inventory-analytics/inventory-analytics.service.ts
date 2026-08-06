@@ -127,16 +127,22 @@ export class InventoryAnalyticsService {
       },
     });
 
+    const itemIds = items.map((i) => i.id);
+    const latestMovements = await this.prisma.stockMovement.groupBy({
+      by: ['inventoryItemId'],
+      where: { tenantId, inventoryItemId: { in: itemIds } },
+      _max: { createdAt: true },
+    });
+    const latestMovementByItem = new Map(
+      latestMovements
+        .filter((m): m is typeof m & { _max: { createdAt: Date } } => !!m._max.createdAt)
+        .map((m) => [m.inventoryItemId, m._max.createdAt]),
+    );
+
     const deadStockItems = [];
 
     for (const item of items) {
-      const lastMovement = await this.prisma.stockMovement.findFirst({
-        where: { inventoryItemId: item.id, tenantId },
-        orderBy: { createdAt: 'desc' },
-        select: { createdAt: true },
-      });
-
-      const lastMovementDate = lastMovement?.createdAt ?? item.updatedAt;
+      const lastMovementDate = latestMovementByItem.get(item.id) ?? item.updatedAt;
       const daysSinceMovement = Math.floor(
         (Date.now() - lastMovementDate.getTime()) / (1000 * 60 * 60 * 24),
       );
@@ -181,17 +187,23 @@ export class InventoryAnalyticsService {
       select: { id: true, name: true, sku: true },
     });
 
+    const itemIds = items.map((i) => i.id);
+    const consumptionCounts = await this.prisma.consumptionRecord.groupBy({
+      by: ['inventoryItemId'],
+      where: {
+        tenantId,
+        inventoryItemId: { in: itemIds },
+        date: { gte: startDate, lte: endDate },
+      },
+      _count: true,
+    });
+    const countByItem = new Map(consumptionCounts.map((c) => [c.inventoryItemId, c._count]));
+
     const fastMoving = [];
     const slowMoving = [];
 
     for (const item of items) {
-      const consumptionCount = await this.prisma.consumptionRecord.count({
-        where: {
-          inventoryItemId: item.id,
-          tenantId,
-          date: { gte: startDate, lte: endDate },
-        },
-      });
+      const consumptionCount = countByItem.get(item.id) ?? 0;
 
       const entry = {
         id: item.id,
@@ -235,35 +247,32 @@ export class InventoryAnalyticsService {
       };
     if (query.inventoryItemId) where.inventoryItemId = query.inventoryItemId;
 
-    const wasteByType = await this.prisma.$queryRawUnsafe<
-      Array<{ wasteType: string; totalQuantity: number; totalCost: number; count: bigint }>
-    >(
-      `SELECT type as "wasteType", SUM(quantity) as "totalQuantity", SUM("totalCost") as "totalCost", COUNT(*) as count
-       FROM waste_entries WHERE "tenantId" = $1
-       ${query.startDate ? `AND "createdAt" >= $2` : ''}
-       ${query.endDate ? `AND "createdAt" <= $3` : ''}
-       ${query.inventoryItemId ? `AND "inventoryItemId" = $4` : ''}
-       GROUP BY type ORDER BY "totalQuantity" DESC`,
-      tenantId,
-      ...(query.startDate ? [new Date(query.startDate)] : []),
-      ...(query.endDate ? [new Date(query.endDate)] : []),
-      ...(query.inventoryItemId ? [query.inventoryItemId] : []),
-    );
+    const wasteWhere: Prisma.Sql[] = [Prisma.sql`"tenantId" = ${tenantId}`];
+    if (query.startDate) {
+      wasteWhere.push(Prisma.sql`"createdAt" >= ${new Date(query.startDate)}`);
+    }
+    if (query.endDate) {
+      wasteWhere.push(Prisma.sql`"createdAt" <= ${new Date(query.endDate)}`);
+    }
+    if (query.inventoryItemId) {
+      wasteWhere.push(Prisma.sql`"inventoryItemId" = ${query.inventoryItemId}`);
+    }
 
-    const dailyTrend = await this.prisma.$queryRawUnsafe<
+    const wasteByType = await this.prisma.$queryRaw<
+      Array<{ wasteType: string; totalQuantity: number; totalCost: number; count: bigint }>
+    >(Prisma.sql`
+      SELECT type as "wasteType", SUM(quantity) as "totalQuantity", SUM("totalCost") as "totalCost", COUNT(*) as count
+      FROM waste_entries WHERE ${Prisma.join(wasteWhere, ' AND ')}
+      GROUP BY type ORDER BY "totalQuantity" DESC
+    `);
+
+    const dailyTrend = await this.prisma.$queryRaw<
       Array<{ date: string; quantity: number; cost: number }>
-    >(
-      `SELECT DATE("createdAt") as date, SUM(quantity) as quantity, SUM("totalCost") as cost
-       FROM waste_entries WHERE "tenantId" = $1
-       ${query.startDate ? `AND "createdAt" >= $2` : ''}
-       ${query.endDate ? `AND "createdAt" <= $3` : ''}
-       ${query.inventoryItemId ? `AND "inventoryItemId" = $4` : ''}
-       GROUP BY DATE("createdAt") ORDER BY date ASC`,
-      tenantId,
-      ...(query.startDate ? [new Date(query.startDate)] : []),
-      ...(query.endDate ? [new Date(query.endDate)] : []),
-      ...(query.inventoryItemId ? [query.inventoryItemId] : []),
-    );
+    >(Prisma.sql`
+      SELECT DATE("createdAt") as date, SUM(quantity) as quantity, SUM("totalCost") as cost
+      FROM waste_entries WHERE ${Prisma.join(wasteWhere, ' AND ')}
+      GROUP BY DATE("createdAt") ORDER BY date ASC
+    `);
 
     const result = {
       byType: wasteByType.map((w) => ({
@@ -284,7 +293,23 @@ export class InventoryAnalyticsService {
     const cached = await this.cacheService.get(tenantId, cacheKey);
     if (cached) return cached;
 
-    const adjustments = await this.prisma.$queryRawUnsafe<
+    const adjustmentWhere: Prisma.Sql[] = [
+      Prisma.sql`"tenantId" = ${tenantId}`,
+      Prisma.sql`type = 'DECREASE'`,
+      Prisma.sql`status = 'APPROVED'`,
+      Prisma.sql`"deletedAt" IS NULL`,
+    ];
+    if (query.startDate) {
+      adjustmentWhere.push(Prisma.sql`"createdAt" >= ${new Date(query.startDate)}`);
+    }
+    if (query.endDate) {
+      adjustmentWhere.push(Prisma.sql`"createdAt" <= ${new Date(query.endDate)}`);
+    }
+    if (query.inventoryItemId) {
+      adjustmentWhere.push(Prisma.sql`"inventoryItemId" = ${query.inventoryItemId}`);
+    }
+
+    const adjustments = await this.prisma.$queryRaw<
       Array<{
         id: string;
         quantity: number;
@@ -293,24 +318,20 @@ export class InventoryAnalyticsService {
         createdAt: Date;
         inventoryItemId: string | null;
       }>
-    >(
-      `SELECT id, quantity, type, reason, created_at as "createdAt", inventory_item_id as "inventoryItemId"
-       FROM stock_adjustments WHERE "tenantId" = $1 AND type IN ('REMOVAL', 'CORRECTION')
-       ${query.startDate ? `AND created_at >= $2` : ''}
-       ${query.endDate ? `AND created_at <= $3` : ''}
-       ${query.inventoryItemId ? `AND inventory_item_id = $4` : ''}`,
-      tenantId,
-      ...(query.startDate ? [new Date(query.startDate)] : []),
-      ...(query.endDate ? [new Date(query.endDate)] : []),
-      ...(query.inventoryItemId ? [query.inventoryItemId] : []),
-    );
+    >(Prisma.sql`
+      SELECT id, quantity, type, reason, "createdAt", "inventoryItemId"
+      FROM stock_adjustments WHERE ${Prisma.join(adjustmentWhere, ' AND ')}
+    `);
+
+    const removalReasons = new Set(['SPOILAGE', 'DAMAGE', 'RETURN', 'OTHER']);
+    const correctionReasons = new Set(['CYCLE_COUNT', 'PHYSICAL_COUNT', 'MANUAL']);
 
     const totalRemovalQuantity = adjustments
-      .filter((a) => a.type === 'REMOVAL')
+      .filter((a) => removalReasons.has(a.reason ?? ''))
       .reduce((sum, a) => sum + Number(a.quantity), 0);
 
     const totalCorrectionQuantity = adjustments
-      .filter((a) => a.type === 'CORRECTION')
+      .filter((a) => correctionReasons.has(a.reason ?? ''))
       .reduce((sum, a) => sum + Number(a.quantity), 0);
 
     const totalStockAgg = await this.prisma.inventoryItem.aggregate({
@@ -344,20 +365,24 @@ export class InventoryAnalyticsService {
       where.date = { ...((where.date as object) || {}), lte: new Date(query.endDate) };
     if (query.inventoryItemId) where.inventoryItemId = query.inventoryItemId;
 
-    const byDate = await this.prisma.$queryRawUnsafe<
+    const consumptionWhere: Prisma.Sql[] = [Prisma.sql`"tenantId" = ${tenantId}`];
+    if (query.startDate) {
+      consumptionWhere.push(Prisma.sql`date >= ${new Date(query.startDate)}`);
+    }
+    if (query.endDate) {
+      consumptionWhere.push(Prisma.sql`date <= ${new Date(query.endDate)}`);
+    }
+    if (query.inventoryItemId) {
+      consumptionWhere.push(Prisma.sql`"inventoryItemId" = ${query.inventoryItemId}`);
+    }
+
+    const byDate = await this.prisma.$queryRaw<
       Array<{ date: string; quantity: number; totalCost: number }>
-    >(
-      `SELECT DATE(date) as date, SUM(quantity) as quantity, SUM("totalCost") as "totalCost"
-       FROM consumption_records WHERE "tenantId" = $1
-       ${query.startDate ? `AND date >= $2` : ''}
-       ${query.endDate ? `AND date <= $3` : ''}
-       ${query.inventoryItemId ? `AND "inventoryItemId" = $4` : ''}
-       GROUP BY DATE(date) ORDER BY date ASC`,
-      tenantId,
-      ...(query.startDate ? [new Date(query.startDate)] : []),
-      ...(query.endDate ? [new Date(query.endDate)] : []),
-      ...(query.inventoryItemId ? [query.inventoryItemId] : []),
-    );
+    >(Prisma.sql`
+      SELECT DATE(date) as date, SUM(quantity) as quantity, SUM("totalCost") as "totalCost"
+      FROM consumption_records WHERE ${Prisma.join(consumptionWhere, ' AND ')}
+      GROUP BY DATE(date) ORDER BY date ASC
+    `);
 
     const byPeriod = await this.prisma.consumptionRecord.groupBy({
       by: ['period'],
@@ -447,19 +472,29 @@ export class InventoryAnalyticsService {
       orderBy: { forecastDate: 'asc' },
     });
 
+    const forecastItemIds = [...new Set(forecasts.map((f) => f.inventoryItemId))];
+    const consumptionByItemAndDate = await this.prisma.consumptionRecord.groupBy({
+      by: ['inventoryItemId', 'date'],
+      where: {
+        tenantId,
+        inventoryItemId: { in: forecastItemIds },
+        date: { gte: startDate, lte: endDate },
+      },
+      _sum: { quantity: true },
+    });
+    const consumptionByKey = new Map<string, number>();
+    for (const c of consumptionByItemAndDate) {
+      consumptionByKey.set(
+        `${c.inventoryItemId}:${c.date.getTime()}`,
+        Number(c._sum.quantity ?? 0),
+      );
+    }
+
     const accuracyResults = [];
 
     for (const forecast of forecasts) {
-      const consumptionAgg = await this.prisma.consumptionRecord.aggregate({
-        where: {
-          inventoryItemId: forecast.inventoryItemId,
-          tenantId,
-          date: forecast.forecastDate,
-        },
-        _sum: { quantity: true },
-      });
-
-      const actualQuantity = Number(consumptionAgg._sum.quantity ?? 0);
+      const actualQuantity =
+        consumptionByKey.get(`${forecast.inventoryItemId}:${forecast.forecastDate.getTime()}`) ?? 0;
       const forecastQuantity = Number(forecast.quantity);
       const error = actualQuantity - forecastQuantity;
       const absoluteError = Math.abs(error);
@@ -526,6 +561,18 @@ export class InventoryAnalyticsService {
       select: { id: true, name: true, sku: true, currentQuantity: true, unitCost: true },
     });
 
+    const itemIds = items.map((i) => i.id);
+    const latestMovements = await this.prisma.stockMovement.groupBy({
+      by: ['inventoryItemId'],
+      where: { tenantId, inventoryItemId: { in: itemIds } },
+      _max: { createdAt: true },
+    });
+    const latestMovementByItem = new Map(
+      latestMovements
+        .filter((m): m is typeof m & { _max: { createdAt: Date } } => !!m._max.createdAt)
+        .map((m) => [m.inventoryItemId, m._max.createdAt]),
+    );
+
     const buckets = {
       '0-30': { label: '0-30 days', min: 0, max: 30, items: [] as Array<Record<string, unknown>> },
       '31-60': {
@@ -555,13 +602,7 @@ export class InventoryAnalyticsService {
     };
 
     for (const item of items) {
-      const lastMovement = await this.prisma.stockMovement.findFirst({
-        where: { inventoryItemId: item.id, tenantId },
-        orderBy: { createdAt: 'desc' },
-        select: { createdAt: true },
-      });
-
-      const lastDate = lastMovement?.createdAt ?? new Date(0);
+      const lastDate = latestMovementByItem.get(item.id) ?? new Date(0);
       const daysSinceMovement = Math.floor(
         (Date.now() - lastDate.getTime()) / (1000 * 60 * 60 * 24),
       );

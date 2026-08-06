@@ -60,23 +60,29 @@ export class InventoryService {
     });
     if (existing) throw new ConflictException('Category with this name already exists');
 
-    const category = await this.prisma.inventoryCategory.create({
-      data: {
-        tenantId,
-        name: dto.name,
-        description: dto.description,
-        parentId: dto.parentId,
-        sortOrder: dto.sortOrder ?? 0,
-      },
-    });
+    const category = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.inventoryCategory.create({
+        data: {
+          tenantId,
+          name: dto.name,
+          description: dto.description,
+          parentId: dto.parentId,
+          sortOrder: dto.sortOrder ?? 0,
+        },
+      });
 
-    await this.auditLogsService.log({
-      action: 'INVENTORY_CATEGORY_CREATED',
-      resource: 'InventoryCategory',
-      resourceId: category.id,
-      userId,
-      tenantId,
-      newValues: { name: dto.name, description: dto.description },
+      await tx.auditLog.create({
+        data: {
+          action: 'INVENTORY_CATEGORY_CREATED',
+          resource: 'InventoryCategory',
+          resourceId: created.id,
+          userId,
+          tenantId,
+          newValues: { name: dto.name, description: dto.description } as Prisma.InputJsonValue,
+        },
+      });
+
+      return created;
     });
 
     await this.invalidateCategoryCache(tenantId);
@@ -178,22 +184,28 @@ export class InventoryService {
     });
     if (existing) throw new ConflictException('Unit with this name already exists');
 
-    const unit = await this.prisma.inventoryUnit.create({
-      data: {
-        tenantId,
-        name: dto.name,
-        abbreviation: dto.abbreviation,
-        type: dto.type,
-      },
-    });
+    const unit = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.inventoryUnit.create({
+        data: {
+          tenantId,
+          name: dto.name,
+          abbreviation: dto.abbreviation,
+          type: dto.type,
+        },
+      });
 
-    await this.auditLogsService.log({
-      action: 'INVENTORY_UNIT_CREATED',
-      resource: 'InventoryUnit',
-      resourceId: unit.id,
-      userId,
-      tenantId,
-      newValues: { name: dto.name, abbreviation: dto.abbreviation },
+      await tx.auditLog.create({
+        data: {
+          action: 'INVENTORY_UNIT_CREATED',
+          resource: 'InventoryUnit',
+          resourceId: created.id,
+          userId,
+          tenantId,
+          newValues: { name: dto.name, abbreviation: dto.abbreviation } as Prisma.InputJsonValue,
+        },
+      });
+
+      return created;
     });
 
     await this.invalidateUnitCache(tenantId);
@@ -606,18 +618,22 @@ export class InventoryService {
     });
     if (!item) throw new NotFoundException('Inventory item not found');
 
-    await this.prisma.inventoryItem.update({
-      where: { id },
-      data: { deletedAt: new Date(), isActive: false },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.inventoryItem.update({
+        where: { id },
+        data: { deletedAt: new Date(), isActive: false },
+      });
 
-    await this.auditLogsService.log({
-      action: 'INVENTORY_ITEM_DELETED',
-      resource: 'InventoryItem',
-      resourceId: id,
-      userId,
-      tenantId,
-      oldValues: { name: item.name, sku: item.sku },
+      await tx.auditLog.create({
+        data: {
+          action: 'INVENTORY_ITEM_DELETED',
+          resource: 'InventoryItem',
+          resourceId: id,
+          userId,
+          tenantId,
+          oldValues: { name: item.name, sku: item.sku } as Prisma.InputJsonValue,
+        },
+      });
     });
 
     await this.cacheService.delete(tenantId, `item:${id}`);
@@ -737,33 +753,43 @@ export class InventoryService {
   async approveAdjustment(id: string, tenantId: string, userId: string) {
     const adjustment = await this.prisma.stockAdjustment.findFirst({
       where: { id, tenantId, deletedAt: null },
-      include: { inventoryItem: true },
     });
     if (!adjustment) throw new NotFoundException('Stock adjustment not found');
-    if (adjustment.status !== 'PENDING') throw new BadRequestException('Adjustment is not PENDING');
 
-    const item = adjustment.inventoryItem;
     const qtyChange =
       adjustment.type === AdjustmentType.INCREASE
         ? Number(adjustment.quantity)
         : -Number(adjustment.quantity);
-    const newCurrent = Number(item.currentQuantity) + qtyChange;
-    const newAvailable = newCurrent - Number(item.reservedQuantity);
 
-    await this.prisma.$transaction([
-      this.prisma.inventoryItem.update({
+    await this.prisma.$transaction(async (tx) => {
+      const item = await tx.inventoryItem.findFirst({
+        where: { id: adjustment.inventoryItemId, tenantId, deletedAt: null },
+      });
+      if (!item) throw new NotFoundException('Inventory item not found');
+
+      const newCurrent = Number(item.currentQuantity) + qtyChange;
+      if (newCurrent < 0) {
+        throw new BadRequestException('Insufficient stock to apply this adjustment');
+      }
+
+      const updated = await tx.stockAdjustment.updateMany({
+        where: { id, tenantId, status: 'PENDING', deletedAt: null },
+        data: { status: 'APPROVED', approvedById: userId, approvedAt: new Date() },
+      });
+      if (updated.count !== 1) throw new BadRequestException('Adjustment is not PENDING');
+
+      const newAvailable = newCurrent - Number(item.reservedQuantity);
+
+      await tx.inventoryItem.update({
         where: { id: adjustment.inventoryItemId },
         data: {
           currentQuantity: newCurrent,
           availableQuantity: newAvailable < 0 ? 0 : newAvailable,
           version: { increment: 1 },
         },
-      }),
-      this.prisma.stockAdjustment.update({
-        where: { id },
-        data: { status: 'APPROVED', approvedById: userId, approvedAt: new Date() },
-      }),
-      this.prisma.stockMovement.create({
+      });
+
+      await tx.stockMovement.create({
         data: {
           inventoryItemId: adjustment.inventoryItemId,
           tenantId,
@@ -777,8 +803,8 @@ export class InventoryService {
           notes: `Adjustment approved: ${adjustment.reason}`,
           recordedById: userId,
         },
-      }),
-    ]);
+      });
+    });
 
     // Need to get the updated adjustment
     const approved = await this.prisma.stockAdjustment.findUnique({
@@ -987,34 +1013,40 @@ export class InventoryService {
     const unitCost = dto.unitCost ?? Number(item.unitCost ?? 0);
     const varianceCost = variance * unitCost;
 
-    const count = await this.prisma.inventoryCount.create({
-      data: {
-        inventoryItemId: dto.inventoryItemId,
-        tenantId,
-        branchId: dto.branchId,
-        countType: dto.countType,
-        expectedQuantity: dto.expectedQuantity,
-        actualQuantity: dto.actualQuantity,
-        variance,
-        unitCost,
-        varianceCost,
-        notes: dto.notes,
-        countedById: userId,
-      },
-    });
+    const count = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.inventoryCount.create({
+        data: {
+          inventoryItemId: dto.inventoryItemId,
+          tenantId,
+          branchId: dto.branchId,
+          countType: dto.countType,
+          expectedQuantity: dto.expectedQuantity,
+          actualQuantity: dto.actualQuantity,
+          variance,
+          unitCost,
+          varianceCost,
+          notes: dto.notes,
+          countedById: userId,
+        },
+      });
 
-    await this.auditLogsService.log({
-      action: 'INVENTORY_COUNT_CREATED',
-      resource: 'InventoryCount',
-      resourceId: count.id,
-      userId,
-      tenantId,
-      newValues: {
-        inventoryItemId: dto.inventoryItemId,
-        expectedQuantity: dto.expectedQuantity,
-        actualQuantity: dto.actualQuantity,
-        variance,
-      },
+      await tx.auditLog.create({
+        data: {
+          action: 'INVENTORY_COUNT_CREATED',
+          resource: 'InventoryCount',
+          resourceId: created.id,
+          userId,
+          tenantId,
+          newValues: {
+            inventoryItemId: dto.inventoryItemId,
+            expectedQuantity: dto.expectedQuantity,
+            actualQuantity: dto.actualQuantity,
+            variance,
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      return created;
     });
 
     await this.invalidateItemCache(tenantId);

@@ -1183,6 +1183,7 @@ model Payment {
   reference    String?
   gatewayRef   String?
   gatewayData  Json?
+  idempotencyKey String?
   processedAt  DateTime?
   refundedAt   DateTime?
   refundReason String?
@@ -1198,6 +1199,7 @@ model Payment {
   @@index([status])
   @@index([tenantId, createdAt])
   @@index([tenantId])
+  @@unique([tenantId, idempotencyKey])
   @@map("payments")
 }
 

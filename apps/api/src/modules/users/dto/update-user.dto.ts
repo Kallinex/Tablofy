@@ -1,5 +1,6 @@
-import { IsEmail, IsOptional, IsString, IsEnum, IsObject, MaxLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, IsEnum, IsIn, IsObject, MaxLength } from 'class-validator';
 import { UserRole, UserStatus } from '@prisma/client';
+import { TENANT_ASSIGNABLE_ROLES } from '../../../common/rbac/role-policy';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -21,7 +22,7 @@ export class UpdateUserDto {
   phone?: string;
 
   @IsOptional()
-  @IsEnum(UserRole)
+  @IsIn(TENANT_ASSIGNABLE_ROLES as unknown as string[])
   role?: UserRole;
 
   @IsOptional()

@@ -2,12 +2,13 @@ import {
   IsEmail,
   IsString,
   IsOptional,
-  IsEnum,
+  IsIn,
   MinLength,
   MaxLength,
   Matches,
 } from 'class-validator';
 import { UserRole } from '@prisma/client';
+import { TENANT_ASSIGNABLE_ROLES } from '../../../common/rbac/role-policy';
 
 export class CreateUserDto {
   @IsEmail()
@@ -38,6 +39,6 @@ export class CreateUserDto {
   phone?: string;
 
   @IsOptional()
-  @IsEnum(UserRole)
+  @IsIn(TENANT_ASSIGNABLE_ROLES as unknown as string[])
   role?: UserRole;
 }

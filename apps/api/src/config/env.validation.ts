@@ -128,6 +128,66 @@ class EnvironmentVariables {
   @IsOptional()
   @IsNumber()
   METRICS_COLLECT_INTERVAL_MS?: number;
+
+  @IsOptional()
+  @IsEnum(['mock', 'live'])
+  PAYMENTS_MODE?: string;
+
+  @IsOptional()
+  @IsString()
+  WEBHOOK_ENCRYPTION_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_HOST?: string;
+
+  @IsOptional()
+  @IsNumber()
+  SMTP_PORT?: number;
+
+  @IsOptional()
+  @IsString()
+  SMTP_SECURE?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_USER?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_PASS?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_FROM?: string;
+
+  @IsOptional()
+  @IsString()
+  STRIPE_SECRET_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  STRIPE_WEBHOOK_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  STRIPE_API_BASE?: string;
+
+  @IsOptional()
+  @IsString()
+  PAYMOB_API_KEY?: string;
+
+  @IsOptional()
+  @IsNumber()
+  PAYMOB_INTEGRATION_ID?: number;
+
+  @IsOptional()
+  @IsString()
+  PAYMOB_API_BASE?: string;
+
+  @IsOptional()
+  @IsString()
+  PAYMOB_WEBHOOK_SECRET?: string;
 }
 
 export function validate(config: Record<string, unknown>) {
@@ -168,6 +228,15 @@ export function validate(config: Record<string, unknown>) {
   ) {
     throw new Error(
       'Production environment requires METRICS_AUTH_TOKEN (min 16 characters) to secure the /metrics endpoint.',
+    );
+  }
+
+  if (
+    validatedConfig.NODE_ENV === Environment.Production &&
+    (!validatedConfig.WEBHOOK_ENCRYPTION_KEY || validatedConfig.WEBHOOK_ENCRYPTION_KEY.length < 32)
+  ) {
+    throw new Error(
+      'Production environment requires WEBHOOK_ENCRYPTION_KEY (min 32 characters) to encrypt tenant webhook secrets.',
     );
   }
 

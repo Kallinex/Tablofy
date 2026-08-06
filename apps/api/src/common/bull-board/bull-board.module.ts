@@ -36,22 +36,22 @@ export class BullBoardModule implements OnModuleInit {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
-  ) {}
-
-  onModuleInit(): void {
+  ) {
     this.adapter = new ExpressAdapter();
     this.adapter.setBasePath(BULL_BOARD_PATH);
     this.board = createBullBoard({
       queues: [],
       serverAdapter: this.adapter,
     });
+  }
 
+  onModuleInit(): void {
     this.queueService.setQueueListener((queue: Queue) => {
       this.board?.addQueue(new BullMQAdapter(queue));
     });
 
     for (const name of this.queueService.getQueueNames()) {
-      this.board.addQueue(new BullMQAdapter(this.queueService.getQueue(name)));
+      this.board!.addQueue(new BullMQAdapter(this.queueService.getQueue(name)));
     }
 
     this.logger.log('Bull Board initialized');

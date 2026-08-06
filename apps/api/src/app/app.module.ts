@@ -8,6 +8,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { RedisModule } from '../redis/redis.module';
 import { AuthModule } from '../modules/auth/auth.module';
 import { TenantsModule } from '../modules/tenants/tenants.module';
+import { SubscriptionsModule } from '../modules/subscriptions/subscriptions.module';
 import { UsersModule } from '../modules/users/users.module';
 import { SessionsModule } from '../modules/sessions/sessions.module';
 import { InvitationsModule } from '../modules/invitations/invitations.module';
@@ -112,6 +113,8 @@ import {
   sentryConfig,
   webhookConfig,
   apiKeysConfig,
+  paymentsConfig,
+  smtpConfig,
 } from '../config';
 
 @Module({
@@ -131,6 +134,8 @@ import {
         sentryConfig,
         webhookConfig,
         apiKeysConfig,
+        paymentsConfig,
+        smtpConfig,
       ],
       envFilePath: '.env',
     }),
@@ -160,6 +165,7 @@ import {
     HealthModule,
     AuthModule,
     TenantsModule,
+    SubscriptionsModule,
     UsersModule,
     SessionsModule,
     InvitationsModule,

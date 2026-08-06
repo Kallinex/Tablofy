@@ -9,6 +9,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { EnableTwoFactorDto, DisableTwoFactorDto } from './dto/two-factor.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { SkipTenantCheck } from '../../common/decorators/skip-tenant.decorator';
@@ -44,10 +45,15 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Login successful' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(@Body() dto: LoginDto, @Req() req: Request) {
-    const result = await this.authService.login(dto.email, dto.password, {
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-    });
+    const result = await this.authService.login(
+      dto.email,
+      dto.password,
+      {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      },
+      dto.twoFactorCode,
+    );
     return result;
   }
 
@@ -168,5 +174,49 @@ export class AuthController {
       userAgent: req.headers['user-agent'],
     });
     return { message: 'Verification email sent' };
+  }
+
+  @Get('2fa/status')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get two-factor authentication status' })
+  @ApiResponse({ status: 200, description: 'Two-factor authentication status' })
+  @ApiResponse({ status: 401, description: 'User not found' })
+  async getTwoFactorStatus(@CurrentUser() user: CurrentUserData) {
+    return this.authService.getTwoFactorStatus(user.id);
+  }
+
+  @Post('2fa/setup')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Generate a two-factor authentication secret' })
+  @ApiResponse({ status: 200, description: 'TOTP secret generated' })
+  @ApiResponse({ status: 400, description: 'Two-factor authentication is already enabled' })
+  @ApiResponse({ status: 401, description: 'User not found' })
+  async setupTwoFactor(@CurrentUser() user: CurrentUserData) {
+    return this.authService.setupTwoFactor(user.id);
+  }
+
+  @Post('2fa/enable')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Enable two-factor authentication' })
+  @ApiResponse({ status: 200, description: 'Two-factor authentication enabled' })
+  @ApiResponse({ status: 400, description: 'Invalid code or already enabled' })
+  @ApiResponse({ status: 401, description: 'User not found' })
+  async enableTwoFactor(@CurrentUser() user: CurrentUserData, @Body() dto: EnableTwoFactorDto) {
+    const result = await this.authService.enableTwoFactor(user.id, dto.code);
+    return { message: 'Two-factor authentication enabled', ...result };
+  }
+
+  @Post('2fa/disable')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Disable two-factor authentication' })
+  @ApiResponse({ status: 200, description: 'Two-factor authentication disabled' })
+  @ApiResponse({ status: 400, description: 'Invalid code or not enabled' })
+  @ApiResponse({ status: 401, description: 'User not found' })
+  async disableTwoFactor(@CurrentUser() user: CurrentUserData, @Body() dto: DisableTwoFactorDto) {
+    const result = await this.authService.disableTwoFactor(user.id, dto.code);
+    return { message: 'Two-factor authentication disabled', ...result };
   }
 }

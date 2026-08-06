@@ -59,6 +59,7 @@ describe('env.validation', () => {
         baseEnv({
           NODE_ENV: 'production',
           METRICS_AUTH_TOKEN: 'a-valid-metrics-token-123456',
+          WEBHOOK_ENCRYPTION_KEY: 'webhook-encryption-key-at-least-32-chars',
         }),
       ),
     ).not.toThrow();
@@ -66,8 +67,20 @@ describe('env.validation', () => {
 
   it('accepts production without a token when metrics are disabled', () => {
     expect(() =>
-      validate(baseEnv({ NODE_ENV: 'production', METRICS_ENABLED: 'false' })),
+      validate(
+        baseEnv({
+          NODE_ENV: 'production',
+          METRICS_ENABLED: 'false',
+          WEBHOOK_ENCRYPTION_KEY: 'webhook-encryption-key-at-least-32-chars',
+        }),
+      ),
     ).not.toThrow();
+  });
+
+  it('rejects production without WEBHOOK_ENCRYPTION_KEY', () => {
+    expect(() => validate(baseEnv({ NODE_ENV: 'production', METRICS_ENABLED: 'false' }))).toThrow(
+      /WEBHOOK_ENCRYPTION_KEY/,
+    );
   });
 
   it('accepts development without a token when metrics are enabled', () => {

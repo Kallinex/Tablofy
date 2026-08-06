@@ -12,9 +12,14 @@ export interface WebhookConfig {
   encryptionAlgorithm: string;
 }
 
-export default registerAs(
-  'webhook',
-  (): WebhookConfig => ({
+export default registerAs('webhook', (): WebhookConfig => {
+  const encryptionKey = process.env.WEBHOOK_ENCRYPTION_KEY || '';
+  if (!encryptionKey || encryptionKey.length < 32) {
+    throw new Error(
+      'WEBHOOK_ENCRYPTION_KEY is required and must be at least 32 characters long. Without a strong key, every tenant webhook secret stored in the database can be decrypted. Refusing to boot.',
+    );
+  }
+  return {
     maxRetries: parseInt(process.env.WEBHOOK_MAX_RETRIES || '5', 10),
     initialBackoffMs: parseInt(process.env.WEBHOOK_INITIAL_BACKOFF_MS || '1000', 10),
     backoffFactor: parseFloat(process.env.WEBHOOK_BACKOFF_FACTOR || '2'),
@@ -25,7 +30,7 @@ export default registerAs(
       10,
     ),
     secretRotationDays: parseInt(process.env.WEBHOOK_SECRET_ROTATION_DAYS || '90', 10),
-    encryptionKey: process.env.WEBHOOK_ENCRYPTION_KEY || '',
+    encryptionKey,
     encryptionAlgorithm: 'aes-256-gcm',
-  }),
-);
+  };
+});

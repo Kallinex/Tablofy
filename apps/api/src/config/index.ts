@@ -8,5 +8,7 @@ export { default as monitoringConfig } from './monitoring.config';
 export { default as metricsConfig } from './metrics.config';
 export { default as sentryConfig } from './sentry.config';
 export { default as webhookConfig } from './webhook.config';
+export { default as smtpConfig } from './smtp.config';
 export { default as apiKeysConfig } from './api-keys.config';
+export { default as paymentsConfig } from './payments.config';
 export { validate } from './env.validation';

@@ -24,6 +24,16 @@ describe('RolesGuard', () => {
     reflector = module.get(Reflector) as jest.Mocked<Reflector>;
   });
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function mockMetadata(roles?: string[] | null, permissions?: string[] | null) {
+    reflector.getAllAndOverride
+      .mockReturnValueOnce(roles ?? null)
+      .mockReturnValueOnce(permissions ?? null);
+  }
+
   function createMockContext(role?: string) {
     return {
       getHandler: jest.fn(),
@@ -36,8 +46,8 @@ describe('RolesGuard', () => {
     } as unknown as Parameters<typeof guard.canActivate>[0];
   }
 
-  it('should allow access when no roles are required', () => {
-    reflector.getAllAndOverride.mockReturnValue(null);
+  it('should allow access when no roles or permissions are required', () => {
+    mockMetadata(null, null);
     const context = createMockContext('OWNER');
 
     const result = guard.canActivate(context);
@@ -46,7 +56,7 @@ describe('RolesGuard', () => {
   });
 
   it('should allow access when user has required role', () => {
-    reflector.getAllAndOverride.mockReturnValue(['OWNER', 'MANAGER']);
+    mockMetadata(['OWNER', 'MANAGER'], null);
     const context = createMockContext('OWNER');
 
     const result = guard.canActivate(context);
@@ -55,7 +65,7 @@ describe('RolesGuard', () => {
   });
 
   it('should allow access when user has any of the required roles', () => {
-    reflector.getAllAndOverride.mockReturnValue(['OWNER', 'MANAGER']);
+    mockMetadata(['OWNER', 'MANAGER'], null);
     const context = createMockContext('MANAGER');
 
     const result = guard.canActivate(context);
@@ -64,25 +74,48 @@ describe('RolesGuard', () => {
   });
 
   it('should deny access when user does not have required role', () => {
-    reflector.getAllAndOverride.mockReturnValue(['OWNER']);
+    mockMetadata(['OWNER'], null);
     const context = createMockContext('CASHIER');
 
     expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
   });
 
   it('should deny access when no user on request', () => {
-    reflector.getAllAndOverride.mockReturnValue(['OWNER']);
+    mockMetadata(['OWNER'], null);
     const context = createMockContext();
 
     expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
   });
 
-  it('should return empty array for empty roles list', () => {
-    reflector.getAllAndOverride.mockReturnValue([]);
+  it('should return true for empty roles list', () => {
+    mockMetadata([], []);
     const context = createMockContext('OWNER');
 
     const result = guard.canActivate(context);
 
     expect(result).toBe(true);
+  });
+
+  it('should allow access when permissions are granted', () => {
+    mockMetadata(['OWNER'], ['orders:delete']);
+    const context = createMockContext('OWNER');
+
+    const result = guard.canActivate(context);
+
+    expect(result).toBe(true);
+  });
+
+  it('should deny access when permissions are not granted even if role matches', () => {
+    mockMetadata(['OWNER'], ['orders:delete']);
+    const context = createMockContext('CASHIER');
+
+    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+  });
+
+  it('should deny access when a required permission is missing from the role', () => {
+    mockMetadata(null, ['users:manage']);
+    const context = createMockContext('VIEWER');
+
+    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
   });
 });

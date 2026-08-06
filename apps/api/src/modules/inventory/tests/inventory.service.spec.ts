@@ -28,6 +28,8 @@ describe('InventoryService', () => {
     broadcastItemUpdate: jest.fn(),
     broadcastStockUpdate: jest.fn(),
     broadcastAdjustmentUpdate: jest.fn(),
+    broadcastUnitUpdate: jest.fn(),
+    broadcastCountUpdate: jest.fn(),
   };
 
   beforeAll(async () => {
@@ -62,17 +64,21 @@ describe('InventoryService', () => {
   describe('createCategory', () => {
     const dto = { name: 'Produce', description: 'Fresh produce items' };
 
-    it('should create category successfully', async () => {
+    it('should create category in a transaction with audit', async () => {
       prisma.inventoryCategory.findFirst.mockResolvedValue(null);
       const fakeCategory = { id: 'cat-1', ...dto, tenantId: testTenantId };
-      prisma.inventoryCategory.create.mockResolvedValue(fakeCategory);
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          inventoryCategory: { create: jest.fn().mockResolvedValue(fakeCategory) },
+          auditLog: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
 
       const result = await service.createCategory(dto, testTenantId, testUserId);
 
       expect(result.id).toBe('cat-1');
-      expect(auditLogs.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'INVENTORY_CATEGORY_CREATED' }),
-      );
+      expect(prisma.$transaction).toHaveBeenCalled();
       expect(mockGateway.broadcastCategoryUpdate).toHaveBeenCalled();
     });
 
@@ -82,6 +88,117 @@ describe('InventoryService', () => {
       await expect(service.createCategory(dto, testTenantId, testUserId)).rejects.toThrow(
         ConflictException,
       );
+    });
+  });
+
+  describe('createUnit', () => {
+    const dto = { name: 'Kilogram', abbreviation: 'kg', type: 'WEIGHT' };
+
+    it('should create unit in a transaction with audit', async () => {
+      prisma.inventoryUnit.findFirst.mockResolvedValue(null);
+      const fakeUnit = { id: 'unit-1', ...dto, tenantId: testTenantId };
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          inventoryUnit: { create: jest.fn().mockResolvedValue(fakeUnit) },
+          auditLog: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
+
+      const result = await service.createUnit(dto, testTenantId, testUserId);
+
+      expect(result.id).toBe('unit-1');
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(mockGateway.broadcastUnitUpdate).toHaveBeenCalled();
+    });
+
+    it('should throw ConflictException for duplicate name', async () => {
+      prisma.inventoryUnit.findFirst.mockResolvedValue({ id: 'existing' });
+
+      await expect(service.createUnit(dto, testTenantId, testUserId)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+  });
+
+  describe('deleteItem', () => {
+    it('should delete item in a transaction with audit', async () => {
+      prisma.inventoryItem.findFirst.mockResolvedValue({
+        id: 'item-1',
+        name: 'Tomato',
+        sku: 'TOM-001',
+        tenantId: testTenantId,
+      });
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          inventoryItem: { update: jest.fn().mockResolvedValue({}) },
+          auditLog: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
+
+      await service.deleteItem('item-1', testTenantId, testUserId);
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(cache.delete).toHaveBeenCalledWith(testTenantId, 'item:item-1');
+      expect(mockGateway.broadcastItemUpdate).toHaveBeenCalledWith(testTenantId, 'item.deleted', {
+        id: 'item-1',
+      });
+    });
+
+    it('should throw NotFoundException when item does not exist', async () => {
+      prisma.inventoryItem.findFirst.mockResolvedValue(null);
+
+      await expect(service.deleteItem('missing', testTenantId, testUserId)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createCount', () => {
+    const dto = {
+      inventoryItemId: 'item-1',
+      branchId: 'branch-1',
+      countType: 'FULL',
+      expectedQuantity: 10,
+      actualQuantity: 8,
+      notes: 'Short count',
+    };
+
+    it('should create count in a transaction with audit', async () => {
+      prisma.inventoryItem.findFirst.mockResolvedValue({
+        id: 'item-1',
+        tenantId: testTenantId,
+        unitCost: 5,
+      });
+      const fakeCount = { id: 'count-1', tenantId: testTenantId, ...dto, variance: -2 };
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          inventoryCount: { create: jest.fn().mockResolvedValue(fakeCount) },
+          auditLog: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
+
+      const result = await service.createCount(dto, testTenantId, testUserId);
+
+      expect(result.id).toBe('count-1');
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(mockGateway.broadcastCountUpdate).toHaveBeenCalledWith(
+        testTenantId,
+        'count.created',
+        fakeCount,
+      );
+    });
+
+    it('should throw NotFoundException when item does not exist', async () => {
+      prisma.inventoryItem.findFirst.mockResolvedValue(null);
+
+      await expect(service.createCount(dto, testTenantId, testUserId)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
 

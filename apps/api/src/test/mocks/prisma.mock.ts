@@ -52,6 +52,8 @@ const prismaModelNames = [
   'customerAddress',
   'customerPreference',
   'visitHistory',
+  'giftCard',
+  'giftCardTransaction',
   'loyaltyProgram',
   'loyaltyTier',
   'loyaltyPointsTransaction',
@@ -165,6 +167,7 @@ export function createMockPrisma() {
     $disconnect: jest.fn().mockResolvedValue(undefined),
     $use: jest.fn(),
     $extends: jest.fn(),
+    $queryRaw: jest.fn().mockResolvedValue([]),
     $queryRawUnsafe: jest.fn().mockResolvedValue([]),
     $executeRawUnsafe: jest.fn().mockResolvedValue([]),
     softDeleteWhere: jest

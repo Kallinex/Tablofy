@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -13,6 +14,7 @@ import { CreateInvitationDto } from './dto/create-invitation.dto';
 import { Invitation, InvitationStatus, UserRole } from '@prisma/client';
 import * as crypto from 'crypto';
 import { addDays } from 'date-fns';
+import { canAssignRole } from '../../common/rbac/role-policy';
 
 @Injectable()
 export class InvitationsService {
@@ -30,8 +32,14 @@ export class InvitationsService {
     dto: CreateInvitationDto,
     tenantId: string,
     invitedByUserId: string,
+    inviterRole: UserRole,
     meta?: { ipAddress?: string; userAgent?: string },
   ): Promise<Invitation> {
+    const targetRole = dto.role ?? UserRole.STAFF;
+    if (!canAssignRole(inviterRole, targetRole)) {
+      throw new ForbiddenException(`Role ${targetRole} cannot be assigned by ${inviterRole}`);
+    }
+
     const existingInvitation = await this.prisma.invitation.findFirst({
       where: {
         email: dto.email.toLowerCase(),
@@ -59,7 +67,7 @@ export class InvitationsService {
       data: {
         email: dto.email.toLowerCase(),
         token,
-        role: dto.role ?? UserRole.STAFF,
+        role: targetRole,
         tenantId,
         invitedBy: invitedByUserId,
         expiresAt,
@@ -148,6 +156,21 @@ export class InvitationsService {
       throw new BadRequestException('Invitation is no longer pending');
     }
 
+    const inviter = await this.prisma.user.findFirst({
+      where: { id: invitation.invitedBy, tenantId: invitation.tenantId, deletedAt: null },
+      select: { role: true },
+    });
+
+    if (!inviter) {
+      throw new ForbiddenException('Invitation inviter no longer exists');
+    }
+
+    const inviterRole = inviter.role as UserRole;
+
+    if (!canAssignRole(inviterRole, invitation.role)) {
+      throw new ForbiddenException(`Role ${invitation.role} cannot be assigned by ${inviterRole}`);
+    }
+
     await this.usersService.create(
       {
         email: invitation.email,
@@ -158,6 +181,7 @@ export class InvitationsService {
       },
       invitation.invitedBy,
       invitation.tenantId,
+      inviterRole,
       meta,
     );
 

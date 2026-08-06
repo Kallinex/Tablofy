@@ -261,16 +261,14 @@ describe('OrdersService', () => {
   });
 
   describe('softDelete', () => {
-    it('should soft delete order', async () => {
-      const fakeOrder = buildOrder({ id: 'order-1' });
-      prisma.order.findFirst.mockResolvedValue(fakeOrder);
-      prisma.order.update.mockResolvedValue(fakeOrder);
+    it('should soft delete order scoped to tenant', async () => {
+      prisma.order.updateMany.mockResolvedValue({ count: 1 });
 
       await service.softDelete('order-1', testTenantId, testUserId);
 
-      expect(prisma.order.update).toHaveBeenCalledWith(
+      expect(prisma.order.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'order-1' },
+          where: { id: 'order-1', tenantId: testTenantId },
           data: expect.objectContaining({ deletedAt: expect.any(Date) }),
         }),
       );
@@ -278,6 +276,17 @@ describe('OrdersService', () => {
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'ORDER_DELETED' }),
       );
+    });
+
+    it('should throw NotFound when order does not exist in tenant (cross-tenant blocked)', async () => {
+      prisma.order.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.softDelete('order-1', testTenantId, testUserId)).rejects.toThrow(
+        NotFoundException,
+      );
+
+      expect(auditLogs.log).not.toHaveBeenCalled();
+      expect(cache.deletePattern).not.toHaveBeenCalled();
     });
   });
 

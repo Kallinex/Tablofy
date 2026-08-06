@@ -268,7 +268,7 @@ describe('Order CRUD — Integration', () => {
 
   describe('Delete and restore order', () => {
     it('should soft delete an order', async () => {
-      prisma.order.update.mockResolvedValueOnce(baseOrder);
+      prisma.order.updateMany.mockResolvedValueOnce({ count: 1 });
 
       await service.softDelete('order-1', 'tenant-1', 'user-1');
 

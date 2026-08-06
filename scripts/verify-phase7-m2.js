@@ -181,14 +181,17 @@ try {
   const suiteMatch = lines.find(l => l.includes('Test Suites:'));
   const testMatch = lines.find(l => l.includes('Tests:'));
 
-  if (suiteMatch && suiteMatch.includes('36 passed')) {
-    ok('All 36 test suites pass');
+  const suiteCount = suiteMatch ? parseInt((suiteMatch.match(/(\d+) passed/) || [])[1] || '0', 10) : 0;
+  const testCount = testMatch ? parseInt((testMatch.match(/(\d+) passed/) || [])[1] || '0', 10) : 0;
+
+  if (suiteCount >= 36) {
+    ok(`All ${suiteCount} test suites pass (baseline 36)`);
   } else {
     fail(`Test suites result unexpected: ${suiteMatch || '(not found)'}`);
   }
 
-  if (testMatch && testMatch.includes('285 passed')) {
-    ok('All 285 tests pass');
+  if (testCount >= 285) {
+    ok(`All ${testCount} tests pass (baseline 285)`);
   } else {
     fail(`Tests result unexpected: ${testMatch || '(not found)'}`);
   }

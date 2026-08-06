@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, ForbiddenException } from '@nestjs/common';
 import { UsersService } from '../users.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
@@ -11,6 +11,7 @@ import { createMockCache, MockCache } from '../../../test/mocks/cache.mock';
 import { createMockEventEmitter } from '../../../test/mocks/event-emitter.mock';
 import { buildUser } from '../../../test/factories/user.factory';
 import { testTenantId, testUserId } from '../../../test/fixtures/auth.fixture';
+import { CreateUserDto } from '../dto/create-user.dto';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -87,6 +88,91 @@ describe('UsersService', () => {
     });
   });
 
+  describe('create', () => {
+    it('should create a STAFF user when no role is provided', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+      const created = buildUser({ id: 'user-new', role: 'STAFF' });
+      prisma.user.create.mockResolvedValue(created);
+
+      const dto: CreateUserDto = {
+        email: 'new@test.com',
+        password: 'StrongPass1',
+        firstName: 'New',
+        lastName: 'User',
+      };
+
+      const result = await service.create(dto, testUserId, testTenantId, 'MANAGER');
+      expect(result.role).toBe('STAFF');
+      expect(prisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ role: 'STAFF' }),
+        }),
+      );
+    });
+
+    it('should allow OWNER to create a MANAGER', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+      const created = buildUser({ id: 'user-new', role: 'MANAGER' });
+      prisma.user.create.mockResolvedValue(created);
+
+      const dto: CreateUserDto = {
+        email: 'manager@test.com',
+        password: 'StrongPass1',
+        firstName: 'New',
+        lastName: 'Manager',
+        role: 'MANAGER',
+      };
+
+      const result = await service.create(dto, testUserId, testTenantId, 'OWNER');
+      expect(result.role).toBe('MANAGER');
+    });
+
+    it('should reject MANAGER creating an OWNER (privilege escalation)', async () => {
+      const dto: CreateUserDto = {
+        email: 'owner@test.com',
+        password: 'StrongPass1',
+        firstName: 'New',
+        lastName: 'Owner',
+        role: 'OWNER',
+      };
+
+      await expect(service.create(dto, testUserId, testTenantId, 'MANAGER')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('should reject MANAGER creating a MANAGER', async () => {
+      const dto: CreateUserDto = {
+        email: 'manager@test.com',
+        password: 'StrongPass1',
+        firstName: 'New',
+        lastName: 'Manager',
+        role: 'MANAGER',
+      };
+
+      await expect(service.create(dto, testUserId, testTenantId, 'MANAGER')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('should reject any tenant role assigning SUPER_ADMIN', async () => {
+      const dto: CreateUserDto = {
+        email: 'super@test.com',
+        password: 'StrongPass1',
+        firstName: 'New',
+        lastName: 'Super',
+        role: 'SUPER_ADMIN',
+      };
+
+      await expect(service.create(dto, testUserId, testTenantId, 'OWNER')).rejects.toThrow(
+        ForbiddenException,
+      );
+      await expect(service.create(dto, testUserId, testTenantId, 'MANAGER')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+  });
+
   describe('update', () => {
     it('should update user', async () => {
       const fakeUser = buildUser({ id: 'user-1' });
@@ -98,12 +184,37 @@ describe('UsersService', () => {
         { firstName: 'Updated' },
         testTenantId,
         testUserId,
+        'OWNER',
       );
 
       expect(result).toBeDefined();
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'USER_UPDATED' }),
       );
+    });
+
+    it('should reject MANAGER updating an OWNER', async () => {
+      prisma.user.findFirst.mockResolvedValue(buildUser({ id: 'owner-1', role: 'OWNER' }));
+
+      await expect(
+        service.update('owner-1', { firstName: 'Hacked' }, testTenantId, testUserId, 'MANAGER'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should reject MANAGER promoting a user to MANAGER', async () => {
+      prisma.user.findFirst.mockResolvedValue(buildUser({ id: 'staff-1', role: 'STAFF' }));
+
+      await expect(
+        service.update('staff-1', { role: 'MANAGER' }, testTenantId, testUserId, 'MANAGER'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should reject any tenant role promoting a user to SUPER_ADMIN', async () => {
+      prisma.user.findFirst.mockResolvedValue(buildUser({ id: 'staff-1', role: 'STAFF' }));
+
+      await expect(
+        service.update('staff-1', { role: 'SUPER_ADMIN' }, testTenantId, testUserId, 'OWNER'),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -113,7 +224,7 @@ describe('UsersService', () => {
       prisma.user.findFirst.mockResolvedValue(fakeUser);
       prisma.user.update.mockResolvedValue(fakeUser);
 
-      await service.softDelete('user-1', testTenantId, testUserId);
+      await service.softDelete('user-1', testTenantId, testUserId, 'OWNER');
 
       expect(prisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -125,6 +236,14 @@ describe('UsersService', () => {
         expect.objectContaining({ action: 'USER_DELETED' }),
       );
     });
+
+    it('should reject MANAGER deleting an OWNER', async () => {
+      prisma.user.findFirst.mockResolvedValue(buildUser({ id: 'owner-1', role: 'OWNER' }));
+
+      await expect(
+        service.softDelete('owner-1', testTenantId, testUserId, 'MANAGER'),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   describe('restore', () => {
@@ -133,11 +252,21 @@ describe('UsersService', () => {
       prisma.user.findFirst.mockResolvedValue(fakeUser);
       prisma.user.update.mockResolvedValue({ ...fakeUser, deletedAt: null });
 
-      const result = await service.restore('user-1', testTenantId, testUserId);
+      const result = await service.restore('user-1', testTenantId, testUserId, 'OWNER');
 
       expect(result).toBeDefined();
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'USER_RESTORED' }),
+      );
+    });
+
+    it('should reject MANAGER restoring an OWNER', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildUser({ id: 'owner-1', role: 'OWNER', deletedAt: new Date() }),
+      );
+
+      await expect(service.restore('owner-1', testTenantId, testUserId, 'MANAGER')).rejects.toThrow(
+        ForbiddenException,
       );
     });
   });

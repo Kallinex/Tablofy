@@ -18,6 +18,7 @@ import { QueryUserDto } from './dto/query-user.dto';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Request } from 'express';
+import { UserRole } from '@prisma/client';
 import { Req } from '@nestjs/common';
 
 @ApiTags('users')
@@ -35,7 +36,7 @@ export class UsersController {
     @CurrentUser() user: CurrentUserData,
     @Req() req: Request,
   ) {
-    return this.usersService.create(dto, user.id, user.tenantId!, {
+    return this.usersService.create(dto, user.id, user.tenantId!, user.role as UserRole, {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
@@ -68,7 +69,7 @@ export class UsersController {
     @CurrentUser() user: CurrentUserData,
     @Req() req: Request,
   ) {
-    return this.usersService.update(id, dto, user.tenantId!, user.id, {
+    return this.usersService.update(id, dto, user.tenantId!, user.id, user.role as UserRole, {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
@@ -82,7 +83,7 @@ export class UsersController {
     @CurrentUser() user: CurrentUserData,
     @Req() req: Request,
   ) {
-    await this.usersService.softDelete(id, user.tenantId!, user.id, {
+    await this.usersService.softDelete(id, user.tenantId!, user.id, user.role as UserRole, {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
@@ -97,7 +98,7 @@ export class UsersController {
     @CurrentUser() user: CurrentUserData,
     @Req() req: Request,
   ) {
-    return this.usersService.restore(id, user.tenantId!, user.id, {
+    return this.usersService.restore(id, user.tenantId!, user.id, user.role as UserRole, {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });

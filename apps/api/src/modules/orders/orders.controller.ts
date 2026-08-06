@@ -30,6 +30,7 @@ import { VoidItemDto } from './dto/void-item.dto';
 import { UpdateItemKitchenStatusDto } from './dto/update-item-kitchen-status.dto';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { Request } from 'express';
 
 @ApiTags('orders')
@@ -375,6 +376,7 @@ export class OrdersController {
 
   @Delete(':id')
   @Roles('OWNER')
+  @Permissions('orders:delete')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Soft delete an order' })
   async softDelete(
@@ -392,6 +394,7 @@ export class OrdersController {
 
   @Post(':id/restore')
   @Roles('OWNER')
+  @Permissions('orders:delete')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Restore a soft-deleted order' })
   async restore(

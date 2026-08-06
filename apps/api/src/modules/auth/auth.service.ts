@@ -9,11 +9,13 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
+import { QueueService } from '../queues/queue.service';
 import { randomBytes, createHash } from 'crypto';
 import { addHours, addDays, addMinutes, differenceInSeconds } from 'date-fns';
 import * as bcrypt from 'bcrypt';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { BCRYPT_ROUNDS } from '@tablofy/shared/constants';
+import { generateOtpauthUrl, generateTotpSecret, verifyTotp } from './totp';
 const VERIFICATION_TOKEN_TTL_HOURS = 24;
 const PASSWORD_RESET_TOKEN_TTL_HOURS = 1;
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
@@ -44,6 +46,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly queueService: QueueService,
   ) {}
 
   async register(
@@ -133,6 +136,7 @@ export class AuthService {
     email: string,
     password: string,
     meta?: { ipAddress?: string; userAgent?: string },
+    twoFactorCode?: string,
   ): Promise<{ user: AuthUser; tokens: TokenPair }> {
     const user = await this.prisma.user.findFirst({
       where: { email: email.toLowerCase() },
@@ -148,6 +152,8 @@ export class AuthService {
         emailVerified: true,
         failedLoginAttempts: true,
         lockedUntil: true,
+        twoFactorEnabled: true,
+        twoFactorSecret: true,
       },
     });
 
@@ -239,8 +245,27 @@ export class AuthService {
       }
     }
 
+    if (user.twoFactorEnabled) {
+      if (!twoFactorCode) {
+        throw new UnauthorizedException('Two-factor authentication code is required');
+      }
+
+      if (!user.twoFactorSecret || !verifyTotp(user.twoFactorSecret, twoFactorCode)) {
+        await this.auditLogsService.log({
+          action: 'LOGIN_2FA_FAILED',
+          resource: 'User',
+          resourceId: user.id,
+          userId: user.id,
+          tenantId: user.tenantId ?? undefined,
+          newValues: { reason: 'Invalid two-factor authentication code' },
+          ...meta,
+        });
+        throw new UnauthorizedException('Invalid two-factor authentication code');
+      }
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password: _, ...userWithoutPassword } = user;
+    const { password: _, twoFactorSecret: _twoFactorSecret, ...userWithoutPassword } = user;
     const tokens = await this.generateTokenPair(userWithoutPassword, meta);
 
     await this.auditLogsService.log({
@@ -387,6 +412,16 @@ export class AuthService {
     });
 
     this.logger.log(`Password reset token generated for user ${user.id}`);
+
+    await this.enqueueEmail({
+      tenantId: user.tenantId ?? undefined,
+      to: user.email,
+      subject: 'Password Reset',
+      text: `Reset your password using the link below:\n${this.configService.get<string>(
+        'app.frontendUrl',
+        'http://localhost:4200',
+      )}/reset-password?token=${token}\nThis link expires in ${PASSWORD_RESET_TOKEN_TTL_HOURS} hour(s).`,
+    });
 
     await this.auditLogsService.log({
       action: 'PASSWORD_RESET_REQUESTED',
@@ -556,7 +591,7 @@ export class AuthService {
   ): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, emailVerified: true, tenantId: true },
+      select: { id: true, email: true, emailVerified: true, tenantId: true },
     });
 
     if (!user) {
@@ -583,6 +618,16 @@ export class AuthService {
     });
 
     this.logger.log(`Email verification token generated for user ${userId}`);
+
+    await this.enqueueEmail({
+      tenantId: user.tenantId ?? undefined,
+      to: user.email,
+      subject: 'Verify your email',
+      text: `Verify your email using the link below:\n${this.configService.get<string>(
+        'app.frontendUrl',
+        'http://localhost:4200',
+      )}/verify-email?token=${token}\nThis link expires in ${VERIFICATION_TOKEN_TTL_HOURS} hour(s).`,
+    });
   }
 
   async validateUserById(userId: string): Promise<AuthUser | null> {
@@ -598,6 +643,138 @@ export class AuthService {
         emailVerified: true,
       },
     });
+  }
+
+  async getTwoFactorStatus(userId: string): Promise<{ enabled: boolean }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { twoFactorEnabled: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    return { enabled: user.twoFactorEnabled };
+  }
+
+  private async enqueueEmail(message: {
+    tenantId?: string;
+    to: string;
+    subject: string;
+    text: string;
+  }): Promise<void> {
+    try {
+      await this.queueService.addJob('email', 'send-email', {
+        tenantId: message.tenantId,
+        payload: {
+          to: message.to,
+          subject: message.subject,
+          body: message.text,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to enqueue email to ${message.to}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  async setupTwoFactor(userId: string): Promise<{ secret: string; otpauthUrl: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, twoFactorEnabled: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (user.twoFactorEnabled) {
+      throw new BadRequestException('Two-factor authentication is already enabled');
+    }
+
+    const secret = generateTotpSecret();
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorSecret: secret },
+    });
+
+    return { secret, otpauthUrl: generateOtpauthUrl(secret, user.email) };
+  }
+
+  async enableTwoFactor(userId: string, code: string): Promise<{ enabled: boolean }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { tenantId: true, twoFactorEnabled: true, twoFactorSecret: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (user.twoFactorEnabled) {
+      throw new BadRequestException('Two-factor authentication is already enabled');
+    }
+
+    if (!user.twoFactorSecret || !verifyTotp(user.twoFactorSecret, code)) {
+      throw new BadRequestException('Invalid two-factor authentication code');
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: true },
+    });
+
+    await this.auditLogsService.log({
+      action: 'TWO_FACTOR_ENABLED',
+      resource: 'User',
+      resourceId: userId,
+      userId,
+      tenantId: user.tenantId ?? undefined,
+    });
+
+    return { enabled: true };
+  }
+
+  async disableTwoFactor(userId: string, code: string): Promise<{ enabled: boolean }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { tenantId: true, twoFactorEnabled: true, twoFactorSecret: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (!user.twoFactorEnabled) {
+      throw new BadRequestException('Two-factor authentication is not enabled');
+    }
+
+    if (!user.twoFactorSecret || !verifyTotp(user.twoFactorSecret, code)) {
+      throw new BadRequestException('Invalid two-factor authentication code');
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: false, twoFactorSecret: null },
+    });
+
+    await this.revokeAllUserTokens(userId);
+    await this.redisService.deleteUserSessions(userId);
+
+    await this.auditLogsService.log({
+      action: 'TWO_FACTOR_DISABLED',
+      resource: 'User',
+      resourceId: userId,
+      userId,
+      tenantId: user.tenantId ?? undefined,
+    });
+
+    return { enabled: false };
   }
 
   private async generateTokenPair(

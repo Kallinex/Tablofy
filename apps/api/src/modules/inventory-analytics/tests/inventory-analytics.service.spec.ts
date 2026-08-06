@@ -15,6 +15,16 @@ describe('InventoryAnalyticsService', () => {
   let prisma: MockPrisma;
   let cache: MockCache;
 
+  const fakeItem = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id,
+    name: `Item ${id}`,
+    sku: `SKU-${id}`,
+    currentQuantity: 10,
+    unitCost: 5,
+    updatedAt: new Date('2020-01-01'),
+    ...overrides,
+  });
+
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -37,68 +47,131 @@ describe('InventoryAnalyticsService', () => {
     jest.clearAllMocks();
   });
 
-  describe('getValuation', () => {
-    it('should return cached result', async () => {
-      const cached = [{ method: 'FIFO', totalValue: 5000 }];
-      cache.get.mockResolvedValue(cached);
-
-      const result = await service.getValuation(testTenantId, {} as never);
-
-      expect(result).toEqual(cached);
-      expect(prisma.inventoryValuation.groupBy).not.toHaveBeenCalled();
-    });
-
-    it('should compute valuation', async () => {
-      cache.get.mockResolvedValue(null);
-      prisma.inventoryValuation.groupBy.mockResolvedValue([
-        { method: 'FIFO', _sum: { totalValue: 5000, quantity: 100 }, _count: 10 },
+  describe('getDeadStock', () => {
+    it('should resolve latest movement with a single groupBy, not per-item queries', async () => {
+      const items = [
+        fakeItem('item-1', { updatedAt: new Date('2020-01-01') }),
+        fakeItem('item-2', { updatedAt: new Date('2020-01-01') }),
+      ];
+      prisma.inventoryItem.findMany.mockResolvedValue(items);
+      prisma.stockMovement.groupBy.mockResolvedValue([
+        { inventoryItemId: 'item-1', _max: { createdAt: new Date('2020-01-01') } },
+        { inventoryItemId: 'item-2', _max: { createdAt: new Date('2020-01-01') } },
       ]);
 
-      const result = await service.getValuation(testTenantId, {} as never);
+      const result = await service.getDeadStock(testTenantId, {} as never);
 
-      expect(result).toHaveLength(1);
-      expect(result[0].method).toBe('FIFO');
-      expect(result[0].totalValue).toBe(5000);
-    });
-
-    it('should cache result', async () => {
-      cache.get.mockResolvedValue(null);
-      prisma.inventoryValuation.groupBy.mockResolvedValue([]);
-
-      await service.getValuation(testTenantId, {} as never);
-
-      expect(cache.set).toHaveBeenCalledWith(
-        testTenantId,
-        expect.stringContaining('inventory-analytics:valuation:'),
-        [],
-        300,
+      expect(prisma.stockMovement.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          by: ['inventoryItemId'],
+          where: expect.objectContaining({ tenantId: testTenantId }),
+        }),
       );
+      expect(prisma.stockMovement.findFirst).not.toHaveBeenCalled();
+      expect(result.items).toHaveLength(2);
     });
   });
 
-  describe('getTurnover', () => {
-    it('should return cached result', async () => {
-      const cached = { cogs: 10000, turnoverRatio: 2.5 };
-      cache.get.mockResolvedValue(cached);
-
-      const result = await service.getTurnover(testTenantId, {} as never);
-
-      expect(result).toEqual(cached);
-    });
-
-    it('should compute turnover', async () => {
-      cache.get.mockResolvedValue(null);
-      prisma.consumptionRecord.aggregate.mockResolvedValue({
-        _sum: { totalCost: 10000 },
-      } as never);
-      prisma.inventoryItem.findMany.mockResolvedValue([
-        { currentQuantity: 100, averageCost: 20, unitCost: 25 },
+  describe('getClassification', () => {
+    it('should resolve consumption counts with a single groupBy, not per-item counts', async () => {
+      prisma.inventoryItem.findMany.mockResolvedValue([fakeItem('item-1'), fakeItem('item-2')]);
+      prisma.consumptionRecord.groupBy.mockResolvedValue([
+        { inventoryItemId: 'item-1', _count: 12 },
+        { inventoryItemId: 'item-2', _count: 3 },
       ]);
 
-      const result = await service.getTurnover(testTenantId, {} as never);
+      const result = await service.getClassification(testTenantId, {} as never);
 
-      expect(result.cogs).toBe(10000);
-      expect(result.turnoverRatio).toBeGreaterThan(0);
+      expect(prisma.consumptionRecord.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          by: ['inventoryItemId'],
+          where: expect.objectContaining({ tenantId: testTenantId }),
+        }),
+      );
+      expect(prisma.consumptionRecord.count).not.toHaveBeenCalled();
+      expect(result.fastMoving.count).toBe(1);
+      expect(result.slowMoving.count).toBe(1);
+    });
+  });
+
+  describe('getForecastAccuracy', () => {
+    it('should resolve actual consumption with a single groupBy, not per-forecast aggregates', async () => {
+      const forecastDate = new Date('2026-07-01');
+      prisma.inventoryForecast.findMany.mockResolvedValue([
+        {
+          id: 'fc-1',
+          inventoryItemId: 'item-1',
+          forecastDate,
+          quantity: 10,
+          method: 'SMA',
+        },
+      ]);
+      prisma.consumptionRecord.groupBy.mockResolvedValue([
+        {
+          inventoryItemId: 'item-1',
+          date: forecastDate,
+          _sum: { quantity: 8 },
+        },
+      ]);
+
+      const result = await service.getForecastAccuracy(testTenantId, {} as never);
+
+      expect(prisma.consumptionRecord.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          by: ['inventoryItemId', 'date'],
+          where: expect.objectContaining({ tenantId: testTenantId }),
+        }),
+      );
+      expect(prisma.consumptionRecord.aggregate).not.toHaveBeenCalled();
+      expect(result.forecasts[0].actualQuantity).toBe(8);
+      expect(result.forecasts[0].accuracyPercentage).toBe(80);
+    });
+  });
+
+  describe('getStockAging', () => {
+    it('should resolve latest movement with a single groupBy, not per-item queries', async () => {
+      prisma.inventoryItem.findMany.mockResolvedValue([fakeItem('item-1'), fakeItem('item-2')]);
+      prisma.stockMovement.groupBy.mockResolvedValue([
+        { inventoryItemId: 'item-1', _max: { createdAt: new Date('2026-07-01') } },
+        { inventoryItemId: 'item-2', _max: { createdAt: new Date('2026-07-01') } },
+      ]);
+
+      const result = await service.getStockAging(testTenantId, {} as never);
+
+      expect(prisma.stockMovement.groupBy).toHaveBeenCalledTimes(1);
+      expect(prisma.stockMovement.findFirst).not.toHaveBeenCalled();
+      expect(result).toHaveLength(5);
+    });
+  });
+
+  describe('getShrinkage', () => {
+    it('should run a tenant-scoped parameterized query with correct column names', async () => {
+      prisma.inventoryItem.aggregate.mockResolvedValue({ _sum: { currentQuantity: 100 } });
+      prisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: 'adj-1',
+          quantity: 5,
+          type: 'DECREASE',
+          reason: 'SPOILAGE',
+          createdAt: new Date(),
+          inventoryItemId: 'item-1',
+        },
+      ]);
+
+      const result = await service.getShrinkage(testTenantId, {} as never);
+
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+      const sqlArg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as {
+        text: string;
+        values: unknown[];
+      };
+      expect(sqlArg.values[0]).toBe(testTenantId);
+      expect(sqlArg.text).toContain('"tenantId"');
+      expect(sqlArg.text).toContain('"createdAt"');
+      expect(sqlArg.text).toContain('"inventoryItemId"');
+      expect(sqlArg.text).not.toContain('created_at');
+      expect(sqlArg.text).not.toContain('inventory_item_id');
+      expect(result.removalQuantity).toBe(5);
     });
   });
 });
