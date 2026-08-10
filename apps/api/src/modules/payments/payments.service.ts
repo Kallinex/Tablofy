@@ -19,7 +19,11 @@ import { VoidPaymentDto } from './dto/void-payment.dto';
 import { SplitPaymentDto } from './dto/split-payment.dto';
 import { ReconcileQueryDto } from './dto/reconcile-query.dto';
 import { PaymentResponseDto } from './dto/payment-response.dto';
-import { isRefundableStatus, isVoidableStatus } from './payment-state-machine';
+import {
+  isRefundableStatus,
+  isVoidableStatus,
+  validatePaymentTransition,
+} from './payment-state-machine';
 import { StripeProvider } from './providers/stripe.provider';
 import { PaymobProvider } from './providers/paymob.provider';
 import { PaymentProvider } from '../integrations/interfaces/payment-provider.interface';
@@ -377,6 +381,7 @@ export class PaymentsService {
       );
 
       if (!this.isProviderSuccess(intentResult)) {
+        validatePaymentTransition(payment.status, PaymentStatus.FAILED);
         payment = await this.prisma.payment.update({
           where: { id: payment.id },
           data: {
@@ -391,6 +396,7 @@ export class PaymentsService {
       const confirmResult = await provider.confirmPayment(gatewayRef, idempotencyKey);
 
       if (!confirmResult.success || !confirmResult.data) {
+        validatePaymentTransition(payment.status, PaymentStatus.FAILED);
         payment = await this.prisma.payment.update({
           where: { id: payment.id },
           data: {

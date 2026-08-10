@@ -1800,6 +1800,7 @@ model LoyaltyPointsTransaction {
   @@index([expiresAt])
   @@index([tenantId, createdAt])
   @@index([tenantId])
+  @@unique([tenantId, referenceType, referenceId])
   @@map("loyalty_points_transactions")
 }
 
@@ -1935,7 +1936,7 @@ model WalletTransaction {
   @@index([tenantId])
   @@index([type])
   @@index([walletId])
-  @@index([referenceType, referenceId])
+  @@unique([tenantId, referenceType, referenceId])
   @@map("wallet_transactions")
 }
 

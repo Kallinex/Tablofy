@@ -352,12 +352,17 @@ export class AuthService {
     userId: string,
     refreshTokenValue?: string,
     meta?: { ipAddress?: string; userAgent?: string },
+    accessToken?: string,
   ): Promise<void> {
     if (refreshTokenValue) {
       await this.prisma.refreshToken.updateMany({
         where: { token: refreshTokenValue, userId, revokedAt: null },
         data: { revokedAt: new Date() },
       });
+    }
+
+    if (accessToken) {
+      await this.blacklistAccessToken(accessToken);
     }
 
     await this.redisService.deleteUserSessions(userId);
@@ -371,11 +376,49 @@ export class AuthService {
     });
   }
 
+  private async blacklistAccessToken(accessToken: string): Promise<void> {
+    try {
+      const payload = this.jwtService.decode(accessToken) as {
+        jti?: string;
+        exp?: number;
+      } | null;
+      if (!payload?.jti) {
+        return;
+      }
+      const remainingSeconds =
+        payload.exp !== undefined
+          ? Math.max(1, Math.floor(payload.exp - Date.now() / 1000))
+          : differenceInSeconds(this.parseDuration(this.accessExpiresIn()), new Date());
+      await this.redisService.blacklistToken(payload.jti, remainingSeconds);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to blacklist access token on logout for user: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  private accessExpiresIn(): string {
+    return this.configService.get<string>('jwt.expiration', '15m');
+  }
+
   async logoutAllDevices(
     userId: string,
     meta?: { ipAddress?: string; userAgent?: string },
   ): Promise<void> {
     await this.revokeAllUserTokens(userId);
+
+    const sessionIds = await this.redisService.getUserSessionIds(userId);
+    for (const sessionId of sessionIds) {
+      const session = await this.redisService.getSession(sessionId);
+      const jti = session?.accessTokenJti as string | undefined;
+      if (jti) {
+        await this.redisService.blacklistToken(
+          jti,
+          differenceInSeconds(this.parseDuration(this.accessExpiresIn()), new Date()),
+        );
+      }
+    }
+
     await this.redisService.deleteUserSessions(userId);
 
     await this.auditLogsService.log({

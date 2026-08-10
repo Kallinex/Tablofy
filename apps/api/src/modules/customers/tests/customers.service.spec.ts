@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { CustomersService } from '../customers.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
@@ -215,15 +216,29 @@ describe('CustomersService', () => {
 
     it('should redeem points', async () => {
       prisma.customer.findFirst.mockResolvedValue({ id: 'cust-1', tenantId: testTenantId });
-      prisma.membership.findUnique.mockResolvedValue({
-        id: 'mem-1',
-        points: 200,
-        tier: 'BRONZE',
-        customerId: 'cust-1',
-        tenantId: testTenantId,
+      prisma.membership.findUnique
+        .mockResolvedValueOnce({
+          id: 'mem-1',
+          points: 200,
+          tier: 'BRONZE',
+          customerId: 'cust-1',
+          tenantId: testTenantId,
+        })
+        .mockResolvedValueOnce({
+          id: 'mem-1',
+          points: 100,
+          tier: 'BRONZE',
+          customerId: 'cust-1',
+          tenantId: testTenantId,
+        });
+      prisma.membership.updateMany.mockResolvedValue({ count: 1 });
+      prisma.$transaction.mockImplementation(async (fn: (tx: MockPrisma) => Promise<unknown>) =>
+        fn(prisma as unknown as MockPrisma),
+      );
+      prisma.loyaltyPointsTransaction.create.mockResolvedValue({
+        id: 'txn-2',
+        balanceAfter: 100,
       });
-      prisma.loyaltyPointsTransaction.create.mockResolvedValue({ id: 'txn-2' });
-      prisma.membership.update.mockResolvedValue({ id: 'mem-1', points: 100 });
 
       const result = await service.redeemPoints(
         'cust-1',
@@ -233,6 +248,15 @@ describe('CustomersService', () => {
       );
 
       expect(result).toBeDefined();
+      expect(prisma.membership.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            customerId: 'cust-1',
+            points: { gte: 100 },
+          }),
+          data: expect.objectContaining({ points: { decrement: 100 } }),
+        }),
+      );
     });
 
     it('should throw BadRequestException when insufficient points', async () => {
@@ -244,10 +268,66 @@ describe('CustomersService', () => {
         customerId: 'cust-1',
         tenantId: testTenantId,
       });
+      prisma.membership.updateMany.mockResolvedValue({ count: 0 });
+      prisma.$transaction.mockImplementation(async (fn: (tx: MockPrisma) => Promise<unknown>) =>
+        fn(prisma as unknown as MockPrisma),
+      );
 
       await expect(
         service.redeemPoints('cust-1', { points: 100 }, testTenantId, testUserId),
       ).rejects.toThrow('Insufficient');
+
+      expect(prisma.loyaltyPointsTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should fail atomically when two concurrent redeems overspend the balance', async () => {
+      prisma.membership.findUnique.mockResolvedValue({
+        id: 'mem-1',
+        points: 50,
+        tier: 'BRONZE',
+        customerId: 'cust-1',
+        tenantId: testTenantId,
+      });
+      prisma.membership.updateMany.mockResolvedValue({ count: 0 });
+      prisma.$transaction.mockImplementation(async (fn: (tx: MockPrisma) => Promise<unknown>) =>
+        fn(prisma as unknown as MockPrisma),
+      );
+
+      await expect(
+        service.redeemPoints('cust-1', { points: 100 }, testTenantId, testUserId),
+      ).rejects.toThrow('Insufficient');
+
+      expect(prisma.membership.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.loyaltyPointsTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should throw ConflictException when the reference already exists (P2002)', async () => {
+      prisma.membership.findUnique.mockResolvedValue({
+        id: 'mem-1',
+        points: 200,
+        tier: 'BRONZE',
+        customerId: 'cust-1',
+        tenantId: testTenantId,
+      });
+      prisma.membership.updateMany.mockResolvedValue({ count: 1 });
+      prisma.$transaction.mockImplementation(async (fn: (tx: MockPrisma) => Promise<unknown>) =>
+        fn(prisma as unknown as MockPrisma),
+      );
+      prisma.loyaltyPointsTransaction.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(
+        service.redeemPoints(
+          'cust-1',
+          { points: 100, referenceId: 'order-1', referenceType: 'ORDER' },
+          testTenantId,
+          testUserId,
+        ),
+      ).rejects.toThrow(ConflictException);
     });
   });
 
@@ -348,6 +428,25 @@ describe('CustomersService', () => {
       ).rejects.toThrow(BadRequestException);
 
       expect(tx.walletTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should throw ConflictException when a duplicate reference is replayed (P2002)', async () => {
+      const { tx } = mockTransactionForWallet();
+      tx.walletTransaction.create.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(
+        service.spendWallet(
+          'cust-1',
+          { amount: 30, referenceId: 'order-1', referenceType: 'ORDER' },
+          testTenantId,
+          testUserId,
+        ),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should reject repeated spends once the balance is exhausted', async () => {

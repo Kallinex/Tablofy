@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Prisma } from '@prisma/client';
 import { PurchasingService } from '../purchasing.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
@@ -52,6 +53,13 @@ describe('PurchasingService', () => {
     cache.reset();
     eventEmitter.reset();
     jest.clearAllMocks();
+
+    prisma.inventoryItem.findMany.mockImplementation(
+      (args?: { where?: { id?: { in?: string[] } } }) =>
+        Promise.resolve((args?.where?.id?.in ?? []).map((id) => ({ id }))),
+    );
+    prisma.supplierDetail.findFirst.mockResolvedValue({ id: 'sup-1' });
+    prisma.branch.findFirst.mockResolvedValue({ id: 'branch-1' });
   });
 
   describe('createPO', () => {
@@ -95,6 +103,172 @@ describe('PurchasingService', () => {
         (item: { lineTotal: number }) => item.lineTotal,
       );
       expect(lineTotals).toEqual([0.1, 0.2]);
+    });
+
+    it('should retry PO number allocation on a unique-constraint conflict (P2002)', async () => {
+      const conflict = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`tenantId`,`poNumber`,`deletedAt`)',
+        {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: ['tenantId', 'poNumber', 'deletedAt'] },
+        },
+      );
+
+      prisma.purchaseOrder.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ poNumber: 'PO-20260810-00001' })
+        .mockResolvedValue({
+          id: 'po-1',
+          tenantId: testTenantId,
+          items: [],
+          supplierDetail: null,
+        });
+
+      const createdNumbers: string[] = [];
+      let attempt = 0;
+      prisma.$transaction.mockImplementation(async (fn: (tx: MockPrisma) => Promise<unknown>) => {
+        attempt += 1;
+        return fn(prisma as unknown as MockPrisma);
+      });
+      prisma.purchaseOrder.create.mockImplementation(({ data }: { data: { poNumber: string } }) => {
+        if (attempt === 1) {
+          throw conflict;
+        }
+        createdNumbers.push(data.poNumber);
+        return Promise.resolve({ id: 'po-1', poNumber: data.poNumber });
+      });
+
+      await service.createPO(dto, testTenantId, testUserId);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+      expect(createdNumbers).toEqual(['PO-20260810-00002']);
+    });
+
+    it('should reject an inventory item that does not belong to the tenant', async () => {
+      prisma.inventoryItem.findMany.mockResolvedValue([{ id: 'item-1' }]);
+
+      await expect(service.createPO(dto, testTenantId, testUserId)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      expect(prisma.purchaseOrder.create).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should reject a supplier that does not belong to the tenant', async () => {
+      prisma.supplierDetail.findFirst.mockResolvedValue(null);
+
+      await expect(service.createPO(dto, testTenantId, testUserId)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      expect(prisma.purchaseOrder.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a branch that does not belong to the tenant', async () => {
+      prisma.branch.findFirst.mockResolvedValue(null);
+
+      await expect(service.createPO(dto, testTenantId, testUserId)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      expect(prisma.purchaseOrder.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updatePO', () => {
+    const dto = {
+      items: [{ inventoryItemId: 'item-1', quantity: 2, unitPrice: 5 }],
+    };
+
+    it('should reject an item that does not belong to the tenant', async () => {
+      prisma.purchaseOrder.findFirst.mockResolvedValue({
+        id: 'po-1',
+        status: 'DRAFT',
+      });
+      prisma.inventoryItem.findMany.mockResolvedValue([]);
+
+      await expect(service.updatePO('po-1', dto, testTenantId, testUserId)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      expect(prisma.purchaseOrder.update).not.toHaveBeenCalled();
+    });
+
+    it('should reject a supplier that does not belong to the tenant', async () => {
+      prisma.purchaseOrder.findFirst.mockResolvedValue({
+        id: 'po-1',
+        status: 'DRAFT',
+      });
+      prisma.supplierDetail.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updatePO('po-1', { supplierDetailId: 'foreign-sup' }, testTenantId, testUserId),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.purchaseOrder.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('submitPO', () => {
+    it('should transition status with an optimistic-lock version check', async () => {
+      prisma.purchaseOrder.findFirst.mockResolvedValue({
+        id: 'po-1',
+        status: 'DRAFT',
+        version: 3,
+      });
+      prisma.purchaseOrder.updateMany.mockResolvedValue({ count: 1 });
+      prisma.purchaseOrder.findUnique.mockResolvedValue({
+        id: 'po-1',
+        status: 'PENDING_APPROVAL',
+        version: 4,
+      });
+
+      await service.submitPO('po-1', testTenantId, testUserId);
+
+      expect(prisma.purchaseOrder.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'po-1', tenantId: testTenantId, version: 3 },
+          data: expect.objectContaining({
+            status: 'PENDING_APPROVAL',
+            version: { increment: 1 },
+          }),
+        }),
+      );
+      expect(prisma.purchaseOrder.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'po-1' } }),
+      );
+    });
+
+    it('should throw ConflictException when the version has changed concurrently', async () => {
+      prisma.purchaseOrder.findFirst.mockResolvedValue({
+        id: 'po-1',
+        status: 'DRAFT',
+        version: 3,
+      });
+      prisma.purchaseOrder.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.submitPO('po-1', testTenantId, testUserId)).rejects.toThrow(
+        ConflictException,
+      );
+
+      expect(prisma.purchaseOrder.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('closePO', () => {
+    it('should throw ConflictException when the version has changed concurrently', async () => {
+      prisma.purchaseOrder.findFirst.mockResolvedValue({
+        id: 'po-1',
+        status: 'RECEIVED',
+        version: 5,
+      });
+      prisma.purchaseOrder.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.closePO('po-1', testTenantId, testUserId)).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 

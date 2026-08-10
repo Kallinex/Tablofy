@@ -89,15 +89,16 @@ export class GiftCardsService {
       throw new BadRequestException(this.i18n.t('giftCard.expired', lang));
     }
 
-    const balanceBefore = Number(giftCard.currentBalance);
-    const balanceAfter = balanceBefore + dto.amount;
-
-    const [updated] = await Promise.all([
-      this.prisma.giftCard.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.giftCard.update({
         where: { id },
-        data: { currentBalance: balanceAfter },
-      }),
-      this.prisma.giftCardTransaction.create({
+        data: { currentBalance: { increment: dto.amount } },
+      });
+
+      const balanceAfter = Number(result.currentBalance);
+      const balanceBefore = balanceAfter - dto.amount;
+
+      await tx.giftCardTransaction.create({
         data: {
           giftCardId: id,
           tenantId,
@@ -108,8 +109,10 @@ export class GiftCardsService {
           description: dto.description,
           performedById,
         },
-      }),
-    ]);
+      });
+
+      return result;
+    });
 
     return updated;
   }

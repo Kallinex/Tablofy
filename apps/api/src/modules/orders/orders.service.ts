@@ -346,15 +346,26 @@ export class OrdersService {
             if (itemDto.preparationNotes !== undefined)
               itemUpdateData.preparationNotes = itemDto.preparationNotes;
 
-            if (itemDto.unitPrice !== undefined && itemDto.quantity !== undefined) {
+            if (
+              itemDto.quantity !== undefined ||
+              itemDto.unitPrice !== undefined ||
+              itemDto.discount !== undefined
+            ) {
+              const existingItem = existing.items.find((i) => i.id === itemDto.id);
+              if (!existingItem) {
+                throw new NotFoundException('Order item not found in this order');
+              }
+              const unitPrice = itemDto.unitPrice ?? existingItem.unitPrice;
+              const quantity = itemDto.quantity ?? existingItem.quantity;
+              const discount = itemDto.discount ?? existingItem.discount ?? 0;
               const modifiersTotal = await tx.orderItemModifier.aggregate({
                 where: { orderItemId: itemDto.id, tenantId },
                 _sum: { price: true },
               });
-              const modTotal = mulMoney(modifiersTotal._sum.price, itemDto.quantity || 1);
+              const modTotal = mulMoney(modifiersTotal._sum.price, quantity);
               itemUpdateData.total = subMoney(
-                addMoney(mulMoney(itemDto.unitPrice, itemDto.quantity), modTotal),
-                itemDto.discount || 0,
+                addMoney(mulMoney(unitPrice, quantity), modTotal),
+                discount,
               );
             }
 
@@ -476,19 +487,6 @@ export class OrdersService {
         },
       });
 
-      if (dto.status === OrderStatus.CONFIRMED) {
-        const ticketCount = await tx.kitchenTicket.count({ where: { orderId: id } });
-        await tx.kitchenTicket.create({
-          data: {
-            orderId: id,
-            tenantId,
-            ticketNumber: ticketCount + 1,
-            status: PrismaKitchenStatus.PENDING,
-          },
-        });
-        this.metricsService.incrementKitchenTickets();
-      }
-
       await this.updateKitchenStatus(tx, id, dto.status as string);
 
       return tx.order.findUnique({
@@ -513,7 +511,11 @@ export class OrdersService {
     });
 
     const eventName = `order.${dto.status.toLowerCase()}`;
-    this.eventEmitter.emit(eventName, { tenantId, orderId: id });
+    if (dto.status === OrderStatus.CONFIRMED) {
+      await this.eventEmitter.emitAsync('order.confirmed', { tenantId, orderId: id });
+    } else {
+      this.eventEmitter.emit(eventName, { tenantId, orderId: id });
+    }
     await this.cacheService.delete(tenantId, `one:${id}`);
     await this.cacheService.deletePattern(tenantId, 'list:*');
 
@@ -736,7 +738,7 @@ export class OrdersService {
       throw new BadRequestException(`Cannot split order in ${currentStatus} status`);
     }
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.withOrderNumberRetry(existing.restaurantId, async (tx) => {
       const newOrderNumber = await this.generateOrderNumber(existing.restaurantId);
 
       const newOrder = await tx.order.create({
@@ -966,7 +968,7 @@ export class OrdersService {
   ) {
     const existing = await this.findOne(id, tenantId);
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.withOrderNumberRetry(existing.restaurantId, async (tx) => {
       const newOrderNumber = await this.generateOrderNumber(existing.restaurantId);
 
       const subtotal = sumMoney(
@@ -1263,10 +1265,15 @@ export class OrdersService {
     if (!item) throw new NotFoundException('Order item not found');
     if (item.voidedAt) throw new BadRequestException('Cannot update kitchen status on voided item');
 
-    const result = await this.prisma.orderItem.update({
-      where: { id: itemId },
+    const updated = await this.prisma.orderItem.updateMany({
+      where: { id: itemId, tenantId },
       data: { kitchenStatus },
     });
+    if (updated.count === 0) {
+      throw new NotFoundException('Order item not found');
+    }
+
+    const result = await this.prisma.orderItem.findUnique({ where: { id: itemId } });
 
     await this.auditLogsService.log({
       action: 'ORDER_ITEM_KITCHEN_STATUS_UPDATED',
@@ -1451,6 +1458,28 @@ export class OrdersService {
       return target.some((field) => String(field).includes('orderNumber'));
     }
     return String(target ?? '').includes('orderNumber');
+  }
+
+  private async withOrderNumberRetry<T>(
+    restaurantId: string,
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= this.orderNumberMaxRetries; attempt++) {
+      try {
+        return await this.prisma.$transaction(fn);
+      } catch (error) {
+        lastError = error;
+        if (this.isOrderNumberConflict(error) && attempt < this.orderNumberMaxRetries) {
+          this.logger.warn(
+            `Order number conflict for restaurant ${restaurantId}; retrying (attempt ${attempt}/${this.orderNumberMaxRetries})`,
+          );
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw lastError ?? new ConflictException('Could not allocate a unique order number');
   }
 
   private async generateOrderNumber(restaurantId: string): Promise<number> {

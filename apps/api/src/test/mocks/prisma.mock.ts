@@ -117,6 +117,7 @@ const prismaModelNames = [
   'scheduledReport',
   'reportExport',
   'analyticsDashboard',
+  'apiKey',
 ];
 
 function createMockDelegate() {

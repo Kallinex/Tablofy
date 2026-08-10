@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Prisma } from '@prisma/client';
 import { KdsService } from '../kds.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
@@ -122,6 +123,144 @@ describe('KdsService', () => {
       await expect(
         service.createStation(stationDto, 'restaurant-1', testTenantId, testUserId),
       ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('handleOrderConfirmed', () => {
+    const order = (items: Array<{ id: string; product: { stationId: string | null } }>) => ({
+      id: 'order-1',
+      items,
+    });
+
+    function buildTx(
+      overrides: {
+        countResult?: number;
+        createResult?: unknown;
+        createError?: unknown;
+      } = {},
+    ) {
+      let createdCount = overrides.countResult ?? 0;
+      const tx = {
+        kitchenTicket: {
+          count: jest.fn().mockImplementation(() => Promise.resolve(createdCount)),
+          create: jest.fn().mockImplementation(() => {
+            if (overrides.createError) return Promise.reject(overrides.createError);
+            createdCount += 1;
+            return Promise.resolve(
+              overrides.createResult ?? {
+                id: `ticket-${createdCount}`,
+                ticketNumber: createdCount,
+              },
+            );
+          }),
+          findUnique: jest.fn().mockResolvedValue({ id: 'ticket-1' }),
+        },
+        kitchenTicketItem: {
+          create: jest.fn().mockResolvedValue({ id: 'ticket-item-1' }),
+        },
+      };
+      prisma.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      return tx;
+    }
+
+    it('should create one ticket per kitchen station with its items', async () => {
+      prisma.order.findUnique.mockResolvedValue(
+        order([
+          { id: 'item-1', product: { stationId: 'st-1' } },
+          { id: 'item-2', product: { stationId: 'st-1' } },
+          { id: 'item-3', product: { stationId: 'st-2' } },
+        ]),
+      );
+      const tx = buildTx();
+      const mockGatewayWithTicket = mockGateway as unknown as {
+        broadcastTicketUpdate: jest.Mock;
+      };
+      mockGatewayWithTicket.broadcastTicketUpdate = jest.fn();
+
+      await service.handleOrderConfirmed({ tenantId: testTenantId, orderId: 'order-1' });
+
+      expect(tx.kitchenTicket.create).toHaveBeenCalledTimes(2);
+      const ticketData = tx.kitchenTicket.create.mock.calls.map((c) => c[0].data);
+      expect(ticketData.map((d) => d.stationId)).toEqual(['st-1', 'st-2']);
+      expect(ticketData[0].ticketNumber).toBe(1);
+      expect(ticketData[1].ticketNumber).toBe(2);
+      expect(tx.kitchenTicketItem.create).toHaveBeenCalledTimes(3);
+      expect(mockGatewayWithTicket.broadcastTicketUpdate).toHaveBeenCalledTimes(2);
+    });
+
+    it('should not create tickets when the order has no items', async () => {
+      prisma.order.findUnique.mockResolvedValue(order([]));
+      const tx = buildTx();
+
+      await service.handleOrderConfirmed({ tenantId: testTenantId, orderId: 'order-1' });
+
+      expect(tx.kitchenTicket.create).not.toHaveBeenCalled();
+      expect(tx.kitchenTicketItem.create).not.toHaveBeenCalled();
+    });
+
+    it('should retry when the ticket number collides (P2002) and then succeed', async () => {
+      prisma.order.findUnique.mockResolvedValue(
+        order([{ id: 'item-1', product: { stationId: 'st-1' } }]),
+      );
+      const conflict = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`orderId`,`ticketNumber`)',
+        {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: ['orderId', 'ticketNumber'] },
+        },
+      );
+      const tx = {
+        kitchenTicket: {
+          count: jest.fn().mockResolvedValue(0),
+          create: jest
+            .fn()
+            .mockRejectedValueOnce(conflict)
+            .mockResolvedValue({ id: 'ticket-1', ticketNumber: 1 }),
+          findUnique: jest.fn().mockResolvedValue({ id: 'ticket-1' }),
+        },
+        kitchenTicketItem: {
+          create: jest.fn().mockResolvedValue({ id: 'ticket-item-1' }),
+        },
+      };
+      prisma.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+      await service.handleOrderConfirmed({ tenantId: testTenantId, orderId: 'order-1' });
+
+      expect(tx.kitchenTicket.create).toHaveBeenCalledTimes(2);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    });
+
+    it('should propagate errors instead of swallowing them', async () => {
+      prisma.order.findUnique.mockResolvedValue(
+        order([{ id: 'item-1', product: { stationId: 'st-1' } }]),
+      );
+      buildTx({ createError: new Error('db down') });
+
+      await expect(
+        service.handleOrderConfirmed({ tenantId: testTenantId, orderId: 'order-1' }),
+      ).rejects.toThrow('db down');
+    });
+
+    it('should propagate a persistent ticket-number conflict after all retries', async () => {
+      prisma.order.findUnique.mockResolvedValue(
+        order([{ id: 'item-1', product: { stationId: 'st-1' } }]),
+      );
+      const conflict = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`orderId`,`ticketNumber`)',
+        {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: ['orderId', 'ticketNumber'] },
+        },
+      );
+      buildTx({ createError: conflict });
+
+      await expect(
+        service.handleOrderConfirmed({ tenantId: testTenantId, orderId: 'order-1' }),
+      ).rejects.toThrow(Prisma.PrismaClientKnownRequestError);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(3);
     });
   });
 });

@@ -91,6 +91,46 @@ describe('JwtStrategy', () => {
     await expect(strategy.validate(validPayload)).rejects.toThrow(UnauthorizedException);
   });
 
+  it('should throw for a soft-deleted user', async () => {
+    redis.isTokenBlacklisted.mockResolvedValue(false);
+    const deletedUser = buildUser();
+    Object.defineProperty(deletedUser, 'deletedAt', { value: new Date(), writable: true });
+    prisma.user.findUnique.mockResolvedValue(deletedUser as never);
+
+    await expect(strategy.validate(validPayload)).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('should throw for a locked account', async () => {
+    redis.isTokenBlacklisted.mockResolvedValue(false);
+    const lockedUser = buildUser();
+    Object.defineProperty(lockedUser, 'lockedUntil', {
+      value: new Date(Date.now() + 60_000),
+      writable: true,
+    });
+    prisma.user.findUnique.mockResolvedValue(lockedUser as never);
+
+    await expect(strategy.validate(validPayload)).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('should allow a token when the lockout has expired', async () => {
+    redis.isTokenBlacklisted.mockResolvedValue(false);
+    const unlockedUser = buildUser();
+    Object.defineProperty(unlockedUser, 'lockedUntil', {
+      value: new Date(Date.now() - 60_000),
+      writable: true,
+    });
+    prisma.user.findUnique.mockResolvedValue(unlockedUser as never);
+    prisma.tenant.findUnique.mockResolvedValue({
+      id: 'tenant-1',
+      status: 'ACTIVE',
+      subscription: { status: 'ACTIVE' },
+    });
+
+    const result = await strategy.validate(validPayload);
+
+    expect(result.id).toBe(unlockedUser.id);
+  });
+
   it('should throw for invalid issuer', async () => {
     const badPayload = { ...validPayload, iss: 'hacker' };
 

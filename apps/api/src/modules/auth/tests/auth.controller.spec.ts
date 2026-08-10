@@ -126,7 +126,27 @@ describe('AuthController', () => {
       );
 
       expect(result).toEqual({ message: expect.any(String) });
-      expect(authService.logout).toHaveBeenCalledWith(testUserId, 'rt', expect.any(Object));
+      expect(authService.logout).toHaveBeenCalledWith(
+        testUserId,
+        'rt',
+        expect.any(Object),
+        undefined,
+      );
+    });
+
+    it('should extract the bearer access token for jti blacklisting', async () => {
+      await controller.logout(
+        { id: testUserId, email: 'test@test.com', role: 'OWNER', tenantId: 'tenant-1' },
+        { refreshToken: 'rt' },
+        { ...mockReq, headers: { authorization: 'Bearer abc.def.ghi' } } as never,
+      );
+
+      expect(authService.logout).toHaveBeenCalledWith(
+        testUserId,
+        'rt',
+        expect.any(Object),
+        'abc.def.ghi',
+      );
     });
   });
 

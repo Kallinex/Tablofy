@@ -360,6 +360,61 @@ describe('OrdersService', () => {
         expect.objectContaining({ action: 'ORDER_UPDATED' }),
       );
     });
+
+    it('should recompute item.total on a quantity-only update', async () => {
+      const fakeOrder = buildOrder({
+        id: 'order-1',
+        items: [item({ id: 'item-1', quantity: 2, unitPrice: 10, discount: 0, total: 20 })],
+      });
+      stubFindOne(fakeOrder);
+      const tx = makeTx();
+      mockTransaction(tx);
+      mockRecalculate(tx, fakeOrder);
+      tx.order.updateMany.mockResolvedValue({ count: 1 });
+      tx.orderItemModifier.aggregate.mockResolvedValue({ _sum: { price: null } });
+      tx.orderItem.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.update(
+        'order-1',
+        { items: [{ id: 'item-1', quantity: 3 }] },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(tx.orderItem.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'item-1', orderId: 'order-1', tenantId: testTenantId },
+          data: expect.objectContaining({ quantity: 3, total: 30 }),
+        }),
+      );
+    });
+
+    it('should recompute item.total on a unit-price-only update using stored quantity', async () => {
+      const fakeOrder = buildOrder({
+        id: 'order-1',
+        items: [item({ id: 'item-1', quantity: 2, unitPrice: 10, discount: 0, total: 20 })],
+      });
+      stubFindOne(fakeOrder);
+      const tx = makeTx();
+      mockTransaction(tx);
+      mockRecalculate(tx, fakeOrder);
+      tx.order.updateMany.mockResolvedValue({ count: 1 });
+      tx.orderItemModifier.aggregate.mockResolvedValue({ _sum: { price: null } });
+      tx.orderItem.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.update(
+        'order-1',
+        { items: [{ id: 'item-1', unitPrice: 12.5 }] },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(tx.orderItem.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ unitPrice: 12.5, total: 25 }),
+        }),
+      );
+    });
   });
 
   describe('softDelete', () => {
@@ -790,6 +845,53 @@ describe('OrdersService', () => {
         ),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('should retry split when order number allocation conflicts (P2002)', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.order.findFirst
+        .mockResolvedValueOnce(order)
+        .mockResolvedValueOnce({ orderNumber: 5 })
+        .mockResolvedValueOnce({ orderNumber: 6 });
+
+      const conflict = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`restaurantId`,`orderNumber`)',
+        {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: ['restaurantId', 'orderNumber'] },
+        },
+      );
+
+      const createdNumbers: number[] = [];
+      let attempt = 0;
+      prisma.$transaction.mockImplementation(async (cb: (t: unknown) => unknown) => {
+        attempt += 1;
+        const tx = makeTx();
+        tx.order.create.mockImplementation(({ data }: { data: { orderNumber: number } }) => {
+          if (attempt === 1) {
+            throw conflict;
+          }
+          createdNumbers.push(data.orderNumber);
+          return Promise.resolve({ id: 'new-order-1' });
+        });
+        tx.orderItem.create.mockResolvedValue({});
+        tx.orderItem.update.mockResolvedValue({});
+        tx.orderStatusHistory.create.mockResolvedValue({});
+        mockRecalculate(tx, order);
+        return cb(tx);
+      });
+
+      const result = await service.splitOrder(
+        'order-1',
+        { items: [{ id: 'item-1', quantity: 1 }] },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ newOrderId: 'new-order-1' });
+      expect(createdNumbers).toEqual([7]);
+    });
   });
 
   describe('mergeOrders', () => {
@@ -915,6 +1017,57 @@ describe('OrdersService', () => {
         expect.objectContaining({ action: 'ORDER_DUPLICATED' }),
       );
       expect(eventEmitter.emit).toHaveBeenCalledWith('order.duplicated', expect.any(Object));
+    });
+
+    it('should retry duplicate when order number allocation conflicts (P2002)', async () => {
+      const order = orderWithIncludes({
+        id: 'order-1',
+        status: 'COMPLETED',
+        orderNumber: 'ORD-1',
+        items: [item({ modifiers: [{ price: 1, quantity: 2 }] })],
+      });
+      cache.get.mockResolvedValue(null);
+      prisma.order.findFirst
+        .mockResolvedValueOnce(order)
+        .mockResolvedValueOnce({ orderNumber: 5 })
+        .mockResolvedValueOnce({ orderNumber: 6 });
+
+      const conflict = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`restaurantId`,`orderNumber`)',
+        {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: ['restaurantId', 'orderNumber'] },
+        },
+      );
+
+      const createdNumbers: number[] = [];
+      let attempt = 0;
+      prisma.$transaction.mockImplementation(async (cb: (t: unknown) => unknown) => {
+        attempt += 1;
+        const tx = makeTx();
+        tx.order.create.mockImplementation(({ data }: { data: { orderNumber: number } }) => {
+          if (attempt === 1) {
+            throw conflict;
+          }
+          createdNumbers.push(data.orderNumber);
+          return Promise.resolve({ id: 'new-order-1' });
+        });
+        tx.orderItem.create.mockResolvedValue({});
+        tx.orderStatusHistory.create.mockResolvedValue({});
+        tx.order.findUnique.mockResolvedValue({
+          id: 'new-order-1',
+          orderNumber: 'ORD-7',
+          items: [],
+        });
+        return cb(tx);
+      });
+
+      const result = await service.duplicateOrder('order-1', testTenantId, testUserId);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ id: 'new-order-1', orderNumber: 'ORD-7', items: [] });
+      expect(createdNumbers).toEqual([7]);
     });
   });
 
@@ -1049,9 +1202,10 @@ describe('OrdersService', () => {
   });
 
   describe('updateItemKitchenStatus', () => {
-    it('should update kitchen status and log audit', async () => {
+    it('should update kitchen status scoped to tenant and log audit', async () => {
       stubFindOne(orderWithIncludes({ items: [item()] }));
-      prisma.orderItem.update.mockResolvedValue({});
+      prisma.orderItem.updateMany.mockResolvedValue({ count: 1 });
+      prisma.orderItem.findUnique.mockResolvedValue({ id: 'item-1', kitchenStatus: 'PREPARING' });
 
       const result = await service.updateItemKitchenStatus(
         'order-1',
@@ -1061,13 +1215,32 @@ describe('OrdersService', () => {
         testUserId,
       );
 
-      expect(result).toEqual({});
-      expect(prisma.orderItem.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { kitchenStatus: KitchenStatus.PREPARING } }),
+      expect(result.kitchenStatus).toBe('PREPARING');
+      expect(prisma.orderItem.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'item-1', tenantId: testTenantId },
+          data: { kitchenStatus: KitchenStatus.PREPARING },
+        }),
       );
+      expect(prisma.orderItem.update).not.toHaveBeenCalled();
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'ORDER_ITEM_KITCHEN_STATUS_UPDATED' }),
       );
+    });
+
+    it('should throw NotFound when the item belongs to another tenant', async () => {
+      stubFindOne(orderWithIncludes({ items: [item()] }));
+      prisma.orderItem.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.updateItemKitchenStatus(
+          'order-1',
+          'item-1',
+          KitchenStatus.PREPARING,
+          testTenantId,
+          testUserId,
+        ),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw NotFound when item missing', async () => {

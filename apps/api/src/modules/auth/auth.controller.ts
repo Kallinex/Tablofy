@@ -84,10 +84,21 @@ export class AuthController {
     @Body() dto: RefreshTokenDto,
     @Req() req: Request,
   ) {
-    await this.authService.logout(user.id, dto.refreshToken, {
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-    });
+    const authHeader = req.headers['authorization'];
+    const accessToken =
+      typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7)
+        : undefined;
+
+    await this.authService.logout(
+      user.id,
+      dto.refreshToken,
+      {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      },
+      accessToken,
+    );
     return { message: 'Logged out successfully' };
   }
 

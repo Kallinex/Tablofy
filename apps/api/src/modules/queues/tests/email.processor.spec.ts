@@ -45,10 +45,7 @@ describe('EmailProcessor', () => {
     configMap = { ...DEFAULT_CONFIG };
     logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-    processor = new EmailProcessor(
-      queueServiceMock as never,
-      makeConfig(configMap) as never,
-    );
+    processor = new EmailProcessor(queueServiceMock as never, makeConfig(configMap) as never);
     mockSendMail.mockResolvedValue({ messageId: 'm-1' });
   });
 
@@ -59,11 +56,7 @@ describe('EmailProcessor', () => {
 
   it('registers an email worker on init', () => {
     processor.onModuleInit();
-    expect(queueServiceMock.registerWorker).toHaveBeenCalledWith(
-      'email',
-      expect.any(Function),
-      3,
-    );
+    expect(queueServiceMock.registerWorker).toHaveBeenCalledWith('email', expect.any(Function), 3);
   });
 
   it('warns on init when SMTP_HOST is not configured', () => {
@@ -132,9 +125,7 @@ describe('EmailProcessor', () => {
     delete configMap['smtp.host'];
     const job = makeJob({ payload: { to: 'a@b.com', subject: 'S', body: 'B' } });
 
-    await expect(processor.process(job)).rejects.toThrow(
-      'Email transport is not configured',
-    );
+    await expect(processor.process(job)).rejects.toThrow('Email transport is not configured');
     expect(mockSendMail).not.toHaveBeenCalled();
   });
 
@@ -150,9 +141,7 @@ describe('EmailProcessor', () => {
   it('fails when the email job payload is malformed', async () => {
     const job = makeJob({ payload: { body: 'missing to and subject' } });
 
-    await expect(processor.process(job)).rejects.toThrow(
-      'missing required payload fields',
-    );
+    await expect(processor.process(job)).rejects.toThrow('missing required payload fields');
     expect(mockSendMail).not.toHaveBeenCalled();
   });
 

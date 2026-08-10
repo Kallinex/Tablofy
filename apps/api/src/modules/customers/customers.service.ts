@@ -393,6 +393,10 @@ export class CustomersService {
   // Loyalty Points
   // ============================================
 
+  private isUniqueConflict(error: unknown): boolean {
+    return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+  }
+
   async earnPoints(customerId: string, dto: EarnPointsDto, tenantId: string, userId: string) {
     const membership = await this.ensureMembership(customerId, tenantId);
     const tierConfig = await this.getTierConfig(membership.tier, tenantId);
@@ -401,19 +405,27 @@ export class CustomersService {
 
     const newBalance = membership.points + adjustedPoints;
 
-    const txn = await this.prisma.loyaltyPointsTransaction.create({
-      data: {
-        customerId,
-        tenantId,
-        points: adjustedPoints,
-        type: LoyaltyTransactionType.EARNED,
-        description: dto.description ?? 'Points earned',
-        referenceId: dto.referenceId,
-        referenceType: dto.referenceType,
-        balanceAfter: newBalance,
-        expiresAt: await this.calculateExpiry(tenantId),
-      },
-    });
+    let txn;
+    try {
+      txn = await this.prisma.loyaltyPointsTransaction.create({
+        data: {
+          customerId,
+          tenantId,
+          points: adjustedPoints,
+          type: LoyaltyTransactionType.EARNED,
+          description: dto.description ?? 'Points earned',
+          referenceId: dto.referenceId,
+          referenceType: dto.referenceType,
+          balanceAfter: newBalance,
+          expiresAt: await this.calculateExpiry(tenantId),
+        },
+      });
+    } catch (error) {
+      if (this.isUniqueConflict(error)) {
+        throw new ConflictException('A loyalty transaction for this reference already exists');
+      }
+      throw error;
+    }
 
     await this.prisma.membership.update({
       where: { customerId_tenantId: { customerId, tenantId } },
@@ -447,33 +459,54 @@ export class CustomersService {
   }
 
   async redeemPoints(customerId: string, dto: RedeemPointsDto, tenantId: string, userId: string) {
-    const membership = await this.prisma.membership.findUnique({
-      where: { customerId_tenantId: { customerId, tenantId } },
-    });
-    if (!membership) throw new NotFoundException('Membership not found');
-    if (membership.points < dto.points) {
-      throw new BadRequestException('Insufficient points');
+    let txn;
+    try {
+      txn = await this.prisma.$transaction(async (tx) => {
+        const membership = await tx.membership.findUnique({
+          where: { customerId_tenantId: { customerId, tenantId } },
+        });
+        if (!membership) throw new NotFoundException('Membership not found');
+
+        const claimed = await tx.membership.updateMany({
+          where: {
+            customerId,
+            tenantId,
+            points: { gte: dto.points },
+          },
+          data: {
+            points: { decrement: dto.points },
+            lastActivityAt: new Date(),
+          },
+        });
+        if (claimed.count === 0) {
+          throw new BadRequestException('Insufficient points');
+        }
+
+        const after = await tx.membership.findUnique({
+          where: { customerId_tenantId: { customerId, tenantId } },
+        });
+        if (!after) throw new NotFoundException('Membership not found');
+        const newBalance = after.points;
+
+        return tx.loyaltyPointsTransaction.create({
+          data: {
+            customerId,
+            tenantId,
+            points: -dto.points,
+            type: LoyaltyTransactionType.REDEEMED,
+            description: dto.description ?? 'Points redeemed',
+            referenceId: dto.referenceId,
+            referenceType: dto.referenceType,
+            balanceAfter: newBalance,
+          },
+        });
+      });
+    } catch (error) {
+      if (this.isUniqueConflict(error)) {
+        throw new ConflictException('A loyalty transaction for this reference already exists');
+      }
+      throw error;
     }
-
-    const newBalance = membership.points - dto.points;
-
-    const txn = await this.prisma.loyaltyPointsTransaction.create({
-      data: {
-        customerId,
-        tenantId,
-        points: -dto.points,
-        type: LoyaltyTransactionType.REDEEMED,
-        description: dto.description ?? 'Points redeemed',
-        referenceId: dto.referenceId,
-        referenceType: dto.referenceType,
-        balanceAfter: newBalance,
-      },
-    });
-
-    await this.prisma.membership.update({
-      where: { customerId_tenantId: { customerId, tenantId } },
-      data: { points: newBalance, lastActivityAt: new Date() },
-    });
 
     await this.auditLogsService.log({
       action: 'LOYALTY_POINTS_REDEEMED',
@@ -481,7 +514,7 @@ export class CustomersService {
       resourceId: txn.id,
       userId,
       tenantId,
-      newValues: { customerId, points: dto.points, remaining: newBalance },
+      newValues: { customerId, points: dto.points, remaining: txn.balanceAfter },
     });
 
     await this.cacheService.delete(tenantId, `customer:${customerId}`);
@@ -489,7 +522,7 @@ export class CustomersService {
     this.gateway.broadcastLoyaltyUpdate(tenantId, 'loyalty.redeemed', {
       customerId,
       points: -dto.points,
-      balance: newBalance,
+      balance: txn.balanceAfter,
     });
 
     return txn;
@@ -500,18 +533,26 @@ export class CustomersService {
 
     const newBalance = membership.points + dto.points;
 
-    const txn = await this.prisma.loyaltyPointsTransaction.create({
-      data: {
-        customerId,
-        tenantId,
-        points: dto.points,
-        type: LoyaltyTransactionType.ADJUSTED,
-        description: `Adjustment: ${dto.reason}`,
-        referenceId: dto.referenceId,
-        referenceType: dto.referenceType,
-        balanceAfter: newBalance,
-      },
-    });
+    let txn;
+    try {
+      txn = await this.prisma.loyaltyPointsTransaction.create({
+        data: {
+          customerId,
+          tenantId,
+          points: dto.points,
+          type: LoyaltyTransactionType.ADJUSTED,
+          description: `Adjustment: ${dto.reason}`,
+          referenceId: dto.referenceId,
+          referenceType: dto.referenceType,
+          balanceAfter: newBalance,
+        },
+      });
+    } catch (error) {
+      if (this.isUniqueConflict(error)) {
+        throw new ConflictException('A loyalty transaction for this reference already exists');
+      }
+      throw error;
+    }
 
     await this.prisma.membership.update({
       where: { customerId_tenantId: { customerId, tenantId } },
@@ -839,47 +880,55 @@ export class CustomersService {
 
     const amount = roundMoney(dto.amount);
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const before = await tx.wallet.findUnique({ where: { id: wallet.id } });
-      if (!before) {
-        throw new NotFoundException('Wallet not found');
-      }
-      const balanceBefore = roundMoney(before.balance);
+    let result;
+    try {
+      result = await this.prisma.$transaction(async (tx) => {
+        const before = await tx.wallet.findUnique({ where: { id: wallet.id } });
+        if (!before) {
+          throw new NotFoundException('Wallet not found');
+        }
+        const balanceBefore = roundMoney(before.balance);
 
-      const claimed = await tx.wallet.updateMany({
-        where: { id: wallet.id, balance: { gte: amount } },
-        data: {
-          balance: { decrement: amount },
-          version: { increment: 1 },
-        },
+        const claimed = await tx.wallet.updateMany({
+          where: { id: wallet.id, balance: { gte: amount } },
+          data: {
+            balance: { decrement: amount },
+            version: { increment: 1 },
+          },
+        });
+        if (claimed.count === 0) {
+          throw new BadRequestException('Insufficient wallet balance');
+        }
+
+        const after = await tx.wallet.findUnique({ where: { id: wallet.id } });
+        if (!after) {
+          throw new NotFoundException('Wallet not found');
+        }
+        const balanceAfter = roundMoney(after.balance);
+
+        const txn = await tx.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            tenantId,
+            customerId,
+            type: WalletTransactionType.SPEND,
+            amount: -amount,
+            balanceBefore,
+            balanceAfter,
+            description: dto.description ?? 'Wallet spend',
+            referenceId: dto.referenceId,
+            referenceType: dto.referenceType,
+          },
+        });
+
+        return { wallet: after, transaction: txn };
       });
-      if (claimed.count === 0) {
-        throw new BadRequestException('Insufficient wallet balance');
+    } catch (error) {
+      if (this.isUniqueConflict(error)) {
+        throw new ConflictException('A wallet transaction for this reference already exists');
       }
-
-      const after = await tx.wallet.findUnique({ where: { id: wallet.id } });
-      if (!after) {
-        throw new NotFoundException('Wallet not found');
-      }
-      const balanceAfter = roundMoney(after.balance);
-
-      const txn = await tx.walletTransaction.create({
-        data: {
-          walletId: wallet.id,
-          tenantId,
-          customerId,
-          type: WalletTransactionType.SPEND,
-          amount: -amount,
-          balanceBefore,
-          balanceAfter,
-          description: dto.description ?? 'Wallet spend',
-          referenceId: dto.referenceId,
-          referenceType: dto.referenceType,
-        },
-      });
-
-      return { wallet: after, transaction: txn };
-    });
+      throw error;
+    }
 
     await this.auditLogsService.log({
       action: 'WALLET_SPENT',

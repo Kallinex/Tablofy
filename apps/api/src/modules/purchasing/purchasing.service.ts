@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  Logger,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -32,9 +38,11 @@ export class PurchasingService {
   // ============================================
 
   async createPO(dto: CreatePurchaseOrderDto, tenantId: string, userId: string) {
-    const poNumber = await this.generatePONumber(tenantId);
+    await this.validatePOReferences(dto, tenantId);
 
-    const po = await this.prisma.$transaction(async (tx) => {
+    const { po, poNumber } = await this.withPONumberRetry(tenantId, async (tx) => {
+      const number = await this.generatePONumber(tenantId);
+
       let subtotal = 0;
       const itemData = dto.items.map((item, idx) => {
         const lineTotal = mulMoney(item.quantity, item.unitPrice);
@@ -53,7 +61,7 @@ export class PurchasingService {
 
       const created = await tx.purchaseOrder.create({
         data: {
-          poNumber,
+          poNumber: number,
           tenantId,
           supplierDetailId: dto.supplierDetailId,
           branchId: dto.branchId,
@@ -69,7 +77,7 @@ export class PurchasingService {
         include: { items: true, supplierDetail: true },
       });
 
-      return created;
+      return { po: created, poNumber: number };
     });
 
     await this.auditLogsService.log({
@@ -201,6 +209,13 @@ export class PurchasingService {
       throw new BadRequestException('Only DRAFT or PENDING_APPROVAL orders can be updated');
     }
 
+    if (dto.items || dto.supplierDetailId || dto.branchId) {
+      await this.validatePOReferences(
+        { items: dto.items ?? [], supplierDetailId: dto.supplierDetailId, branchId: dto.branchId },
+        tenantId,
+      );
+    }
+
     const updated = await this.prisma.$transaction(async (tx) => {
       if (dto.items) {
         await tx.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } });
@@ -221,8 +236,8 @@ export class PurchasingService {
           };
         });
 
-        return tx.purchaseOrder.update({
-          where: { id },
+        const result = await tx.purchaseOrder.updateMany({
+          where: { id, tenantId, version: po.version },
           data: {
             supplierDetailId: dto.supplierDetailId,
             branchId: dto.branchId,
@@ -232,14 +247,26 @@ export class PurchasingService {
             subtotal,
             total: subtotal,
             version: { increment: 1 },
-            items: { create: itemData },
           },
+        });
+        if (result.count === 0) {
+          throw new ConflictException('Purchase order was modified by another user. Please retry.');
+        }
+
+        if (itemData.length > 0) {
+          await tx.purchaseOrderItem.createMany({
+            data: itemData.map((item) => ({ ...item, purchaseOrderId: id })),
+          });
+        }
+
+        return tx.purchaseOrder.findUnique({
+          where: { id },
           include: { items: true, supplierDetail: true },
         });
       }
 
-      return tx.purchaseOrder.update({
-        where: { id },
+      const result = await tx.purchaseOrder.updateMany({
+        where: { id, tenantId, version: po.version },
         data: {
           supplierDetailId: dto.supplierDetailId,
           branchId: dto.branchId,
@@ -248,6 +275,13 @@ export class PurchasingService {
           notes: dto.notes,
           version: { increment: 1 },
         },
+      });
+      if (result.count === 0) {
+        throw new ConflictException('Purchase order was modified by another user. Please retry.');
+      }
+
+      return tx.purchaseOrder.findUnique({
+        where: { id },
         include: { items: true, supplierDetail: true },
       });
     });
@@ -298,6 +332,27 @@ export class PurchasingService {
     this.gateway.broadcastPurchaseUpdate(tenantId, 'purchase.deleted', { id });
   }
 
+  private async updatePOWithCAS(
+    po: { id: string; version: number },
+    tenantId: string,
+    data: Prisma.PurchaseOrderUncheckedUpdateInput,
+    include?: Prisma.PurchaseOrderInclude,
+  ) {
+    const result = await this.prisma.purchaseOrder.updateMany({
+      where: { id: po.id, tenantId, version: po.version },
+      data: { ...data, version: { increment: 1 } },
+    });
+    if (result.count === 0) {
+      throw new ConflictException('Purchase order was modified by another user. Please retry.');
+    }
+    const updated = await this.prisma.purchaseOrder.findUnique({
+      where: { id: po.id },
+      include,
+    });
+    if (!updated) throw new NotFoundException('Purchase order not found');
+    return updated;
+  }
+
   async submitPO(id: string, tenantId: string, userId: string) {
     const po = await this.prisma.purchaseOrder.findFirst({
       where: { id, tenantId, deletedAt: null },
@@ -307,11 +362,12 @@ export class PurchasingService {
       throw new BadRequestException('Only DRAFT orders can be submitted');
     }
 
-    const updated = await this.prisma.purchaseOrder.update({
-      where: { id },
-      data: { status: PurchaseOrderStatus.PENDING_APPROVAL, version: { increment: 1 } },
-      include: { items: true, supplierDetail: true },
-    });
+    const updated = await this.updatePOWithCAS(
+      po,
+      tenantId,
+      { status: PurchaseOrderStatus.PENDING_APPROVAL },
+      { items: true, supplierDetail: true },
+    );
 
     await this.auditLogsService.log({
       action: 'PO_SUBMITTED',
@@ -375,14 +431,21 @@ export class PurchasingService {
           },
         });
 
-        return tx.purchaseOrder.update({
-          where: { id },
+        const approvedResult = await tx.purchaseOrder.updateMany({
+          where: { id, tenantId, version: po.version },
           data: {
             status: PurchaseOrderStatus.APPROVED,
             approvedById: userId,
             approvedAt: new Date(),
             version: { increment: 1 },
           },
+        });
+        if (approvedResult.count === 0) {
+          throw new ConflictException('Purchase order was modified by another user. Please retry.');
+        }
+
+        return tx.purchaseOrder.findUnique({
+          where: { id },
           include: { items: true, supplierDetail: true, approval: true },
         });
       }
@@ -407,15 +470,26 @@ export class PurchasingService {
         },
       });
 
-      return tx.purchaseOrder.update({
-        where: { id },
+      const rejectedResult = await tx.purchaseOrder.updateMany({
+        where: { id, tenantId, version: po.version },
         data: {
           status: PurchaseOrderStatus.DRAFT,
           version: { increment: 1 },
         },
+      });
+      if (rejectedResult.count === 0) {
+        throw new ConflictException('Purchase order was modified by another user. Please retry.');
+      }
+
+      return tx.purchaseOrder.findUnique({
+        where: { id },
         include: { items: true, supplierDetail: true, approval: true },
       });
     });
+
+    if (!updated) {
+      throw new NotFoundException('Purchase order not found');
+    }
 
     const action = approved ? 'PO_APPROVED' : 'PO_REJECTED';
     await this.auditLogsService.log({
@@ -455,11 +529,12 @@ export class PurchasingService {
       throw new BadRequestException('Only APPROVED orders can be ordered');
     }
 
-    const updated = await this.prisma.purchaseOrder.update({
-      where: { id },
-      data: { status: PurchaseOrderStatus.ORDERED, version: { increment: 1 } },
-      include: { items: true, supplierDetail: true },
-    });
+    const updated = await this.updatePOWithCAS(
+      po,
+      tenantId,
+      { status: PurchaseOrderStatus.ORDERED },
+      { items: true, supplierDetail: true },
+    );
 
     await this.auditLogsService.log({
       action: 'PO_ORDERED',
@@ -500,15 +575,15 @@ export class PurchasingService {
       ? PurchaseOrderStatus.RECEIVED
       : PurchaseOrderStatus.PARTIALLY_RECEIVED;
 
-    const updated = await this.prisma.purchaseOrder.update({
-      where: { id },
-      data: {
+    const updated = await this.updatePOWithCAS(
+      po,
+      tenantId,
+      {
         status: newStatus,
         deliveredDate: allReceived ? new Date() : undefined,
-        version: { increment: 1 },
       },
-      include: { items: true, supplierDetail: true },
-    });
+      { items: true, supplierDetail: true },
+    );
 
     await this.auditLogsService.log({
       action: 'PO_RECEIVED',
@@ -537,11 +612,12 @@ export class PurchasingService {
       throw new BadRequestException('Only RECEIVED orders can be closed');
     }
 
-    const updated = await this.prisma.purchaseOrder.update({
-      where: { id },
-      data: { status: PurchaseOrderStatus.CLOSED, version: { increment: 1 } },
-      include: { items: true, supplierDetail: true },
-    });
+    const updated = await this.updatePOWithCAS(
+      po,
+      tenantId,
+      { status: PurchaseOrderStatus.CLOSED },
+      { items: true, supplierDetail: true },
+    );
 
     await this.auditLogsService.log({
       action: 'PO_CLOSED',
@@ -570,17 +646,17 @@ export class PurchasingService {
       throw new BadRequestException('Order is already closed or cancelled');
     }
 
-    const updated = await this.prisma.purchaseOrder.update({
-      where: { id },
-      data: {
+    const updated = await this.updatePOWithCAS(
+      po,
+      tenantId,
+      {
         status: PurchaseOrderStatus.CANCELLED,
         cancelledById: userId,
         cancelledAt: new Date(),
         cancelReason: reason ?? null,
-        version: { increment: 1 },
       },
-      include: { items: true, supplierDetail: true },
-    });
+      { items: true, supplierDetail: true },
+    );
 
     await this.auditLogsService.log({
       action: 'PO_CANCELLED',
@@ -638,6 +714,82 @@ export class PurchasingService {
 
     await this.cacheService.set(tenantId, cacheKey, result, 300);
     return result;
+  }
+
+  private readonly poNumberMaxRetries = 10;
+
+  private isPONumberConflict(error: unknown): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+      return false;
+    }
+    const target = error.meta?.target;
+    if (Array.isArray(target)) {
+      return target.some((field) => String(field).includes('poNumber'));
+    }
+    return String(target ?? '').includes('poNumber');
+  }
+
+  private async withPONumberRetry<T>(
+    tenantId: string,
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= this.poNumberMaxRetries; attempt++) {
+      try {
+        return await this.prisma.$transaction(fn);
+      } catch (error) {
+        lastError = error;
+        if (this.isPONumberConflict(error) && attempt < this.poNumberMaxRetries) {
+          this.logger.warn(
+            `PO number conflict for tenant ${tenantId}; retrying (attempt ${attempt}/${this.poNumberMaxRetries})`,
+          );
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw lastError ?? new ConflictException('Could not allocate a unique PO number');
+  }
+
+  private async validatePOReferences(
+    dto: {
+      items: { inventoryItemId: string }[];
+      supplierDetailId?: string;
+      branchId?: string;
+    },
+    tenantId: string,
+  ): Promise<void> {
+    const itemIds = dto.items.map((i) => i.inventoryItemId);
+    if (itemIds.length) {
+      const found = await this.prisma.inventoryItem.findMany({
+        where: { id: { in: itemIds }, tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      const uniqueIds = new Set(itemIds);
+      if (found.length !== uniqueIds.size) {
+        throw new BadRequestException('One or more inventory items do not exist in this tenant');
+      }
+    }
+
+    if (dto.supplierDetailId) {
+      const supplier = await this.prisma.supplierDetail.findFirst({
+        where: { id: dto.supplierDetailId, tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!supplier) {
+        throw new BadRequestException('Supplier does not exist in this tenant');
+      }
+    }
+
+    if (dto.branchId) {
+      const branch = await this.prisma.branch.findFirst({
+        where: { id: dto.branchId, tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!branch) {
+        throw new BadRequestException('Branch does not exist in this tenant');
+      }
+    }
   }
 
   private async generatePONumber(tenantId: string): Promise<string> {

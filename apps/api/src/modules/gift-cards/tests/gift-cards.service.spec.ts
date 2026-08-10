@@ -138,4 +138,98 @@ describe('GiftCardsService', () => {
       ).rejects.toThrow(NotFoundException);
     });
   });
+
+  describe('recharge', () => {
+    function buildRechargeTx() {
+      const tx = {
+        giftCard: {
+          update: jest.fn().mockResolvedValue(fakeGiftCard({ currentBalance: 130 })),
+        },
+        giftCardTransaction: {
+          create: jest.fn().mockResolvedValue({ id: 'tx-1' }),
+        },
+      };
+      prisma.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      return tx;
+    }
+
+    it('should atomically increment the balance inside the transaction', async () => {
+      prisma.giftCard.findFirst.mockResolvedValue(fakeGiftCard({ currentBalance: 100 }));
+      const tx = buildRechargeTx();
+
+      const result = await service.recharge(testTenantId, 'gc-1', { amount: 30 }, 'en');
+
+      expect(tx.giftCard.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'gc-1' },
+          data: { currentBalance: { increment: 30 } },
+        }),
+      );
+      expect(tx.giftCardTransaction.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: 'RECHARGE',
+            amount: 30,
+            balanceBefore: 100,
+            balanceAfter: 130,
+          }),
+        }),
+      );
+      expect(result.currentBalance).toBe(130);
+    });
+
+    it('should record consecutive concurrent recharges without lost updates', async () => {
+      prisma.giftCard.findFirst.mockResolvedValue(fakeGiftCard({ currentBalance: 100 }));
+      const balances = [130, 160];
+      const tx = {
+        giftCard: {
+          update: jest
+            .fn()
+            .mockResolvedValueOnce(fakeGiftCard({ currentBalance: 130 }))
+            .mockResolvedValueOnce(fakeGiftCard({ currentBalance: 160 })),
+        },
+        giftCardTransaction: {
+          create: jest.fn().mockResolvedValue({ id: 'tx-1' }),
+        },
+      };
+      prisma.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+      const first = await service.recharge(testTenantId, 'gc-1', { amount: 30 }, 'en');
+      const second = await service.recharge(testTenantId, 'gc-1', { amount: 30 }, 'en');
+
+      expect(first.currentBalance).toBe(balances[0]);
+      expect(second.currentBalance).toBe(balances[1]);
+      const increments = tx.giftCard.update.mock.calls.map((c) => c[0].data.currentBalance);
+      expect(increments).toEqual([{ increment: 30 }, { increment: 30 }]);
+    });
+
+    it('should reject recharging a deactivated card', async () => {
+      prisma.giftCard.findFirst.mockResolvedValue(
+        fakeGiftCard({ currentBalance: 100, status: 'DEACTIVATED' }),
+      );
+      const tx = buildRechargeTx();
+
+      await expect(service.recharge(testTenantId, 'gc-1', { amount: 30 }, 'en')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(tx.giftCard.update).not.toHaveBeenCalled();
+      expect(tx.giftCardTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject recharging an expired card', async () => {
+      prisma.giftCard.findFirst.mockResolvedValue(
+        fakeGiftCard({
+          currentBalance: 100,
+          expiresAt: new Date(Date.now() - 1000),
+        }),
+      );
+      const tx = buildRechargeTx();
+
+      await expect(service.recharge(testTenantId, 'gc-1', { amount: 30 }, 'en')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(tx.giftCard.update).not.toHaveBeenCalled();
+      expect(tx.giftCardTransaction.create).not.toHaveBeenCalled();
+    });
+  });
 });

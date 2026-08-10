@@ -311,6 +311,32 @@ describe('AuthService', () => {
 
       expect(prisma.refreshToken.updateMany).toHaveBeenCalled();
       expect(redis.deleteUserSessions).toHaveBeenCalledWith('user-1');
+      expect(redis.blacklistToken).not.toHaveBeenCalled();
+      expect(auditLogs.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'USER_LOGOUT' }),
+      );
+    });
+
+    it('should blacklist the access token jti with its remaining lifetime', async () => {
+      const exp = Math.floor(Date.now() / 1000) + 600;
+      jwtService.decode.mockReturnValue({ jti: 'jti-1', exp } as never);
+
+      await service.logout('user-1', 'refresh-token', undefined, 'access-token');
+
+      expect(redis.blacklistToken).toHaveBeenCalledWith('jti-1', expect.any(Number));
+      const ttl = (redis.blacklistToken as jest.Mock).mock.calls[0][1];
+      expect(ttl).toBeLessThanOrEqual(600);
+      expect(ttl).toBeGreaterThan(0);
+    });
+
+    it('should still logout when the access token cannot be decoded', async () => {
+      jwtService.decode.mockReturnValue(null);
+
+      await expect(
+        service.logout('user-1', 'refresh-token', undefined, 'not-a-jwt'),
+      ).resolves.toBeUndefined();
+
+      expect(redis.blacklistToken).not.toHaveBeenCalled();
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'USER_LOGOUT' }),
       );
@@ -328,6 +354,29 @@ describe('AuthService', () => {
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'USER_LOGOUT_ALL_DEVICES' }),
       );
+    });
+
+    it('should blacklist the jti of every active session', async () => {
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 2 } as never);
+      redis.getUserSessionIds.mockResolvedValue(['sess-1', 'sess-2']);
+      redis.getSession
+        .mockResolvedValueOnce({ accessTokenJti: 'jti-1' })
+        .mockResolvedValueOnce({ accessTokenJti: 'jti-2' });
+
+      await service.logoutAllDevices('user-1');
+
+      expect(redis.blacklistToken).toHaveBeenCalledWith('jti-1', expect.any(Number));
+      expect(redis.blacklistToken).toHaveBeenCalledWith('jti-2', expect.any(Number));
+    });
+
+    it('should not blacklist when a session has no jti', async () => {
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 } as never);
+      redis.getUserSessionIds.mockResolvedValue(['sess-1']);
+      redis.getSession.mockResolvedValue(null);
+
+      await service.logoutAllDevices('user-1');
+
+      expect(redis.blacklistToken).not.toHaveBeenCalled();
     });
   });
 

@@ -419,154 +419,145 @@ export class KdsService {
 
   @OnEvent('order.confirmed')
   async handleOrderConfirmed(payload: { tenantId: string; orderId: string }) {
-    try {
-      const { tenantId, orderId } = payload;
+    const { tenantId, orderId } = payload;
 
-      const order = await this.prisma.order.findUnique({
-        where: { id: orderId },
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          where: { voidedAt: null },
+          include: {
+            product: { select: { id: true, stationId: true } },
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      this.logger.warn(`Order ${orderId} not found for KDS ticket creation`);
+      return;
+    }
+
+    const groups = this.groupItemsByStation(order.items);
+    if (groups.length === 0) {
+      this.logger.warn(`Order ${orderId} has no items to ticket`);
+      return;
+    }
+
+    const maxAttempts = 3;
+    let created = false;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxAttempts && !created; attempt += 1) {
+      try {
+        await this.prisma.$transaction((tx) =>
+          this.createTicketsForOrder(tx, tenantId, orderId, groups),
+        );
+        created = true;
+      } catch (error) {
+        if (!this.isTicketNumberConflict(error)) {
+          throw error;
+        }
+        lastError = error;
+        this.logger.warn(
+          `Kitchen ticket number conflict for order ${orderId}, retrying (${attempt}/${maxAttempts})`,
+        );
+      }
+    }
+    if (!created) {
+      throw lastError ?? new Error(`Failed to create kitchen tickets for order ${orderId}`);
+    }
+
+    await this.queueService.addJob('kitchen', 'order.confirmed.kds', {
+      tenantId,
+      payload: { orderId },
+    });
+  }
+
+  private groupItemsByStation(
+    items: Array<{ id: string; product: { stationId: string | null } }>,
+  ): Array<{
+    stationId: string | null;
+    items: Array<{ id: string; product: { stationId: string | null } }>;
+  }> {
+    const byStation = new Map<string, typeof items>();
+    for (const item of items) {
+      const key = item.product.stationId ?? '__unassigned__';
+      if (!byStation.has(key)) byStation.set(key, []);
+      byStation.get(key)!.push(item);
+    }
+    return Array.from(byStation, ([key, stationItems]) => ({
+      stationId: key === '__unassigned__' ? null : key,
+      items: stationItems,
+    }));
+  }
+
+  private async createTicketsForOrder(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    orderId: string,
+    groups: Array<{
+      stationId: string | null;
+      items: Array<{ id: string; product: { stationId: string | null } }>;
+    }>,
+  ): Promise<void> {
+    for (const group of groups) {
+      const ticketCount = await tx.kitchenTicket.count({ where: { orderId } });
+      const ticket = await tx.kitchenTicket.create({
+        data: {
+          orderId,
+          tenantId,
+          stationId: group.stationId,
+          ticketNumber: ticketCount + 1,
+          status: PrismaKitchenStatus.PENDING,
+          priority: 0,
+        },
+      });
+
+      for (const item of group.items) {
+        await tx.kitchenTicketItem.create({
+          data: {
+            ticketId: ticket.id,
+            orderItemId: item.id,
+            tenantId,
+            stationId: group.stationId,
+            status: TicketItemStatus.PENDING,
+            sortOrder: 0,
+          },
+        });
+      }
+
+      const fullTicket = await tx.kitchenTicket.findUnique({
+        where: { id: ticket.id },
         include: {
           items: {
-            where: { voidedAt: null },
             include: {
-              product: { select: { id: true, stationId: true } },
+              orderItem: {
+                select: {
+                  productName: true,
+                  variantName: true,
+                  quantity: true,
+                  preparationNotes: true,
+                },
+              },
+              station: { select: { name: true, color: true } },
             },
           },
         },
       });
 
-      if (!order) {
-        this.logger.warn(`Order ${orderId} not found for KDS ticket creation`);
-        return;
-      }
+      this.kdsGateway.broadcastTicketUpdate(tenantId, 'ticket.created', fullTicket);
+      this.metricsService.incrementKitchenTickets();
+    }
+  }
 
-      const itemsByStation = new Map<string, typeof order.items>();
-      const unassignedItems: typeof order.items = [];
-
-      for (const item of order.items) {
-        const stationId = item.product.stationId;
-        if (stationId) {
-          if (!itemsByStation.has(stationId)) itemsByStation.set(stationId, []);
-          itemsByStation.get(stationId)!.push(item);
-        } else {
-          unassignedItems.push(item);
-        }
-      }
-
-      await this.prisma.$transaction(async (tx) => {
-        for (const [stationId, stationItems] of itemsByStation) {
-          const ticketCount = await tx.kitchenTicket.count({
-            where: { orderId },
-          });
-
-          const ticket = await tx.kitchenTicket.create({
-            data: {
-              orderId,
-              tenantId,
-              stationId,
-              ticketNumber: ticketCount + 1,
-              status: PrismaKitchenStatus.PENDING,
-              priority: 0,
-            },
-          });
-
-          for (const item of stationItems) {
-            await tx.kitchenTicketItem.create({
-              data: {
-                ticketId: ticket.id,
-                orderItemId: item.id,
-                tenantId,
-                stationId,
-                status: TicketItemStatus.PENDING,
-                sortOrder: 0,
-              },
-            });
-          }
-
-          const fullTicket = await tx.kitchenTicket.findUnique({
-            where: { id: ticket.id },
-            include: {
-              items: {
-                include: {
-                  orderItem: {
-                    select: {
-                      productName: true,
-                      variantName: true,
-                      quantity: true,
-                      preparationNotes: true,
-                    },
-                  },
-                  station: { select: { name: true, color: true } },
-                },
-              },
-            },
-          });
-
-          this.kdsGateway.broadcastTicketUpdate(tenantId, 'ticket.created', fullTicket);
-          this.metricsService.incrementKitchenTickets();
-        }
-
-        if (unassignedItems.length > 0) {
-          const ticketCount = await tx.kitchenTicket.count({
-            where: { orderId },
-          });
-
-          const ticket = await tx.kitchenTicket.create({
-            data: {
-              orderId,
-              tenantId,
-              stationId: null,
-              ticketNumber: ticketCount + 1,
-              status: PrismaKitchenStatus.PENDING,
-              priority: 0,
-            },
-          });
-
-          for (const item of unassignedItems) {
-            await tx.kitchenTicketItem.create({
-              data: {
-                ticketId: ticket.id,
-                orderItemId: item.id,
-                tenantId,
-                stationId: null,
-                status: TicketItemStatus.PENDING,
-                sortOrder: 0,
-              },
-            });
-          }
-
-          const fullTicket = await tx.kitchenTicket.findUnique({
-            where: { id: ticket.id },
-            include: {
-              items: {
-                include: {
-                  orderItem: {
-                    select: {
-                      productName: true,
-                      variantName: true,
-                      quantity: true,
-                      preparationNotes: true,
-                    },
-                  },
-                  station: { select: { name: true, color: true } },
-                },
-              },
-            },
-          });
-
-          this.kdsGateway.broadcastTicketUpdate(tenantId, 'ticket.created', fullTicket);
-          this.metricsService.incrementKitchenTickets();
-        }
-      });
-
-      await this.queueService.addJob('kitchen', 'order.confirmed.kds', {
-        tenantId,
-        payload: { orderId },
-      });
-    } catch (error) {
-      this.logger.error(
-        `Failed to handle order.confirmed for ${payload.orderId}`,
-        error instanceof Error ? error.stack : String(error),
+  private isTicketNumberConflict(error: unknown): boolean {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const target = error.meta?.target;
+      return (
+        Array.isArray(target) &&
+        (target as string[]).every((field) => ['orderId', 'ticketNumber'].includes(field))
       );
     }
+    return false;
   }
 }

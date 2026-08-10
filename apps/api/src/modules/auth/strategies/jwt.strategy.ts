@@ -56,7 +56,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, role: true, tenantId: true, status: true },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        tenantId: true,
+        status: true,
+        lockedUntil: true,
+        deletedAt: true,
+      },
     });
 
     if (!user) {
@@ -65,6 +73,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (user.status !== 'ACTIVE') {
       throw new UnauthorizedException('Account is not active');
+    }
+
+    if (user.deletedAt) {
+      throw new UnauthorizedException('Account has been deleted');
+    }
+
+    if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+      throw new UnauthorizedException('Account is locked');
     }
 
     if (user.tenantId) {
