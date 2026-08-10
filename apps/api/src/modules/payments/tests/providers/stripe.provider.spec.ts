@@ -211,6 +211,92 @@ describe('StripeProvider', () => {
     });
   });
 
+  describe('test mode', () => {
+    it('should throw when constructed in test mode without a secret key', () => {
+      expect(() => new StripeProvider({ mode: 'test' })).toThrow(/secretKey/);
+    });
+
+    it('should report test mode and call the real Stripe API, not return mock data', async () => {
+      const captured: Array<Record<string, unknown>> = [];
+      const http = {
+        request: async (opts: Record<string, unknown>) => {
+          captured.push(opts);
+          return {
+            data: { id: 'pi_test_1', client_secret: 'cs_test_1', status: 'requires_confirmation' },
+          };
+        },
+      } as never;
+
+      const provider = new StripeProvider({
+        mode: 'test',
+        secretKey: 'sk_test_123',
+        webhookSecret: 'whsec_test',
+        http,
+      });
+      expect(provider.mode).toBe('test');
+
+      await provider.initialize({ tenantId: 'tenant-1', settings: {} });
+      const result = await provider.createPaymentIntent(
+        { amount: 1234, currency: 'USD', description: 'Test' },
+        'idem-test-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({
+        id: 'pi_test_1',
+        clientSecret: 'cs_test_1',
+        status: 'requires_confirmation',
+      });
+
+      const req = captured[0] as { headers: Record<string, string>; data: string };
+      expect(req.headers.Authorization).toBe('Bearer sk_test_123');
+      expect(req.headers['Idempotency-Key']).toBe('idem-test-1');
+      expect(req.data).toContain('amount=1234');
+    });
+
+    it('should hit the Stripe balance endpoint for health checks in test mode', async () => {
+      const captured: Array<Record<string, unknown>> = [];
+      const http = {
+        request: async (opts: Record<string, unknown>) => {
+          captured.push(opts);
+          return { data: { available: [] } };
+        },
+      } as never;
+
+      const provider = new StripeProvider({
+        mode: 'test',
+        secretKey: 'sk_test_123',
+        webhookSecret: 'whsec_test',
+        http,
+      });
+      await provider.initialize({ tenantId: 'tenant-1', settings: {} });
+
+      const health = await provider.healthCheck();
+      expect(health.success).toBe(true);
+      expect(health.data?.status).toBe('healthy');
+
+      const req = captured[0] as { url: string };
+      expect(req.url).toBe('/v1/balance');
+    });
+
+    it('should map confirmed intent status in test mode', async () => {
+      const http = {
+        request: async () => ({ data: { id: 'pi_test_1', status: 'succeeded' } }),
+      } as never;
+      const provider = new StripeProvider({
+        mode: 'test',
+        secretKey: 'sk_test_123',
+        webhookSecret: 'whsec_test',
+        http,
+      });
+      await provider.initialize({ tenantId: 'tenant-1', settings: {} });
+
+      const result = await provider.confirmPayment('pi_test_1');
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({ status: 'succeeded', transactionId: 'pi_test_1' });
+    });
+  });
+
   describe('verifyWebhookSignature', () => {
     it('should accept a valid Stripe signature', () => {
       const secret = 'whsec_test';

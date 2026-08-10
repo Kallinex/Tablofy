@@ -98,4 +98,17 @@ describe('env.validation', () => {
       ),
     ).toThrow(/change-this/);
   });
+
+  it('accepts PAYMENTS_MODE=test', () => {
+    expect(() => validate(baseEnv({ PAYMENTS_MODE: 'test' }))).not.toThrow();
+  });
+
+  it('accepts PAYMENTS_MODE=mock and PAYMENTS_MODE=live', () => {
+    expect(() => validate(baseEnv({ PAYMENTS_MODE: 'mock' }))).not.toThrow();
+    expect(() => validate(baseEnv({ PAYMENTS_MODE: 'live' }))).not.toThrow();
+  });
+
+  it('rejects an unknown PAYMENTS_MODE', () => {
+    expect(() => validate(baseEnv({ PAYMENTS_MODE: 'staging' }))).toThrow(/PAYMENTS_MODE/);
+  });
 });

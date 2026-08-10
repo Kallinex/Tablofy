@@ -17,10 +17,10 @@ import { CommonModule } from '../../common/common.module';
       provide: 'STRIPE_PROVIDER_OPTIONS',
       useFactory: (config: ConfigService) => ({
         mode: (() => {
-          const mode = config.get<'mock' | 'live'>('payments.mode', 'mock');
-          return mode === 'live' && !config.get<string>('payments.stripeSecretKey', '')
-            ? 'mock'
-            : mode;
+          const mode = config.get<'mock' | 'test' | 'live'>('payments.mode', 'mock');
+          return mode === 'mock' || config.get<string>('payments.stripeSecretKey', '')
+            ? mode
+            : 'mock';
         })(),
         secretKey: config.get<string>('payments.stripeSecretKey', ''),
         webhookSecret: config.get<string>('payments.stripeWebhookSecret', ''),
@@ -31,7 +31,7 @@ import { CommonModule } from '../../common/common.module';
     {
       provide: StripeProvider,
       useFactory: (options: {
-        mode: 'mock' | 'live';
+        mode: 'mock' | 'test' | 'live';
         secretKey: string;
         webhookSecret: string;
         apiBase?: string;
@@ -42,10 +42,10 @@ import { CommonModule } from '../../common/common.module';
       provide: 'PAYMOB_PROVIDER_OPTIONS',
       useFactory: (config: ConfigService) => ({
         mode: (() => {
-          const mode = config.get<'mock' | 'live'>('payments.mode', 'mock');
-          return mode === 'live' && !config.get<string>('payments.paymobApiKey', '')
-            ? 'mock'
-            : mode;
+          const mode = config.get<'mock' | 'test' | 'live'>('payments.mode', 'mock');
+          return mode === 'live' && config.get<string>('payments.paymobApiKey', '')
+            ? 'live'
+            : 'mock';
         })(),
         apiKey: config.get<string>('payments.paymobApiKey', ''),
         integrationId: config.get<number>('payments.paymobIntegrationId', 0),

@@ -1,6 +1,6 @@
 import { registerAs } from '@nestjs/config';
 
-export type PaymentsMode = 'mock' | 'live';
+export type PaymentsMode = 'mock' | 'test' | 'live';
 
 export interface PaymentsConfig {
   mode: PaymentsMode;
@@ -18,9 +18,14 @@ export const DEFAULT_PAYMOB_API_BASE = 'https://accept.paymob.com/api';
 
 export default registerAs('payments', (): PaymentsConfig => {
   const explicitMode = (process.env.PAYMENTS_MODE || '').toLowerCase();
-  if (explicitMode !== '' && explicitMode !== 'mock' && explicitMode !== 'live') {
+  if (
+    explicitMode !== '' &&
+    explicitMode !== 'mock' &&
+    explicitMode !== 'test' &&
+    explicitMode !== 'live'
+  ) {
     throw new Error(
-      `Invalid PAYMENTS_MODE "${explicitMode}". Use "mock" (sandbox, dev/test only) or "live".`,
+      `Invalid PAYMENTS_MODE "${explicitMode}". Use "mock" (sandbox, dev/test only), "test" (Stripe test keys), or "live".`,
     );
   }
 
@@ -37,6 +42,12 @@ export default registerAs('payments', (): PaymentsConfig => {
     );
   }
 
+  if (process.env.NODE_ENV === 'production' && mode === 'test') {
+    throw new Error(
+      'PAYMENTS_MODE=test is forbidden in production (Stripe test keys must never be used in a production environment). Set PAYMENTS_MODE=live and provide real gateway credentials before deploying.',
+    );
+  }
+
   if (mode === 'live') {
     if (!process.env.STRIPE_SECRET_KEY && !process.env.PAYMOB_API_KEY) {
       throw new Error(
@@ -46,6 +57,15 @@ export default registerAs('payments', (): PaymentsConfig => {
     if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.startsWith('sk_test')) {
       throw new Error(
         'PAYMENTS_MODE=live forbids Stripe test keys (sk_test_*). Use a live secret key.',
+      );
+    }
+  }
+
+  if (mode === 'test') {
+    const stripeKey = process.env.STRIPE_SECRET_KEY || '';
+    if (!stripeKey.startsWith('sk_test')) {
+      throw new Error(
+        'PAYMENTS_MODE=test requires a Stripe TEST key (STRIPE_SECRET_KEY must start with "sk_test").',
       );
     }
   }

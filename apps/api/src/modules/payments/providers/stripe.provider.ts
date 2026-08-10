@@ -14,7 +14,7 @@ import {
 } from '../../integrations/interfaces/integration-provider.interface';
 import { IntegrationProviderType } from '@tablofy/shared/types';
 
-export type StripeMode = 'mock' | 'live';
+export type StripeMode = 'mock' | 'test' | 'live';
 
 const STRIPE_REFUND_REASONS = ['duplicate', 'fraudulent', 'requested_by_customer'] as const;
 
@@ -37,8 +37,8 @@ export class StripeProvider implements PaymentProvider {
 
   constructor(@Optional() options: StripeProviderOptions = {}) {
     const mode = options.mode ?? 'mock';
-    if (mode === 'live' && !options.secretKey) {
-      throw new Error('StripeProvider: live mode requires a secretKey');
+    if (mode !== 'mock' && !options.secretKey) {
+      throw new Error(`StripeProvider: ${mode} mode requires a secretKey`);
     }
     this.options = { mode, apiBase: 'https://api.stripe.com', ...options };
     this.http = options.http ?? axios.create({ baseURL: this.options.apiBase, timeout: 15000 });
@@ -48,8 +48,8 @@ export class StripeProvider implements PaymentProvider {
     return this.options.mode ?? 'mock';
   }
 
-  private isLive(): boolean {
-    return this.mode === 'live';
+  private isReal(): boolean {
+    return this.mode !== 'mock';
   }
 
   private async authedRequest<T>(
@@ -98,15 +98,15 @@ export class StripeProvider implements PaymentProvider {
     }
     this.initialized = true;
     this.logger.log(
-      `StripeProvider initialized (mode=${this.mode}${this.isLive() ? '' : ' - MOCK, not safe for production'})`,
+      `StripeProvider initialized (mode=${this.mode}${this.isReal() ? '' : ' - MOCK, not safe for production'})`,
     );
   }
 
   async validateConnection(): Promise<IntegrationResult<boolean>> {
-    if (this.isLive() && !this.initialized) {
+    if (this.isReal() && !this.initialized) {
       return { success: false, error: 'Provider not initialized', statusCode: 500 };
     }
-    if (!this.isLive()) {
+    if (!this.isReal()) {
       return { success: true, data: true };
     }
     try {
@@ -123,10 +123,10 @@ export class StripeProvider implements PaymentProvider {
 
   async healthCheck(): Promise<IntegrationResult<{ status: string; latencyMs: number }>> {
     const start = Date.now();
-    if (this.isLive() && !this.initialized) {
+    if (this.isReal() && !this.initialized) {
       return { success: false, error: 'Provider not initialized', statusCode: 500 };
     }
-    if (!this.isLive()) {
+    if (!this.isReal()) {
       return { success: true, data: { status: 'mock', latencyMs: Date.now() - start } };
     }
     try {
@@ -145,10 +145,10 @@ export class StripeProvider implements PaymentProvider {
     data: PaymentIntentData,
     idempotencyKey?: string,
   ): Promise<IntegrationResult<{ id: string; clientSecret?: string; status: string }>> {
-    if (this.isLive() && !this.initialized) {
+    if (this.isReal() && !this.initialized) {
       return { success: false, error: 'Provider not initialized', statusCode: 500 };
     }
-    if (!this.isLive()) {
+    if (!this.isReal()) {
       return {
         success: true,
         data: {
@@ -197,10 +197,10 @@ export class StripeProvider implements PaymentProvider {
     paymentIntentId: string,
     idempotencyKey?: string,
   ): Promise<IntegrationResult<ConfirmedPayment>> {
-    if (this.isLive() && !this.initialized) {
+    if (this.isReal() && !this.initialized) {
       return { success: false, error: 'Provider not initialized', statusCode: 500 };
     }
-    if (!this.isLive()) {
+    if (!this.isReal()) {
       return {
         success: true,
         data: { status: 'succeeded', transactionId: `txn_mock_${Date.now()}` },
@@ -233,10 +233,10 @@ export class StripeProvider implements PaymentProvider {
     data: RefundData,
     idempotencyKey?: string,
   ): Promise<IntegrationResult<{ id: string; status: string }>> {
-    if (this.isLive() && !this.initialized) {
+    if (this.isReal() && !this.initialized) {
       return { success: false, error: 'Provider not initialized', statusCode: 500 };
     }
-    if (!this.isLive()) {
+    if (!this.isReal()) {
       return {
         success: true,
         data: { id: `re_mock_${Date.now()}`, status: 'succeeded' },
@@ -271,10 +271,10 @@ export class StripeProvider implements PaymentProvider {
     paymentIntentId: string,
     idempotencyKey?: string,
   ): Promise<IntegrationResult<{ id: string; status: string }>> {
-    if (this.isLive() && !this.initialized) {
+    if (this.isReal() && !this.initialized) {
       return { success: false, error: 'Provider not initialized', statusCode: 500 };
     }
-    if (!this.isLive()) {
+    if (!this.isReal()) {
       return {
         success: true,
         data: { id: `pi_canceled_${Date.now()}`, status: 'canceled' },
@@ -301,10 +301,10 @@ export class StripeProvider implements PaymentProvider {
   async getPaymentStatus(
     transactionId: string,
   ): Promise<IntegrationResult<{ status: string; amount: number; currency: string }>> {
-    if (this.isLive() && !this.initialized) {
+    if (this.isReal() && !this.initialized) {
       return { success: false, error: 'Provider not initialized', statusCode: 500 };
     }
-    if (!this.isLive()) {
+    if (!this.isReal()) {
       return {
         success: true,
         data: { status: 'succeeded', amount: 0, currency: 'usd' },

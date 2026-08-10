@@ -130,7 +130,7 @@ class EnvironmentVariables {
   METRICS_COLLECT_INTERVAL_MS?: number;
 
   @IsOptional()
-  @IsEnum(['mock', 'live'])
+  @IsEnum(['mock', 'test', 'live'])
   PAYMENTS_MODE?: string;
 
   @IsOptional()
