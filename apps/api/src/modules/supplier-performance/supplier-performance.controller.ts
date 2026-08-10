@@ -1,11 +1,13 @@
 import { Controller, Get, Post, Param, Query, Body } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { SupplierPerformanceService } from './supplier-performance.service';
 import { CreatePerformanceDto } from './dto/create-performance.dto';
 import { QueryPerformanceDto } from './dto/query-performance.dto';
 
 @Controller('supplier-performance')
+@Permissions('inventory:read')
 export class SupplierPerformanceController {
   constructor(private readonly supplierPerformanceService: SupplierPerformanceService) {}
 

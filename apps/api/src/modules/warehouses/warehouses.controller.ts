@@ -11,6 +11,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { WarehousesService } from './warehouses.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
@@ -23,6 +24,7 @@ import { UpdateBinDto } from './dto/update-bin.dto';
 import { CreateWarehouseBranchDto } from './dto/create-warehouse-branch.dto';
 
 @Controller('warehouses')
+@Permissions('inventory:read')
 export class WarehousesController {
   constructor(private readonly warehousesService: WarehousesService) {}
 

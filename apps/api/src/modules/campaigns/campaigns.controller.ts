@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { CampaignsService } from './campaigns.service';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
@@ -127,6 +128,7 @@ export class CampaignsController {
     return this.campaignsService.getPromotionStats(tenantId);
   }
 
+  @Permissions('customers:read')
   @Get('promotions/code/:code')
   async getPromotionByCode(@Param('code') code: string, @CurrentUser() user: CurrentUserData) {
     const tenantId = user.tenantId!;
@@ -159,6 +161,7 @@ export class CampaignsController {
     return { deleted: true };
   }
 
+  @Permissions('customers:read')
   @Post('promotions/validate')
   async validatePromotion(
     @Body('code') code: string,

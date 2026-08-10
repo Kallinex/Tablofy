@@ -6,8 +6,10 @@ import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
 import { Queue } from 'bullmq';
+import { UserRole, UserStatus } from '@prisma/client';
 import { QueueService } from '../../modules/queues/queue.service';
 import { RedisService } from '../../redis/redis.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { JwtPayload } from '../../modules/auth/strategies/jwt.strategy';
 
 export const BULL_BOARD_PATH = '/admin/queues';
@@ -36,6 +38,7 @@ export class BullBoardModule implements OnModuleInit {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
+    private readonly prismaService: PrismaService,
   ) {
     this.adapter = new ExpressAdapter();
     this.adapter.setBasePath(BULL_BOARD_PATH);
@@ -100,7 +103,7 @@ export class BullBoardModule implements OnModuleInit {
           return;
         }
 
-        if (payload.role !== 'OWNER') {
+        if (!(await this.isAuthorized(payload))) {
           res.status(403).json({ statusCode: 403, message: 'Forbidden resource' });
           return;
         }
@@ -115,6 +118,27 @@ export class BullBoardModule implements OnModuleInit {
         res.status(401).json({ statusCode: 401, message: 'Authentication failed' });
       }
     };
+  }
+
+  private async isAuthorized(payload: JwtPayload): Promise<boolean> {
+    try {
+      const user = await this.prismaService.user.findUnique({
+        where: { id: payload.sub },
+        select: { id: true, role: true, status: true, tenantId: true, deletedAt: true },
+      });
+
+      if (!user || user.deletedAt !== null) {
+        return false;
+      }
+
+      return user.role === UserRole.SUPER_ADMIN && user.status === UserStatus.ACTIVE;
+    } catch (error) {
+      this.logger.error(
+        'Bull Board authorization lookup failed',
+        error instanceof Error ? error.stack : String(error),
+      );
+      return false;
+    }
   }
 }
 

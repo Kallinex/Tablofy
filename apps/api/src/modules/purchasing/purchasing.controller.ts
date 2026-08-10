@@ -14,6 +14,7 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { PurchasingService } from './purchasing.service';
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto';
@@ -42,18 +43,21 @@ export class PurchasingController {
     return this.purchasingService.createPO(dto, user.tenantId!, user.id);
   }
 
+  @Permissions('inventory:read')
   @Get('purchase-orders')
   @ApiOperation({ summary: 'List purchase orders' })
   async listPOs(@Query() query: QueryPurchaseOrderDto, @CurrentUser() user: CurrentUserData) {
     return this.purchasingService.listPOs(user.tenantId!, query);
   }
 
+  @Permissions('inventory:read')
   @Get('purchase-orders/stats')
   @ApiOperation({ summary: 'Get purchase order statistics' })
   async getPOStats(@CurrentUser() user: CurrentUserData) {
     return this.purchasingService.getPOStats(user.tenantId!);
   }
 
+  @Permissions('inventory:read')
   @Get('purchase-orders/:id')
   @ApiOperation({ summary: 'Get purchase order by ID' })
   async getPO(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
@@ -140,12 +144,14 @@ export class PurchasingController {
     return this.purchasingService.createGRN(dto, user.tenantId!, user.id);
   }
 
+  @Permissions('inventory:read')
   @Get('goods-receipts')
   @ApiOperation({ summary: 'List goods receipts' })
   async listGRNs(@Query() query: QueryGoodsReceiptDto, @CurrentUser() user: CurrentUserData) {
     return this.purchasingService.listGRNs(user.tenantId!, query);
   }
 
+  @Permissions('inventory:read')
   @Get('goods-receipts/:id')
   @ApiOperation({ summary: 'Get goods receipt by ID' })
   async getGRN(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {

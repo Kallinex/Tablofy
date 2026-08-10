@@ -485,21 +485,82 @@ export class RecipesService {
     });
   }
 
+  async isOrderCompletedForDeduction(orderId: string, tenantId: string): Promise<boolean> {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, tenantId, deletedAt: null },
+      select: { status: true },
+    });
+    return order?.status === 'COMPLETED';
+  }
+
+  private buildIdempotentReport(
+    movements: Array<{
+      inventoryItemId: string;
+      quantity: Prisma.Decimal | number | string;
+      unitCost: Prisma.Decimal | number | string | null;
+      totalCost: Prisma.Decimal | number | string | null;
+      inventoryItem?: { id: string; name: string } | null;
+    }>,
+    orderId: string,
+    tenantId: string,
+  ): DeductionReport {
+    const items = movements.map((m) => ({
+      inventoryItemId: m.inventoryItemId,
+      inventoryItemName: m.inventoryItem?.name ?? '',
+      quantityDeducted: Math.abs(Number(m.quantity)),
+      unitCost: Number(m.unitCost ?? 0),
+      totalCost: Math.abs(Number(m.totalCost ?? 0)),
+      wasPartial: false,
+      shortfall: 0,
+    }));
+    return {
+      orderId,
+      tenantId,
+      items,
+      totalDeducted: items.reduce((s, i) => s + i.quantityDeducted, 0),
+      totalCost: items.reduce((s, i) => s + i.totalCost, 0),
+      timestamp: new Date(),
+    };
+  }
+
   async deductInventoryForOrder(orderId: string, tenantId: string): Promise<DeductionReport> {
     const order = await this.prisma.order.findFirst({
-      where: { id: orderId, tenantId },
+      where: { id: orderId, tenantId, deletedAt: null },
     });
     if (!order) throw new NotFoundException('Order not found');
 
+    const blockedStatuses = ['DRAFT', 'CANCELLED', 'REFUNDED', 'VOIDED'];
+    if (blockedStatuses.includes(order.status)) {
+      throw new BadRequestException(`Cannot deduct inventory for order in ${order.status} status`);
+    }
+
     const orderItems = await this.prisma.orderItem.findMany({
-      where: { orderId, tenantId },
+      where: { orderId, tenantId, voidedAt: null, deletedAt: null },
     });
 
     if (orderItems.length === 0) {
       throw new BadRequestException('Order has no items to deduct');
     }
 
-    const productIds = orderItems.map((oi) => oi.productId);
+    const existingMovements = await this.prisma.stockMovement.findMany({
+      where: {
+        referenceType: 'ORDER',
+        referenceId: orderId,
+        tenantId,
+        type: StockMovementType.CONSUMPTION,
+      },
+      include: { inventoryItem: { select: { id: true, name: true } } },
+    });
+    if (existingMovements.length > 0) {
+      return this.buildIdempotentReport(existingMovements, orderId, tenantId);
+    }
+
+    const quantityByProduct = new Map<string, number>();
+    for (const oi of orderItems) {
+      quantityByProduct.set(oi.productId, (quantityByProduct.get(oi.productId) ?? 0) + oi.quantity);
+    }
+
+    const productIds = [...quantityByProduct.keys()];
     const recipes = await this.prisma.recipe.findMany({
       where: { productId: { in: productIds }, tenantId, deletedAt: null, isActive: true },
       include: {
@@ -534,11 +595,13 @@ export class RecipesService {
     >();
 
     for (const recipe of recipes) {
+      const orderedQty = recipe.productId ? (quantityByProduct.get(recipe.productId) ?? 0) : 0;
+      if (orderedQty <= 0) continue;
       for (const item of recipe.items) {
         if (!item.inventoryItem) continue;
         const invId = item.inventoryItemId!;
         const existing = deductionMap.get(invId);
-        const quantityNeeded = Number(item.quantity);
+        const quantityNeeded = Number(item.quantity) * orderedQty;
         if (existing) {
           existing.totalQuantityNeeded += quantityNeeded;
         } else {
@@ -552,11 +615,38 @@ export class RecipesService {
       }
     }
 
+    if (deductionMap.size === 0) {
+      throw new BadRequestException('No inventory consumption required for ordered products');
+    }
+
     const reportItems: DeductionReport['items'] = [];
     let totalDeducted = 0;
     let totalCost = 0;
 
+    let alreadyDeducted: DeductionReport | null = null;
+
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT "id"
+        FROM "orders"
+        WHERE "id" = ${orderId} AND "tenantId" = ${tenantId}
+        FOR UPDATE
+      `;
+
+      const inTxExisting = await tx.stockMovement.findFirst({
+        where: {
+          referenceType: 'ORDER',
+          referenceId: orderId,
+          tenantId,
+          type: StockMovementType.CONSUMPTION,
+        },
+        include: { inventoryItem: { select: { id: true, name: true } } },
+      });
+      if (inTxExisting) {
+        alreadyDeducted = this.buildIdempotentReport([inTxExisting], orderId, tenantId);
+        return;
+      }
+
       for (const [, entry] of deductionMap) {
         const inventoryItem = await tx.inventoryItem.findUnique({
           where: { id: entry.inventoryItemId },
@@ -612,6 +702,10 @@ export class RecipesService {
         totalCost += totalCostEntry;
       }
     });
+
+    if (alreadyDeducted) {
+      return alreadyDeducted;
+    }
 
     const report: DeductionReport = {
       orderId,

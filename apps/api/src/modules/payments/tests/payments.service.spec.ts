@@ -7,8 +7,8 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
 import { MetricsService } from '../../../common/metrics/metrics.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { PaymentStatus, PaymentMethod } from '@prisma/client';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { PaymentStatus, PaymentMethod, Prisma } from '@prisma/client';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
 import { PartialRefundDto } from '../dto/partial-refund.dto';
 import { VoidPaymentDto } from '../dto/void-payment.dto';
@@ -38,6 +38,7 @@ describe('PaymentsService', () => {
     amount: 50,
     tip: 5,
     status: PaymentStatus.COMPLETED,
+    amountRefunded: 0,
     reference: null,
     gatewayRef: null,
     gatewayData: null,
@@ -197,6 +198,93 @@ describe('PaymentsService', () => {
       expect(result).toBeDefined();
       expect(metrics.incrementPaymentsCompleted).toHaveBeenCalled();
     });
+
+    it('should reject charge when the order version CAS conflicts (concurrent update)', async () => {
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            order: {
+              updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+              update: jest.fn(),
+            },
+            payment: { create: jest.fn().mockResolvedValue(mockPayment) },
+            orderStatusHistory: { create: jest.fn() },
+          };
+          return cb(tx);
+        },
+      );
+
+      const dto: CreatePaymentDto = {
+        orderId: 'order-1',
+        method: PaymentMethod.CASH,
+        amount: 50,
+      };
+
+      await expect(service.charge('order-1', dto, 'tenant-1', 'user-1')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('should replay the existing payment when a unique-violation race surfaces (P2002)', async () => {
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+      prisma.$transaction.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError(
+          'Unique constraint failed on the fields: (`tenantId`,`idempotencyKey`)',
+          {
+            code: 'P2002',
+            clientVersion: 'test',
+            meta: { target: ['tenantId', 'idempotencyKey'] },
+          },
+        ),
+      );
+      prisma.payment.findFirst.mockResolvedValue({
+        ...mockPayment,
+        orderId: 'order-1',
+        method: PaymentMethod.CASH,
+        status: PaymentStatus.COMPLETED,
+        idempotencyKey: 'idem-1',
+      });
+
+      const dto: CreatePaymentDto = {
+        orderId: 'order-1',
+        method: PaymentMethod.CASH,
+        amount: 50,
+        idempotencyKey: 'idem-1',
+      };
+
+      const result = await service.charge('order-1', dto, 'tenant-1', 'user-1');
+      expect(result.status).toBe(PaymentStatus.COMPLETED);
+      expect(result.orderId).toBe('order-1');
+      expect(prisma.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a P2002 replay whose idempotency key maps to a different order', async () => {
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+      prisma.$transaction.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      );
+      prisma.payment.findFirst.mockResolvedValue({
+        ...mockPayment,
+        orderId: 'order-2',
+        idempotencyKey: 'idem-1',
+      });
+
+      const dto: CreatePaymentDto = {
+        orderId: 'order-1',
+        method: PaymentMethod.CASH,
+        amount: 50,
+        idempotencyKey: 'idem-1',
+      };
+
+      await expect(service.charge('order-1', dto, 'tenant-1', 'user-1')).rejects.toThrow(
+        ConflictException,
+      );
+    });
   });
 
   describe('refund', () => {
@@ -206,7 +294,8 @@ describe('PaymentsService', () => {
         async (cb: (tx: Record<string, unknown>) => unknown) => {
           const tx = {
             payment: {
-              update: jest
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              findUnique: jest
                 .fn()
                 .mockResolvedValue({ ...mockPayment, status: PaymentStatus.REFUNDED }),
             },
@@ -241,6 +330,51 @@ describe('PaymentsService', () => {
         NotFoundException,
       );
     });
+
+    it('should reject a full refund when a partial refund already exists (D2)', async () => {
+      prisma.payment.findFirst.mockResolvedValue({
+        ...mockPayment,
+        amount: 100,
+        amountRefunded: 40,
+        status: PaymentStatus.PARTIALLY_REFUNDED,
+      });
+
+      await expect(service.refund('payment-1', 'tenant-1', 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should set amountRefunded to the full amount on refund (D2)', async () => {
+      prisma.payment.findFirst.mockResolvedValue(mockPayment);
+      let updateData: Record<string, unknown> | undefined;
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const updateMany = jest.fn().mockImplementation(({ data }) => {
+            updateData = data;
+            return { count: 1 };
+          });
+          const tx = {
+            payment: {
+              updateMany,
+              findUnique: jest.fn().mockResolvedValue({
+                ...mockPayment,
+                status: PaymentStatus.REFUNDED,
+              }),
+            },
+            order: { update: jest.fn().mockResolvedValue({}) },
+          };
+          return cb(tx);
+        },
+      );
+
+      await service.refund('payment-1', 'tenant-1', 'user-1');
+
+      expect(updateData).toMatchObject({
+        status: PaymentStatus.REFUNDED,
+        amountRefunded: 50,
+      });
+    });
   });
 
   describe('partialRefund', () => {
@@ -250,7 +384,8 @@ describe('PaymentsService', () => {
         async (cb: (tx: Record<string, unknown>) => unknown) => {
           const tx = {
             payment: {
-              update: jest.fn().mockResolvedValue({
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              findUnique: jest.fn().mockResolvedValue({
                 ...mockPayment,
                 status: PaymentStatus.PARTIALLY_REFUNDED,
               }),
@@ -275,6 +410,172 @@ describe('PaymentsService', () => {
       await expect(service.partialRefund('payment-1', dto, 'tenant-1', 'user-1')).rejects.toThrow(
         BadRequestException,
       );
+    });
+
+    it('should reject cumulative refund exceeding remaining balance (D2)', async () => {
+      prisma.payment.findFirst.mockResolvedValue({
+        ...mockPayment,
+        amount: 100,
+        amountRefunded: 60,
+      });
+
+      const dto: PartialRefundDto = { amount: 50, reason: 'Over refund' };
+      await expect(service.partialRefund('payment-1', dto, 'tenant-1', 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should allow a refund equal to the remaining balance', async () => {
+      prisma.payment.findFirst.mockResolvedValue({
+        ...mockPayment,
+        amount: 100,
+        amountRefunded: 60,
+      });
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            payment: {
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              findUnique: jest.fn().mockResolvedValue({
+                ...mockPayment,
+                amount: 100,
+                amountRefunded: 100,
+                status: PaymentStatus.PARTIALLY_REFUNDED,
+              }),
+            },
+            order: { update: jest.fn().mockResolvedValue({}) },
+          };
+          return cb(tx);
+        },
+      );
+
+      const dto: PartialRefundDto = { amount: 40, reason: 'Remaining' };
+      await expect(
+        service.partialRefund('payment-1', dto, 'tenant-1', 'user-1'),
+      ).resolves.toBeDefined();
+    });
+
+    it('should enforce the cumulative cap inside the transaction (D2)', async () => {
+      prisma.payment.findFirst.mockResolvedValue({ ...mockPayment, amount: 100 });
+      let updateWhere: Record<string, unknown> | undefined;
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const updateMany = jest.fn().mockImplementation(({ where }) => {
+            updateWhere = where;
+            return { count: 1 };
+          });
+          const tx = {
+            payment: {
+              updateMany,
+              findUnique: jest.fn().mockResolvedValue({
+                ...mockPayment,
+                amount: 100,
+                status: PaymentStatus.PARTIALLY_REFUNDED,
+              }),
+            },
+            order: { update: jest.fn().mockResolvedValue({}) },
+          };
+          return cb(tx);
+        },
+      );
+
+      await service.partialRefund('payment-1', { amount: 20 }, 'tenant-1', 'user-1');
+
+      expect(updateWhere).toMatchObject({
+        id: 'payment-1',
+        amountRefunded: { lte: 80 },
+        status: { in: [PaymentStatus.COMPLETED, PaymentStatus.PARTIALLY_REFUNDED] },
+      });
+    });
+
+    it('should allow a partial refund equal to the remaining balance after prior partials (D3 fix)', async () => {
+      prisma.payment.findFirst.mockResolvedValue({
+        ...mockPayment,
+        amount: 100,
+        amountRefunded: 60,
+      });
+      let updateWhere: Record<string, unknown> | undefined;
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const updateMany = jest.fn().mockImplementation(({ where }) => {
+            updateWhere = where;
+            return { count: 1 };
+          });
+          const tx = {
+            payment: {
+              updateMany,
+              findUnique: jest.fn().mockResolvedValue({
+                ...mockPayment,
+                amount: 100,
+                amountRefunded: 100,
+                status: PaymentStatus.PARTIALLY_REFUNDED,
+              }),
+            },
+            order: { update: jest.fn().mockResolvedValue({}) },
+          };
+          return cb(tx);
+        },
+      );
+
+      await service.partialRefund('payment-1', { amount: 40 }, 'tenant-1', 'user-1');
+
+      expect(updateWhere).toMatchObject({
+        id: 'payment-1',
+        amountRefunded: { lte: 60 },
+      });
+    });
+
+    it('should conflict when a concurrent refund already consumed the balance (D2)', async () => {
+      prisma.payment.findFirst.mockResolvedValue({ ...mockPayment, amount: 100 });
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            payment: {
+              updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+              findUnique: jest.fn(),
+            },
+            order: { update: jest.fn().mockResolvedValue({}) },
+          };
+          return cb(tx);
+        },
+      );
+
+      await expect(
+        service.partialRefund('payment-1', { amount: 60 }, 'tenant-1', 'user-1'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should increment amountRefunded instead of leaving it stale (D2)', async () => {
+      prisma.payment.findFirst.mockResolvedValue(mockPayment);
+      let updateData: Record<string, unknown> | undefined;
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const updateMany = jest.fn().mockImplementation(({ data }) => {
+            updateData = data;
+            return { count: 1 };
+          });
+          const tx = {
+            payment: {
+              updateMany,
+              findUnique: jest.fn().mockResolvedValue({
+                ...mockPayment,
+                amountRefunded: 20,
+                status: PaymentStatus.PARTIALLY_REFUNDED,
+              }),
+            },
+            order: { update: jest.fn().mockResolvedValue({}) },
+          };
+          return cb(tx);
+        },
+      );
+
+      await service.partialRefund('payment-1', { amount: 20 }, 'tenant-1', 'user-1');
+
+      expect(updateData).toMatchObject({
+        status: PaymentStatus.PARTIALLY_REFUNDED,
+        amountRefunded: { increment: 20 },
+      });
     });
   });
 
@@ -351,6 +652,8 @@ describe('PaymentsService', () => {
               }),
             },
             order: {
+              findFirst: jest.fn().mockResolvedValue(mockOrder),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
               update: jest.fn().mockResolvedValue({}),
             },
             orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
@@ -620,6 +923,28 @@ describe('PaymentsService', () => {
       expect(result.status).toBe(PaymentStatus.COMPLETED);
       expect(prisma.payment.create).not.toHaveBeenCalled();
     });
+
+    it('should reject reuse of an idempotency key for a different order', async () => {
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+      prisma.payment.findFirst.mockResolvedValue({
+        ...mockPayment,
+        orderId: 'order-2',
+        method: PaymentMethod.CREDIT_CARD,
+        status: PaymentStatus.COMPLETED,
+        idempotencyKey: 'idem-1',
+      });
+
+      const dto: CreatePaymentDto = {
+        orderId: 'order-1',
+        method: PaymentMethod.CREDIT_CARD,
+        amount: 50,
+        idempotencyKey: 'idem-1',
+      };
+
+      await expect(service.charge('order-1', dto, 'tenant-1', 'user-1')).rejects.toThrow(
+        ConflictException,
+      );
+    });
   });
 
   describe('handleGatewayWebhook', () => {
@@ -736,6 +1061,167 @@ describe('PaymentsService', () => {
       expect(metrics.incrementPaymentsCompleted).toHaveBeenCalled();
     });
 
+    it('creates OrderStatusHistory with a system actor and null userId (FK-safe)', async () => {
+      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
+      const historyCreate = jest.fn().mockResolvedValue({});
+      webhookPrisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            order: {
+              findFirst: jest.fn().mockResolvedValue({ ...mockOrder, total: 50 }),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              update: jest.fn().mockResolvedValue({}),
+            },
+            payment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            orderStatusHistory: { create: historyCreate },
+          };
+          return cb(tx);
+        },
+      );
+
+      const payload = JSON.stringify({
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_webhook_1', amount: 5000, currency: 'usd' } },
+      });
+
+      await webhookService.handleGatewayWebhook('stripe', payload, validStripeSignature(payload));
+      expect(historyCreate).toHaveBeenCalledTimes(1);
+      const data = historyCreate.mock.calls[0][0].data;
+      expect(data.changedByUserId).toBeNull();
+      expect(data.changedBy).toBe('system');
+      expect(data.orderId).toBe('order-1');
+      expect(data.tenantId).toBe('tenant-1');
+      expect(data.toStatus).toBe('COMPLETED');
+    });
+
+    it('scopes webhook completion to the tenant owning the payment', async () => {
+      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
+      let capturedWhere: unknown;
+      webhookPrisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            order: {
+              findFirst: jest.fn().mockImplementation((args: { where: unknown }) => {
+                capturedWhere = args.where;
+                return Promise.resolve(mockOrder);
+              }),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              update: jest.fn().mockResolvedValue({}),
+            },
+            payment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          };
+          return cb(tx);
+        },
+      );
+
+      const payload = JSON.stringify({
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_webhook_1', amount: 5000, currency: 'usd' } },
+      });
+
+      await webhookService.handleGatewayWebhook('stripe', payload, validStripeSignature(payload));
+      expect(capturedWhere).toEqual({ id: 'order-1', tenantId: 'tenant-1', deletedAt: null });
+    });
+
+    it('concurrent webhook deliveries only claim and credit the payment once', async () => {
+      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
+      let claimCount = 0;
+      const historyCreate = jest.fn().mockResolvedValue({});
+      webhookPrisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          claimCount += 1;
+          const tx = {
+            order: {
+              findFirst: jest.fn().mockResolvedValue({ ...mockOrder, total: 50 }),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              update: jest.fn().mockResolvedValue({}),
+            },
+            payment: {
+              updateMany: jest
+                .fn()
+                .mockResolvedValue(claimCount === 1 ? { count: 1 } : { count: 0 }),
+            },
+            orderStatusHistory: { create: historyCreate },
+          };
+          return cb(tx);
+        },
+      );
+
+      const payload = JSON.stringify({
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_webhook_1', amount: 5000, currency: 'usd' } },
+      });
+
+      await webhookService.handleGatewayWebhook('stripe', payload, validStripeSignature(payload));
+      await webhookService.handleGatewayWebhook('stripe', payload, validStripeSignature(payload));
+      expect(historyCreate).toHaveBeenCalledTimes(1);
+      expect(metrics.incrementPaymentsCompleted).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not re-credit on duplicate sequential webhook delivery', async () => {
+      webhookPrisma.payment.findFirst
+        .mockResolvedValueOnce(pendingGatewayPayment)
+        .mockResolvedValueOnce(completedGatewayPayment);
+      webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
+      webhookPrisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            order: {
+              findFirst: jest.fn().mockResolvedValue(mockOrder),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              update: jest.fn().mockResolvedValue({}),
+            },
+            payment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          };
+          return cb(tx);
+        },
+      );
+
+      const payload = JSON.stringify({
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_webhook_1', amount: 5000, currency: 'usd' } },
+      });
+
+      await webhookService.handleGatewayWebhook('stripe', payload, validStripeSignature(payload));
+      await webhookService.handleGatewayWebhook('stripe', payload, validStripeSignature(payload));
+      expect(webhookPrisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(metrics.incrementPaymentsCompleted).toHaveBeenCalledTimes(1);
+    });
+
+    it('rethrows and records no metrics when the webhook transaction fails (rollback)', async () => {
+      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
+      webhookPrisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            order: {
+              findFirst: jest.fn().mockResolvedValue(mockOrder),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              update: jest.fn().mockRejectedValue(new Error('db failure')),
+            },
+            payment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          };
+          return cb(tx);
+        },
+      );
+
+      const payload = JSON.stringify({
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_webhook_1', amount: 5000, currency: 'usd' } },
+      });
+
+      await expect(
+        webhookService.handleGatewayWebhook('stripe', payload, validStripeSignature(payload)),
+      ).rejects.toThrow('db failure');
+      expect(metrics.incrementPaymentsCompleted).not.toHaveBeenCalled();
+    });
+
     it('should ignore webhook for an already completed payment', async () => {
       webhookPrisma.payment.findFirst.mockResolvedValue(completedGatewayPayment);
 
@@ -772,6 +1258,126 @@ describe('PaymentsService', () => {
       );
       expect(result.type).toBe('payment.failed');
       expect(metrics.incrementPaymentsFailed).toHaveBeenCalled();
+    });
+
+    it('full charge.refunded sets amountRefunded and decrements paidAmount once (D3/D4 fix)', async () => {
+      webhookPrisma.payment.findFirst.mockResolvedValue(completedGatewayPayment);
+      let paymentUpdateData: Record<string, unknown> | undefined;
+      let orderUpdateData: Record<string, unknown> | undefined;
+      webhookPrisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            payment: {
+              updateMany: jest.fn().mockImplementation(({ data }) => {
+                paymentUpdateData = data;
+                return { count: 1 };
+              }),
+            },
+            order: {
+              update: jest.fn().mockImplementation(({ data }) => {
+                orderUpdateData = data;
+                return {};
+              }),
+            },
+          };
+          return cb(tx);
+        },
+      );
+
+      const payload = JSON.stringify({
+        type: 'charge.refunded',
+        data: {
+          object: {
+            id: 'ch_1',
+            payment_intent: 'pi_webhook_1',
+            amount: 5000,
+            amount_refunded: 5000,
+          },
+        },
+      });
+
+      const result = await webhookService.handleGatewayWebhook(
+        'stripe',
+        payload,
+        validStripeSignature(payload),
+      );
+      expect(result.type).toBe('refund.succeeded');
+      expect(paymentUpdateData).toMatchObject({
+        status: PaymentStatus.REFUNDED,
+        amountRefunded: 50,
+      });
+      expect(orderUpdateData).toMatchObject({
+        paidAmount: { decrement: 50 },
+      });
+      expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
+    });
+
+    it('partial charge.refunded does not double-decrement on replay (D4 fix)', async () => {
+      webhookPrisma.payment.findFirst
+        .mockResolvedValueOnce(completedGatewayPayment)
+        .mockResolvedValueOnce({
+          ...completedGatewayPayment,
+          status: PaymentStatus.PARTIALLY_REFUNDED,
+          amountRefunded: 20,
+        });
+      let paymentUpdateData: Record<string, unknown> | undefined;
+      let orderUpdateData: Record<string, unknown> | undefined;
+      webhookPrisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            payment: {
+              updateMany: jest.fn().mockImplementation(({ data }) => {
+                paymentUpdateData = data;
+                return { count: 1 };
+              }),
+            },
+            order: {
+              update: jest.fn().mockImplementation(({ data }) => {
+                orderUpdateData = data;
+                return {};
+              }),
+            },
+          };
+          return cb(tx);
+        },
+      );
+
+      const payload = JSON.stringify({
+        type: 'charge.refunded',
+        data: {
+          object: {
+            id: 'ch_1',
+            payment_intent: 'pi_webhook_1',
+            amount: 5000,
+            amount_refunded: 2000,
+          },
+        },
+      });
+
+      const first = await webhookService.handleGatewayWebhook(
+        'stripe',
+        payload,
+        validStripeSignature(payload),
+      );
+      expect(first.type).toBe('refund.partial');
+      expect(paymentUpdateData).toMatchObject({
+        status: PaymentStatus.PARTIALLY_REFUNDED,
+        amountRefunded: 20,
+      });
+      expect(orderUpdateData).toMatchObject({
+        paidAmount: { decrement: 20 },
+      });
+
+      webhookPrisma.$transaction.mockClear();
+
+      const replay = await webhookService.handleGatewayWebhook(
+        'stripe',
+        payload,
+        validStripeSignature(payload),
+      );
+      expect(replay.type).toBe('refund.partial');
+      expect(webhookPrisma.$transaction).not.toHaveBeenCalled();
+      expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
     });
   });
 });

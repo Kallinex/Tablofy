@@ -24,6 +24,11 @@ export class EmailProcessor implements OnModuleInit {
 
   onModuleInit() {
     this.queueService.registerWorker('email', this.process.bind(this), 3);
+    if (!this.configService.get<string>('smtp.host', '')) {
+      this.logger.warn(
+        'Email transport is not configured (SMTP_HOST unset). Email jobs will fail, retry, and dead-letter.',
+      );
+    }
     this.logger.log('Email processor registered');
   }
 

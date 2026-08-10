@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { CrmService } from './crm.service';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CreateTimelineEntryDto } from './dto/create-timeline-entry.dto';
@@ -13,6 +14,7 @@ import { TimelineEventType, CommunicationStatus } from '@prisma/client';
 
 @Controller('crm')
 @UseGuards(JwtAuthGuard)
+@Permissions('customers:read')
 export class CrmController {
   constructor(private readonly crmService: CrmService) {}
 

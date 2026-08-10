@@ -113,33 +113,32 @@ export class CustomerAnalyticsService {
     const returningCustomers = orders.filter((o) => o._count.id > 1).length;
     const activeCustomers = orders.length;
 
-    const monthlyCohorts = await this.prisma.$queryRawUnsafe<
+    const monthlyCohorts = await this.prisma.$queryRaw<
       Array<{
         cohortMonth: string;
         totalCustomers: number;
         retainedCustomers: number;
       }>
     >(
-      `WITH customer_first_order AS (
-         SELECT "customerPhone", DATE_TRUNC('month', MIN("createdAt")) as "cohortMonth"
-       FROM orders WHERE "tenantId" = $1 AND "customerPhone" IS NOT NULL
-         GROUP BY "customerPhone"
-       ),
-       customer_orders AS (
-         SELECT o."customerPhone", cfo."cohortMonth",
-                DATE_TRUNC('month', o."createdAt") as "orderMonth"
-         FROM "Order" o
-         JOIN customer_first_order cfo ON o."customerPhone" = cfo."customerPhone"
-         WHERE o."tenantId" = $1 AND o."customerPhone" IS NOT NULL
-       )
-       SELECT "cohortMonth", COUNT(DISTINCT "customerPhone") as "totalCustomers",
-              COUNT(DISTINCT CASE WHEN "orderMonth" > "cohortMonth" THEN "customerPhone" END) as "retainedCustomers"
-       FROM customer_orders
-       WHERE "cohortMonth" >= $2 AND "cohortMonth" <= $3
-       GROUP BY "cohortMonth" ORDER BY "cohortMonth"`,
-      tenantId,
-      startDate,
-      endDate,
+      Prisma.sql`
+        WITH customer_first_order AS (
+           SELECT "customerPhone", DATE_TRUNC('month', MIN("createdAt")) as "cohortMonth"
+         FROM orders WHERE "tenantId" = ${tenantId} AND "customerPhone" IS NOT NULL
+           GROUP BY "customerPhone"
+         ),
+         customer_orders AS (
+           SELECT o."customerPhone", cfo."cohortMonth",
+                  DATE_TRUNC('month', o."createdAt") as "orderMonth"
+           FROM orders o
+           JOIN customer_first_order cfo ON o."customerPhone" = cfo."customerPhone"
+           WHERE o."tenantId" = ${tenantId} AND o."customerPhone" IS NOT NULL
+         )
+         SELECT "cohortMonth", COUNT(DISTINCT "customerPhone") as "totalCustomers",
+                COUNT(DISTINCT CASE WHEN "orderMonth" > "cohortMonth" THEN "customerPhone" END) as "retainedCustomers"
+         FROM customer_orders
+         WHERE "cohortMonth" >= ${startDate} AND "cohortMonth" <= ${endDate}
+         GROUP BY "cohortMonth" ORDER BY "cohortMonth"
+      `,
     );
 
     const result = {
@@ -185,17 +184,17 @@ export class CustomerAnalyticsService {
       },
     });
 
-    const churnedByInactivity = await this.prisma.$queryRawUnsafe<Array<{ count: number }>>(
-      `SELECT COUNT(*) as count FROM customers c
-       WHERE c."tenantId" = $1 AND c."deletedAt" IS NULL
-       AND c.status = 'ACTIVE'
-       AND NOT EXISTS (
-          SELECT 1 FROM orders o
-         WHERE o."customerPhone" = c."phone" AND o."tenantId" = c."tenantId"
-         AND o."createdAt" >= $2
-       )`,
-      tenantId,
-      query.startDate ? new Date(query.startDate) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
+    const churnedByInactivity = await this.prisma.$queryRaw<Array<{ count: number }>>(
+      Prisma.sql`
+        SELECT COUNT(*) as count FROM customers c
+         WHERE c."tenantId" = ${tenantId} AND c."deletedAt" IS NULL
+         AND c.status = 'ACTIVE'
+         AND NOT EXISTS (
+            SELECT 1 FROM orders o
+           WHERE o."customerPhone" = c."phone" AND o."tenantId" = c."tenantId"
+           AND o."createdAt" >= ${startDate}
+         )
+      `,
     );
 
     const totalChurned = churnedByStatus + Number(churnedByInactivity[0]?.count ?? 0);
@@ -368,17 +367,16 @@ export class CustomerAnalyticsService {
         startDate.getMonth(),
     );
 
-    const ordersByCustomer = await this.prisma.$queryRawUnsafe<
+    const ordersByCustomer = await this.prisma.$queryRaw<
       Array<{ customerPhone: string; orderCount: number }>
     >(
-      `SELECT "customerPhone", COUNT(*) as "orderCount"
-       FROM orders WHERE "tenantId" = $1 AND "customerPhone" IS NOT NULL
-       AND "createdAt" >= $2 AND "createdAt" <= $3
-       AND "status" != 'VOIDED'
-       GROUP BY "customerPhone"`,
-      tenantId,
-      startDate,
-      endDate,
+      Prisma.sql`
+        SELECT "customerPhone", COUNT(*) as "orderCount"
+         FROM orders WHERE "tenantId" = ${tenantId} AND "customerPhone" IS NOT NULL
+         AND "createdAt" >= ${startDate} AND "createdAt" <= ${endDate}
+         AND "status" != 'VOIDED'
+         GROUP BY "customerPhone"
+      `,
     );
 
     const frequencies = ordersByCustomer.map((o) => Number(o.orderCount) / monthsDiff);
@@ -414,7 +412,7 @@ export class CustomerAnalyticsService {
     const cached = await this.cacheService.get(tenantId, cacheKey);
     if (cached) return cached;
 
-    const rfmData = await this.prisma.$queryRawUnsafe<
+    const rfmData = await this.prisma.$queryRaw<
       Array<{
         customerPhone: string;
         recency: number;
@@ -422,14 +420,15 @@ export class CustomerAnalyticsService {
         monetary: number;
       }>
     >(
-      `SELECT "customerPhone",
-              EXTRACT(DAY FROM NOW() - MAX("createdAt")) as recency,
-              COUNT(*) as frequency,
-              COALESCE(SUM("total"), 0) as monetary
-       FROM orders WHERE "tenantId" = $1 AND "customerPhone" IS NOT NULL
-       AND "status" != 'VOIDED'
-       GROUP BY "customerPhone"`,
-      tenantId,
+      Prisma.sql`
+        SELECT "customerPhone",
+                EXTRACT(DAY FROM NOW() - MAX("createdAt")) as recency,
+                COUNT(*) as frequency,
+                COALESCE(SUM("total"), 0) as monetary
+         FROM orders WHERE "tenantId" = ${tenantId} AND "customerPhone" IS NOT NULL
+         AND "status" != 'VOIDED'
+         GROUP BY "customerPhone"
+      `,
     );
 
     if (rfmData.length === 0) return { segments: [], customers: [] };
@@ -597,22 +596,24 @@ export class CustomerAnalyticsService {
       .filter((t) => t.type === 'REFUND')
       .reduce((s, t) => s + Number(t.amount), 0);
 
-    const dailyTrend = await this.prisma.$queryRawUnsafe<
-      Array<{ date: string; credits: number; debits: number }>
-    >(
-      `SELECT DATE("createdAt") as date,
+    let dailyTrendSql = Prisma.sql`
+      SELECT DATE("createdAt") as date,
               SUM(CASE WHEN type = 'RECHARGE' THEN amount ELSE 0 END) as credits,
               SUM(CASE WHEN type = 'SPEND' THEN amount ELSE 0 END) as debits
-       FROM "WalletTransaction" WHERE "tenantId" = $1
-       ${query.startDate ? `AND "createdAt" >= $2` : ''}
-       ${query.endDate ? `AND "createdAt" <= $3` : ''}
-       GROUP BY DATE("createdAt") ORDER BY date ASC`,
-      query.startDate
-        ? [tenantId, new Date(query.startDate), ...(query.endDate ? [new Date(query.endDate)] : [])]
-        : query.endDate
-          ? [tenantId, new Date(query.endDate)]
-          : [tenantId],
-    );
+       FROM wallet_transactions WHERE "tenantId" = ${tenantId}
+    `;
+    if (query.startDate) {
+      dailyTrendSql = Prisma.sql`${dailyTrendSql} AND "createdAt" >= ${new Date(query.startDate)}`;
+    }
+    if (query.endDate) {
+      dailyTrendSql = Prisma.sql`${dailyTrendSql} AND "createdAt" <= ${new Date(query.endDate)}`;
+    }
+    dailyTrendSql = Prisma.sql`${dailyTrendSql} GROUP BY DATE("createdAt") ORDER BY date ASC`;
+
+    const dailyTrend =
+      await this.prisma.$queryRaw<Array<{ date: string; credits: number; debits: number }>>(
+        dailyTrendSql,
+      );
 
     const walletAgg = await this.prisma.wallet.aggregate({
       where: { tenantId },
@@ -650,13 +651,13 @@ export class CustomerAnalyticsService {
 
     const referrals = await this.prisma.referral.findMany({
       where,
-      select: { id: true, status: true, rewardAmount: true, referrerId: true, createdAt: true },
+      select: { id: true, status: true, rewardPoints: true, referrerId: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
     });
 
     const convertedReferrals = referrals.filter((r) => r.status === 'REWARDED');
-    const totalRewardAmount = convertedReferrals.reduce(
-      (s, r) => s + Number(r.rewardAmount ?? 0),
+    const totalRewardPoints = convertedReferrals.reduce(
+      (s, r) => s + Number(r.rewardPoints ?? 0),
       0,
     );
 
@@ -665,9 +666,9 @@ export class CustomerAnalyticsService {
       convertedReferrals: convertedReferrals.length,
       conversionRate:
         referrals.length > 0 ? (convertedReferrals.length / referrals.length) * 100 : 0,
-      totalRewardAmount,
+      totalRewardPoints,
       averageRewardPerReferral:
-        convertedReferrals.length > 0 ? totalRewardAmount / convertedReferrals.length : 0,
+        convertedReferrals.length > 0 ? totalRewardPoints / convertedReferrals.length : 0,
       byStatus: this.groupByStatus(referrals),
     };
 
@@ -675,12 +676,12 @@ export class CustomerAnalyticsService {
     return result;
   }
 
-  private groupByStatus(referrals: Array<{ status: string; rewardAmount: number | null }>) {
+  private groupByStatus(referrals: Array<{ status: string; rewardPoints: number | null }>) {
     const grouped: Record<string, { count: number; totalReward: number }> = {};
     for (const r of referrals) {
       if (!grouped[r.status]) grouped[r.status] = { count: 0, totalReward: 0 };
       grouped[r.status].count++;
-      grouped[r.status].totalReward += Number(r.rewardAmount ?? 0);
+      grouped[r.status].totalReward += Number(r.rewardPoints ?? 0);
     }
     return Object.entries(grouped).map(([status, data]) => ({
       status,

@@ -11,6 +11,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { InventoryService } from './inventory.service';
 import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
@@ -33,6 +34,7 @@ import { CreateInventoryCountDto } from './dto/create-inventory-count.dto';
 import { CreateInventoryBatchDto } from './dto/inventory-batch.dto';
 
 @Controller('inventory')
+@Permissions('inventory:read')
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 

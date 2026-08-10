@@ -325,6 +325,7 @@ describe('PaymobProvider', () => {
       expect(event?.type).toBe('refund.succeeded');
       expect(event?.reference).toBe('order_1');
       expect(event?.refundedAmount).toBe(5);
+      expect(event?.refundedAmountIsTotal).toBe(false);
     });
   });
 });

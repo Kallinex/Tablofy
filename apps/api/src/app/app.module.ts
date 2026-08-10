@@ -6,6 +6,7 @@ import { APP_GUARD, APP_INTERCEPTOR, APP_FILTER } from '@nestjs/core';
 import { HealthModule } from '../health/health.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RedisModule } from '../redis/redis.module';
+import { WsAuthModule } from '../common/ws/ws-auth.module';
 import { AuthModule } from '../modules/auth/auth.module';
 import { TenantsModule } from '../modules/tenants/tenants.module';
 import { SubscriptionsModule } from '../modules/subscriptions/subscriptions.module';
@@ -160,6 +161,7 @@ import {
     BullBoardModule,
     PrismaModule,
     RedisModule,
+    WsAuthModule,
     DomainEventModule,
     CommonModule,
     HealthModule,

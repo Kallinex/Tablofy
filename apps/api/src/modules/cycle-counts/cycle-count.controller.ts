@@ -11,6 +11,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { CycleCountService } from './cycle-count.service';
 import { CreateCycleCountDto } from './dto/create-cycle-count.dto';
@@ -19,6 +20,7 @@ import { QueryCycleCountDto } from './dto/query-cycle-count.dto';
 import { RecordCountDto } from './dto/record-count.dto';
 
 @Controller('cycle-counts')
+@Permissions('inventory:read')
 export class CycleCountController {
   constructor(private readonly cycleCountService: CycleCountService) {}
 

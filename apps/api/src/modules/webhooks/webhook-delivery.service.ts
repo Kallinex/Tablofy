@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AppLoggerService } from '../../common/logger/logger.service';
-import { WebhookDeliveryStatus, WebhookEventType } from '@prisma/client';
+import { WebhookDeliveryStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -81,7 +81,7 @@ export class WebhookDeliveryService {
       data: {
         webhookId,
         tenantId,
-        eventType: eventType as WebhookEventType,
+        eventType,
         eventId,
         payload: payload as object,
         maxRetries,

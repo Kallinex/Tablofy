@@ -57,9 +57,12 @@ export function validateTransition(from: string, to: string): void {
 }
 
 export function isTerminalStatus(status: string): boolean {
-  return [OrderStatus.CANCELLED, OrderStatus.REFUNDED, OrderStatus.VOIDED].includes(
-    status as OrderStatus,
-  );
+  return [
+    OrderStatus.CANCELLED,
+    OrderStatus.REFUNDED,
+    OrderStatus.VOIDED,
+    OrderStatus.COMPLETED,
+  ].includes(status as OrderStatus);
 }
 
 export function isPayableStatus(status: string): boolean {

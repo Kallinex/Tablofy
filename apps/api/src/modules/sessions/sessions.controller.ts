@@ -2,12 +2,14 @@ import { Controller, Get, Post, Delete, Param, Query, HttpCode, HttpStatus } fro
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { SessionsService } from './sessions.service';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
+import { Authenticated } from '../../common/decorators/authenticated.decorator';
 import { Request } from 'express';
 import { Req } from '@nestjs/common';
 
 @ApiTags('sessions')
 @ApiBearerAuth()
 @Controller('sessions')
+@Authenticated()
 export class SessionsController {
   constructor(private readonly sessionsService: SessionsService) {}
 

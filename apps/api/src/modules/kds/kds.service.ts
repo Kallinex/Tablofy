@@ -35,6 +35,14 @@ export class KdsService {
     tenantId: string,
     userId: string,
   ) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!restaurant) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
     const existingSlug = await this.prisma.kitchenStation.findUnique({
       where: { restaurantId_slug: { restaurantId, slug: dto.slug } },
     });

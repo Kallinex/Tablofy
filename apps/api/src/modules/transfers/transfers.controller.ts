@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { TransfersService } from './transfers.service';
 import { CreateTransferDto } from './dto/create-transfer.dto';
@@ -23,6 +24,7 @@ import { StockMovementType } from '@prisma/client';
 @ApiTags('Transfers & Stock Movements')
 @ApiBearerAuth()
 @Controller()
+@Permissions('inventory:read')
 export class TransfersController {
   constructor(private readonly transfersService: TransfersService) {}
 

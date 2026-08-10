@@ -1,10 +1,60 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
 import { QueueService, QueueJobData } from '../queues/queue.service';
 import { WebhookDeliveryService } from './webhook-delivery.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AppLoggerService } from '../../common/logger/logger.service';
+import { SsrfBlockedError } from '../../common/ssrf/ssrf-guard';
+import { SsrfClientService } from '../../common/ssrf/ssrf-client.service';
+
+const FORBIDDEN_USER_HEADERS: ReadonlySet<string> = new Set([
+  'host',
+  'content-length',
+  'content-type',
+  'transfer-encoding',
+  'connection',
+  'keep-alive',
+  'upgrade',
+  'te',
+  'trailer',
+  'proxy-authorization',
+  'proxy-connection',
+  'via',
+  'forwarded',
+  'x-webhook-signature',
+  'x-webhook-event',
+  'x-webhook-delivery-id',
+  'x-webhook-tenant-id',
+]);
+
+/**
+ * Tenant-supplied headers are merged onto outbound webhook deliveries. Never
+ * forward hop-by-hop, proxy-spoofing, or platform-contract headers that could
+ * be used to poison proxies/caches or forge delivery metadata.
+ */
+function sanitizeUserHeaders(
+  headers: Record<string, unknown> | null | undefined,
+): Record<string, string> {
+  const sanitized: Record<string, string> = {};
+  if (!headers) return sanitized;
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof key !== 'string' || typeof value !== 'string' || key.trim() === '') continue;
+    const lower = key.toLowerCase();
+    if (FORBIDDEN_USER_HEADERS.has(lower)) continue;
+    if (
+      lower.startsWith('x-forwarded-') ||
+      lower.startsWith('x-original-') ||
+      lower.startsWith('x-real-') ||
+      lower.startsWith('x-client-')
+    ) {
+      continue;
+    }
+    sanitized[key] = value;
+  }
+
+  return sanitized;
+}
 
 @Injectable()
 export class WebhookProcessor implements OnModuleInit {
@@ -14,6 +64,7 @@ export class WebhookProcessor implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly logger: AppLoggerService,
+    private readonly ssrfClient: SsrfClientService,
   ) {
     this.logger.setContext('WebhookProcessor');
   }
@@ -60,15 +111,15 @@ export class WebhookProcessor implements OnModuleInit {
       'X-Webhook-Delivery-Id': deliveryId,
       'X-Webhook-Tenant-Id': tenantId || '',
       'User-Agent': 'Tablofy-Webhook/1.0',
-      ...(registration.headers as Record<string, string>),
+      ...sanitizeUserHeaders(registration.headers as Record<string, unknown> | null),
     };
 
     const startTime = Date.now();
 
     try {
-      const response = await axios.post(registration.url, delivery.payload, {
+      const response = await this.ssrfClient.postJson(registration.url, delivery.payload, {
         headers,
-        timeout: registration.timeoutMs,
+        timeoutMs: registration.timeoutMs,
         validateStatus: () => true,
       });
 
@@ -101,6 +152,18 @@ export class WebhookProcessor implements OnModuleInit {
       }
     } catch (error) {
       const duration = Date.now() - startTime;
+
+      if (error instanceof SsrfBlockedError) {
+        await this.deliveryService.markFailed(
+          deliveryId,
+          `Blocked by SSRF guard: ${error.message}`,
+          null,
+          duration,
+        );
+        this.logger.warn(`Webhook delivery ${deliveryId} blocked by SSRF guard: ${error.message}`);
+        return { delivered: false, error: error.message, ssrfBlocked: true };
+      }
+
       const errorMessage = error instanceof Error ? error.message : String(error);
       await this.deliveryService.markFailed(deliveryId, errorMessage, null, duration);
 

@@ -1,10 +1,12 @@
 import { Controller, Get, Post, Delete, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { BarcodeService } from './barcode.service';
 import { GenerateBarcodeDto } from './dto/generate-barcode.dto';
 
 @Controller('barcodes')
+@Permissions('inventory:read')
 export class BarcodeController {
   constructor(private readonly barcodeService: BarcodeService) {}
 

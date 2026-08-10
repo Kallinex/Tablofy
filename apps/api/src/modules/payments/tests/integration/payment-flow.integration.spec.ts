@@ -125,7 +125,10 @@ describe('PaymentFlowIntegration', () => {
     prisma.payment.findFirst.mockResolvedValue(mockCompletedPayment);
     prisma.$transaction.mockImplementation(async (cb: (tx: Record<string, unknown>) => unknown) => {
       const tx = {
-        payment: { update: jest.fn().mockResolvedValue(mockRefundedPayment) },
+        payment: {
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          findUnique: jest.fn().mockResolvedValue(mockRefundedPayment),
+        },
         order: { update: jest.fn().mockResolvedValue({}) },
       };
       return cb(tx);
@@ -171,17 +174,19 @@ describe('PaymentFlowIntegration', () => {
               status: PaymentStatus.COMPLETED,
             }),
           updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-          findUnique: jest
-            .fn()
-            .mockResolvedValue({
-              ...mockCompletedPayment,
-              id: 'payment-3',
-              method: PaymentMethod.CREDIT_CARD,
-              amount: 70,
-              status: PaymentStatus.COMPLETED,
-            }),
+          findUnique: jest.fn().mockResolvedValue({
+            ...mockCompletedPayment,
+            id: 'payment-3',
+            method: PaymentMethod.CREDIT_CARD,
+            amount: 70,
+            status: PaymentStatus.COMPLETED,
+          }),
         },
-        order: { update: jest.fn().mockResolvedValue({}) },
+        order: {
+          findFirst: jest.fn().mockResolvedValue(mockOrder),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          update: jest.fn().mockResolvedValue({}),
+        },
         orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
       };
       return cb(tx);

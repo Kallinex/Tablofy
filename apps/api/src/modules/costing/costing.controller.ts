@@ -1,11 +1,13 @@
 import { Controller, Get, Post, Param, Body } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { CostingService } from './costing.service';
 import { CreateValuationDto } from './dto/create-valuation.dto';
 import { BatchValuationDto } from './dto/query-valuation.dto';
 
 @Controller('costing')
+@Permissions('inventory:read')
 export class CostingController {
   constructor(private readonly costingService: CostingService) {}
 

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CustomersService } from '../customers.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
@@ -24,6 +24,7 @@ describe('CustomersService', () => {
   const mockGateway = {
     broadcastCustomerUpdate: jest.fn(),
     broadcastLoyaltyUpdate: jest.fn(),
+    broadcastWalletUpdate: jest.fn(),
   };
 
   beforeAll(async () => {
@@ -247,6 +248,291 @@ describe('CustomersService', () => {
       await expect(
         service.redeemPoints('cust-1', { points: 100 }, testTenantId, testUserId),
       ).rejects.toThrow('Insufficient');
+    });
+  });
+
+  describe('wallet', () => {
+    const wallet = {
+      id: 'wallet-1',
+      customerId: 'cust-1',
+      tenantId: testTenantId,
+      balance: 100,
+      currency: 'USD',
+      isActive: true,
+      version: 1,
+      createdAt: new Date(),
+      deletedAt: null,
+      updatedAt: new Date(),
+    };
+
+    function mockTransactionForWallet() {
+      const txWalletState = { ...wallet };
+      const tx = {
+        wallet: {
+          update: jest.fn((args: { data: Record<string, unknown> }) => {
+            const balance = args.data.balance as { increment?: number; decrement?: number };
+            if (balance.increment !== undefined) txWalletState.balance += balance.increment;
+            if (balance.decrement !== undefined) txWalletState.balance -= balance.decrement;
+            const version = args.data.version as { increment?: number };
+            if (version.increment) txWalletState.version += 1;
+            return Promise.resolve({ ...txWalletState });
+          }),
+          updateMany: jest.fn(
+            (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+              const balance = args.data.balance as { decrement: number };
+              const where = args.where as { id: string; balance?: { gte?: number } };
+              const current = txWalletState.balance;
+              if (where.balance?.gte !== undefined && current < where.balance.gte) {
+                return Promise.resolve({ count: 0 });
+              }
+              txWalletState.balance = current - balance.decrement;
+              txWalletState.version += 1;
+              return Promise.resolve({ count: 1 });
+            },
+          ),
+          findUnique: jest.fn(() => Promise.resolve({ ...txWalletState })),
+        },
+        walletTransaction: {
+          create: jest.fn((args: { data: Record<string, unknown> }) =>
+            Promise.resolve({ id: 'txn-1', ...args.data }),
+          ),
+        },
+      };
+      prisma.$transaction.mockImplementation(async (cb: (t: unknown) => unknown) => cb(tx));
+      return { tx, state: txWalletState };
+    }
+
+    beforeEach(() => {
+      prisma.wallet.findUnique.mockResolvedValue(wallet);
+    });
+
+    it('should spend with a guarded atomic conditional update (CAS)', async () => {
+      const { tx } = mockTransactionForWallet();
+
+      const result = await service.spendWallet(
+        'cust-1',
+        { amount: 30, description: 'Pay' },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(tx.wallet.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'wallet-1', balance: { gte: 30 } },
+          data: { balance: { decrement: 30 }, version: { increment: 1 } },
+        }),
+      );
+      expect(result.wallet.balance).toBe(70);
+      expect(tx.walletTransaction.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ amount: -30, balanceBefore: 100, balanceAfter: 70 }),
+        }),
+      );
+    });
+
+    it('should allow spending the exact balance', async () => {
+      const { tx, state } = mockTransactionForWallet();
+
+      const result = await service.spendWallet('cust-1', { amount: 100 }, testTenantId, testUserId);
+
+      expect(result.wallet.balance).toBe(0);
+      expect(state.balance).toBe(0);
+      expect(tx.walletTransaction.create).toHaveBeenCalled();
+    });
+
+    it('should reject insufficient balance and not create a transaction', async () => {
+      const { tx } = mockTransactionForWallet();
+
+      await expect(
+        service.spendWallet('cust-1', { amount: 130 }, testTenantId, testUserId),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(tx.walletTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject repeated spends once the balance is exhausted', async () => {
+      const { tx } = mockTransactionForWallet();
+
+      await service.spendWallet('cust-1', { amount: 40 }, testTenantId, testUserId);
+      await service.spendWallet('cust-1', { amount: 40 }, testTenantId, testUserId);
+      await expect(
+        service.spendWallet('cust-1', { amount: 40 }, testTenantId, testUserId),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(tx.walletTransaction.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('should not allow concurrent spends to double-spend the same balance', async () => {
+      const { state } = mockTransactionForWallet();
+
+      const results = await Promise.allSettled([
+        service.spendWallet('cust-1', { amount: 80 }, testTenantId, testUserId),
+        service.spendWallet('cust-1', { amount: 80 }, testTenantId, testUserId),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(BadRequestException);
+      expect(state.balance).toBe(20);
+    });
+
+    it('should not allow concurrent exact-balance spends to overdraw', async () => {
+      const { state } = mockTransactionForWallet();
+
+      const results = await Promise.allSettled([
+        service.spendWallet('cust-1', { amount: 100 }, testTenantId, testUserId),
+        service.spendWallet('cust-1', { amount: 100 }, testTenantId, testUserId),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(state.balance).toBe(0);
+    });
+
+    it('should rollback within the transaction on failure', async () => {
+      const { tx, state } = mockTransactionForWallet();
+      prisma.$transaction.mockImplementation(async (cb: (t: unknown) => unknown) => {
+        try {
+          return await cb(tx);
+        } catch (error) {
+          state.balance = 100;
+          throw error;
+        }
+      });
+
+      await expect(
+        service.spendWallet('cust-1', { amount: 500 }, testTenantId, testUserId),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(state.balance).toBe(100);
+    });
+
+    it('should recharge with a decimal amount and record the transaction', async () => {
+      const { tx } = mockTransactionForWallet();
+
+      const result = await service.rechargeWallet(
+        'cust-1',
+        { amount: 0.1, description: 'Top up' },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(tx.wallet.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { balance: { increment: 0.1 }, version: { increment: 1 } },
+        }),
+      );
+      expect(result.wallet.balance).toBe(100.1);
+      expect(tx.walletTransaction.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ type: 'RECHARGE', amount: 0.1, balanceAfter: 100.1 }),
+        }),
+      );
+    });
+
+    it('should refund with a decimal amount and record the transaction', async () => {
+      const { tx } = mockTransactionForWallet();
+
+      const result = await service.refundWallet(
+        'cust-1',
+        { amount: 25.5, description: 'Refund' },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(result.wallet.balance).toBe(125.5);
+      expect(tx.walletTransaction.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ type: 'REFUND', amount: 25.5, balanceAfter: 125.5 }),
+        }),
+      );
+    });
+
+    it('should look up the wallet scoped to the customer and tenant', async () => {
+      mockTransactionForWallet();
+
+      await service.spendWallet('cust-1', { amount: 10 }, testTenantId, testUserId);
+
+      expect(prisma.wallet.findUnique).toHaveBeenCalledWith({
+        where: {
+          customerId_tenantId: { customerId: 'cust-1', tenantId: testTenantId },
+        },
+      });
+    });
+  });
+
+  describe('getCustomerAnalytics', () => {
+    it('should scope the analytics lookup to the customer tenant', async () => {
+      const analytics = { id: 'analytics-1', customerId: 'cust-1', tenantId: testTenantId };
+      prisma.customerAnalytics.findFirst.mockResolvedValue(analytics);
+
+      const result = await service.getCustomerAnalytics('cust-1', testTenantId);
+
+      expect(prisma.customerAnalytics.findFirst).toHaveBeenCalledWith({
+        where: { customerId: 'cust-1', tenantId: testTenantId, deletedAt: null },
+      });
+      expect(result).toEqual(analytics);
+    });
+
+    it('should return a zeroed analytics object when no row exists for the tenant', async () => {
+      prisma.customerAnalytics.findFirst.mockResolvedValue(null);
+
+      const result = await service.getCustomerAnalytics('cust-1', testTenantId);
+
+      expect(result.lifetimeValue).toBe(0);
+      expect(result.totalSpend).toBe(0);
+      expect(prisma.customerAnalytics.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('recomputeAnalytics', () => {
+    it('should reject recomputation for a customer that does not belong to the tenant', async () => {
+      prisma.customer.findFirst.mockResolvedValue(null);
+
+      await expect(service.recomputeAnalytics('cust-foreign', testTenantId)).rejects.toThrow(
+        NotFoundException,
+      );
+
+      expect(prisma.customer.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'cust-foreign', tenantId: testTenantId, deletedAt: null },
+        }),
+      );
+      expect(prisma.customerAnalytics.upsert).not.toHaveBeenCalled();
+    });
+
+    it('should recompute analytics only after verifying the customer belongs to the tenant', async () => {
+      prisma.customer.findFirst.mockResolvedValue({ id: 'cust-1', tenantId: testTenantId });
+      prisma.visitHistory.findMany.mockResolvedValue([
+        { orderId: 'order-1', visitedAt: new Date(), totalSpent: 42 },
+      ]);
+      prisma.loyaltyPointsTransaction.aggregate
+        .mockResolvedValueOnce({ _sum: { points: 5 } })
+        .mockResolvedValueOnce({ _sum: { points: 2 } });
+      prisma.reward.count.mockResolvedValue(0);
+      const upserted = {
+        id: 'analytics-1',
+        customerId: 'cust-1',
+        tenantId: testTenantId,
+        totalSpend: 42,
+      };
+      prisma.customerAnalytics.upsert.mockResolvedValue(upserted);
+
+      const result = await service.recomputeAnalytics('cust-1', testTenantId);
+
+      expect(prisma.customerAnalytics.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { customerId: 'cust-1' },
+          create: expect.objectContaining({ tenantId: testTenantId }),
+        }),
+      );
+      expect(result).toEqual(upserted);
     });
   });
 });

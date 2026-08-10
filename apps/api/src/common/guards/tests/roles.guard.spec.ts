@@ -28,10 +28,21 @@ describe('RolesGuard', () => {
     jest.clearAllMocks();
   });
 
-  function mockMetadata(roles?: string[] | null, permissions?: string[] | null) {
-    reflector.getAllAndOverride
-      .mockReturnValueOnce(roles ?? null)
-      .mockReturnValueOnce(permissions ?? null);
+  // getAllAndOverride is keyed by metadata key, so an implementation lookup
+  // is immune to early-return branches that skip some lookups.
+  function mockMetadata(opts: {
+    isPublic?: boolean;
+    roles?: string[] | null;
+    permissions?: string[] | null;
+    anyAuthenticated?: boolean;
+  }) {
+    const map: Record<string, unknown> = {
+      isPublic: opts.isPublic ?? false,
+      roles: opts.roles ?? null,
+      permissions: opts.permissions ?? null,
+      anyAuthenticated: opts.anyAuthenticated ?? false,
+    };
+    reflector.getAllAndOverride.mockImplementation((key: string) => map[key]);
   }
 
   function createMockContext(role?: string) {
@@ -46,17 +57,54 @@ describe('RolesGuard', () => {
     } as unknown as Parameters<typeof guard.canActivate>[0];
   }
 
-  it('should allow access when no roles or permissions are required', () => {
-    mockMetadata(null, null);
+  it('should deny access by default when no auth metadata is present (fail-closed)', () => {
+    mockMetadata({});
     const context = createMockContext('OWNER');
+
+    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+  });
+
+  it('should deny access when no auth metadata and no user (fail-closed)', () => {
+    mockMetadata({});
+    const context = createMockContext();
+
+    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+  });
+
+  it('should deny access for an empty roles list without other auth metadata (fail-closed)', () => {
+    mockMetadata({ roles: [], permissions: [] });
+    const context = createMockContext('OWNER');
+
+    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+  });
+
+  it('should allow access when handler is marked @Public()', () => {
+    mockMetadata({ isPublic: true });
+    const context = createMockContext();
 
     const result = guard.canActivate(context);
 
     expect(result).toBe(true);
   });
 
+  it('should allow authenticated user through @Authenticated()', () => {
+    mockMetadata({ anyAuthenticated: true });
+    const context = createMockContext('CASHIER');
+
+    const result = guard.canActivate(context);
+
+    expect(result).toBe(true);
+  });
+
+  it('should deny @Authenticated() route when no user is present', () => {
+    mockMetadata({ anyAuthenticated: true });
+    const context = createMockContext();
+
+    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+  });
+
   it('should allow access when user has required role', () => {
-    mockMetadata(['OWNER', 'MANAGER'], null);
+    mockMetadata({ roles: ['OWNER', 'MANAGER'] });
     const context = createMockContext('OWNER');
 
     const result = guard.canActivate(context);
@@ -65,7 +113,7 @@ describe('RolesGuard', () => {
   });
 
   it('should allow access when user has any of the required roles', () => {
-    mockMetadata(['OWNER', 'MANAGER'], null);
+    mockMetadata({ roles: ['OWNER', 'MANAGER'] });
     const context = createMockContext('MANAGER');
 
     const result = guard.canActivate(context);
@@ -74,30 +122,21 @@ describe('RolesGuard', () => {
   });
 
   it('should deny access when user does not have required role', () => {
-    mockMetadata(['OWNER'], null);
+    mockMetadata({ roles: ['OWNER'] });
     const context = createMockContext('CASHIER');
 
     expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
   });
 
   it('should deny access when no user on request', () => {
-    mockMetadata(['OWNER'], null);
+    mockMetadata({ roles: ['OWNER'] });
     const context = createMockContext();
 
     expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
   });
 
-  it('should return true for empty roles list', () => {
-    mockMetadata([], []);
-    const context = createMockContext('OWNER');
-
-    const result = guard.canActivate(context);
-
-    expect(result).toBe(true);
-  });
-
   it('should allow access when permissions are granted', () => {
-    mockMetadata(['OWNER'], ['orders:delete']);
+    mockMetadata({ roles: ['OWNER'], permissions: ['orders:delete'] });
     const context = createMockContext('OWNER');
 
     const result = guard.canActivate(context);
@@ -106,14 +145,14 @@ describe('RolesGuard', () => {
   });
 
   it('should deny access when permissions are not granted even if role matches', () => {
-    mockMetadata(['OWNER'], ['orders:delete']);
+    mockMetadata({ roles: ['OWNER'], permissions: ['orders:delete'] });
     const context = createMockContext('CASHIER');
 
     expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
   });
 
   it('should deny access when a required permission is missing from the role', () => {
-    mockMetadata(null, ['users:manage']);
+    mockMetadata({ permissions: ['users:manage'] });
     const context = createMockContext('VIEWER');
 
     expect(() => guard.canActivate(context)).toThrow(ForbiddenException);

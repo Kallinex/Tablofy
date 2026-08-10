@@ -9,7 +9,7 @@ import { GenerateExportDto, ExportType } from './dto/generate-export.dto';
 import { ExportQueryDto } from './dto/export-query.dto';
 import { Job } from 'bullmq';
 import * as Excel from 'exceljs';
-import * as PDFDocument from 'pdfkit';
+import PDFDocument from 'pdfkit';
 
 @Injectable()
 export class ExportEngineService {
@@ -206,11 +206,7 @@ export class ExportEngineService {
     columns: { key: string; header: string }[],
   ): Promise<Buffer> {
     const chunks: Buffer[] = [];
-    const PDFDocumentConstructor = PDFDocument as unknown as new (
-      options?: Record<string, unknown>,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ) => any;
-    const doc = new PDFDocumentConstructor({ margin: 30, size: 'A4' });
+    const doc = new PDFDocument({ margin: 30, size: 'A4' });
 
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
 

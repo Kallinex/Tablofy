@@ -168,6 +168,72 @@ export class PaymentsService {
     return tx.payment.findUnique({ where: { id: paymentId } });
   }
 
+  private async redeemGiftCardForPayment(
+    tx: Prisma.TransactionClient,
+    code: string | null | undefined,
+    amount: number,
+    tenantId: string,
+    orderId: string,
+  ): Promise<void> {
+    if (!code) {
+      throw new BadRequestException(
+        'Gift card code (reference) is required for GIFT_CARD payments',
+      );
+    }
+    const card = await tx.giftCard.findFirst({ where: { code, tenantId } });
+    if (!card) {
+      throw new BadRequestException('Gift card not found');
+    }
+    if (card.status !== 'ACTIVE') {
+      throw new BadRequestException('Gift card is not active');
+    }
+    if (card.expiresAt && new Date() > card.expiresAt) {
+      throw new BadRequestException('Gift card has expired');
+    }
+
+    const result = await tx.giftCard.updateMany({
+      where: { id: card.id, tenantId, status: 'ACTIVE', currentBalance: { gte: amount } },
+      data: { currentBalance: { decrement: amount } },
+    });
+    if (result.count === 0) {
+      throw new BadRequestException('Gift card has insufficient balance');
+    }
+
+    const balanceBefore = Number(card.currentBalance);
+    await tx.giftCardTransaction.create({
+      data: {
+        giftCardId: card.id,
+        tenantId,
+        type: 'REDEEM',
+        amount,
+        balanceBefore,
+        balanceAfter: balanceBefore - amount,
+        referenceId: orderId,
+        referenceType: 'ORDER',
+        description: 'Payment for order',
+      },
+    });
+  }
+
+  private async redeemNonProviderPayment(
+    tx: Prisma.TransactionClient,
+    method: PaymentMethod,
+    reference: string | null | undefined,
+    amount: number,
+    tenantId: string,
+    orderId: string,
+  ): Promise<void> {
+    if (method === PaymentMethod.GIFT_CARD) {
+      await this.redeemGiftCardForPayment(tx, reference, amount, tenantId, orderId);
+      return;
+    }
+    if (method === PaymentMethod.WALLET) {
+      throw new BadRequestException(
+        'WALLET payments must be processed through the customer wallet spend flow',
+      );
+    }
+  }
+
   async charge(
     orderId: string,
     dto: CreatePaymentDto,
@@ -200,6 +266,9 @@ export class PaymentsService {
       where: { tenantId, idempotencyKey },
     });
     if (existing) {
+      if (existing.orderId !== orderId) {
+        throw new ConflictException('Idempotency key was already used for a different order');
+      }
       return this.toResponseDto(existing);
     }
 
@@ -220,6 +289,15 @@ export class PaymentsService {
         }
 
         if (!provider) {
+          await this.redeemNonProviderPayment(
+            tx,
+            dto.method,
+            dto.reference,
+            dto.amount,
+            tenantId,
+            orderId,
+          );
+
           const created = await tx.payment.create({
             data: {
               orderId,
@@ -278,6 +356,9 @@ export class PaymentsService {
           where: { tenantId, idempotencyKey },
         });
         if (replay) {
+          if (replay.orderId !== orderId) {
+            throw new ConflictException('Idempotency key was already used for a different order');
+          }
           return this.toResponseDto(replay);
         }
       }
@@ -447,6 +528,12 @@ export class PaymentsService {
       throw new BadRequestException(`Payment in ${payment.status} status cannot be refunded`);
     }
 
+    if (Number(payment.amountRefunded ?? 0) > 0) {
+      throw new BadRequestException(
+        'Payment has been partially refunded; it cannot be fully refunded. Use partial refund for the remaining balance.',
+      );
+    }
+
     if (payment.gatewayRef) {
       const provider = this.getProviderForMethod(payment.method);
       if (provider) {
@@ -462,14 +549,21 @@ export class PaymentsService {
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.payment.update({
-        where: { id: paymentId },
+      const claimed = await tx.payment.updateMany({
+        where: {
+          id: paymentId,
+          status: { in: [PaymentStatus.COMPLETED, PaymentStatus.PARTIALLY_REFUNDED] },
+        },
         data: {
           status: PaymentStatus.REFUNDED,
+          amountRefunded: payment.amount,
           refundedAt: new Date(),
           refundReason: reason || null,
         },
       });
+      if (claimed.count === 0) {
+        throw new ConflictException('Payment was already refunded by another operation');
+      }
 
       await tx.order.update({
         where: { id: payment.orderId },
@@ -479,6 +573,10 @@ export class PaymentsService {
         },
       });
 
+      const updated = await tx.payment.findUnique({ where: { id: paymentId } });
+      if (!updated) {
+        throw new NotFoundException('Payment not found');
+      }
       return updated;
     });
 
@@ -520,8 +618,13 @@ export class PaymentsService {
       throw new BadRequestException(`Payment in ${payment.status} status cannot be refunded`);
     }
 
-    if (dto.amount > Number(payment.amount)) {
-      throw new BadRequestException('Refund amount exceeds original payment amount');
+    const alreadyRefunded = Number(payment.amountRefunded ?? 0);
+    const remaining = Number(payment.amount) - alreadyRefunded;
+
+    if (dto.amount > remaining) {
+      throw new BadRequestException(
+        `Refund amount exceeds remaining refundable amount of ${remaining.toFixed(2)}`,
+      );
     }
 
     if (payment.gatewayRef) {
@@ -542,15 +645,27 @@ export class PaymentsService {
       }
     }
 
+    const maxAllowedRefunded = Number(payment.amount) - dto.amount;
+
     const result = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.payment.update({
-        where: { id: paymentId },
+      const claimed = await tx.payment.updateMany({
+        where: {
+          id: paymentId,
+          status: { in: [PaymentStatus.COMPLETED, PaymentStatus.PARTIALLY_REFUNDED] },
+          amountRefunded: { lte: maxAllowedRefunded },
+        },
         data: {
           status: PaymentStatus.PARTIALLY_REFUNDED,
+          amountRefunded: { increment: dto.amount },
           refundedAt: new Date(),
           refundReason: dto.reason || null,
         },
       });
+      if (claimed.count === 0) {
+        throw new ConflictException(
+          'Refund exceeds remaining refundable amount (payment already refunded by another operation)',
+        );
+      }
 
       await tx.order.update({
         where: { id: payment.orderId },
@@ -559,6 +674,10 @@ export class PaymentsService {
         },
       });
 
+      const updated = await tx.payment.findUnique({ where: { id: paymentId } });
+      if (!updated) {
+        throw new NotFoundException('Payment not found');
+      }
       return updated;
     });
 
@@ -665,6 +784,21 @@ export class PaymentsService {
     }
 
     const results = await this.prisma.$transaction(async (tx) => {
+      const freshOrder = await tx.order.findFirst({
+        where: { id: orderId, tenantId, deletedAt: null },
+      });
+      if (!freshOrder) {
+        throw new NotFoundException('Order not found');
+      }
+
+      const payableStatuses = ['CONFIRMED', 'IN_PREPARATION', 'READY', 'SERVED'];
+      if (!payableStatuses.includes(freshOrder.status)) {
+        throw new BadRequestException(`Cannot add payment to order in ${freshOrder.status} status`);
+      }
+      if (totalSplitAmount > Number(freshOrder.total) - Number(freshOrder.paidAmount)) {
+        throw new BadRequestException('Split total exceeds remaining balance');
+      }
+
       const createdPayments: Prisma.PaymentGetPayload<Record<string, never>>[] = [];
       let completedAmount = 0;
 
@@ -679,12 +813,21 @@ export class PaymentsService {
             method: split.method,
             amount: split.amount,
             tip: split.tip || 0,
+            reference: split.reference || null,
             idempotencyKey,
             status: PaymentStatus.PENDING,
           },
         });
 
         if (!provider) {
+          await this.redeemNonProviderPayment(
+            tx,
+            split.method,
+            split.reference,
+            split.amount,
+            tenantId,
+            orderId,
+          );
           payment = await tx.payment.update({
             where: { id: payment.id },
             data: { status: PaymentStatus.COMPLETED, processedAt: new Date() },
@@ -770,23 +913,31 @@ export class PaymentsService {
       }
 
       if (completedAmount > 0) {
-        const newTotalPaid = Number(order.paidAmount) + completedAmount;
+        const verResult = await tx.order.updateMany({
+          where: { id: orderId, version: freshOrder.version },
+          data: { version: { increment: 1 } },
+        });
+        if (verResult.count === 0) {
+          throw new ConflictException('Order was modified by another user. Please retry.');
+        }
+
+        const newTotalPaid = Number(freshOrder.paidAmount) + completedAmount;
         await tx.order.update({
           where: { id: orderId },
           data: {
-            paidAmount: newTotalPaid,
-            ...(newTotalPaid >= Number(order.total)
+            paidAmount: { increment: completedAmount },
+            ...(newTotalPaid >= Number(freshOrder.total)
               ? { status: 'COMPLETED' as OrderStatus, completedAt: new Date() }
               : {}),
           },
         });
 
-        if (newTotalPaid >= Number(order.total)) {
+        if (newTotalPaid >= Number(freshOrder.total)) {
           await tx.orderStatusHistory.create({
             data: {
               orderId,
               tenantId,
-              fromStatus: order.status as OrderStatus,
+              fromStatus: freshOrder.status as OrderStatus,
               toStatus: 'COMPLETED' as OrderStatus,
               changedByUserId: userId,
               reason: 'Split payment completed',
@@ -996,7 +1147,11 @@ export class PaymentsService {
         break;
       case 'refund.succeeded':
       case 'refund.partial':
-        await this.applyWebhookRefunded(event.reference, event.refundedAmount);
+        await this.applyWebhookRefunded(
+          event.reference,
+          event.refundedAmount,
+          event.refundedAmountIsTotal,
+        );
         break;
     }
 
@@ -1067,7 +1222,8 @@ export class PaymentsService {
               tenantId: payment.tenantId,
               fromStatus: order.status as OrderStatus,
               toStatus: 'COMPLETED' as OrderStatus,
-              changedByUserId: 'system',
+              changedBy: 'system',
+              changedByUserId: null,
               reason: 'Payment confirmed via gateway webhook',
             },
           });
@@ -1112,33 +1268,74 @@ export class PaymentsService {
     });
   }
 
-  private async applyWebhookRefunded(reference: string, refundedAmount?: number): Promise<void> {
+  private async applyWebhookRefunded(
+    reference: string,
+    refundedAmount?: number,
+    refundedAmountIsTotal = false,
+  ): Promise<void> {
     const payment = await this.prisma.payment.findFirst({
       where: { gatewayRef: reference },
     });
-    if (!payment || payment.status !== PaymentStatus.COMPLETED) {
+    if (!payment) {
+      this.logger.warn(`Webhook refund: no payment for gatewayRef ${reference}`);
       return;
     }
-    const refunded = refundedAmount && refundedAmount > 0 ? refundedAmount : Number(payment.amount);
-    const isFull = refunded >= Number(payment.amount);
+    if (!isRefundableStatus(payment.status)) {
+      this.logger.warn(
+        `Webhook refund: payment ${payment.id} not refundable (status ${payment.status}); skipping`,
+      );
+      return;
+    }
 
+    const paymentAmount = Number(payment.amount);
+    const alreadyRefunded = Number(payment.amountRefunded ?? 0);
+    const reported = refundedAmount && refundedAmount > 0 ? refundedAmount : paymentAmount;
+    const newTotalRefunded = refundedAmountIsTotal
+      ? Math.min(reported, paymentAmount)
+      : Math.min(alreadyRefunded + reported, paymentAmount);
+    const delta = newTotalRefunded - alreadyRefunded;
+    if (delta <= 0) {
+      this.logger.warn(
+        `Webhook refund: payment ${payment.id} already refunded (amountRefunded ${alreadyRefunded}); skipping`,
+      );
+      return;
+    }
+    const isFull = newTotalRefunded >= paymentAmount;
+
+    let claimedCount = 0;
     await this.prisma.$transaction(async (tx) => {
-      await tx.payment.update({
-        where: { id: payment.id },
+      const claimed = await tx.payment.updateMany({
+        where: {
+          id: payment.id,
+          status: { in: [PaymentStatus.COMPLETED, PaymentStatus.PARTIALLY_REFUNDED] },
+          amountRefunded: alreadyRefunded,
+        },
         data: {
           status: isFull ? PaymentStatus.REFUNDED : PaymentStatus.PARTIALLY_REFUNDED,
+          amountRefunded: newTotalRefunded,
           refundedAt: new Date(),
           refundReason: 'Gateway refund',
         },
       });
+      claimedCount = claimed.count;
+      if (claimed.count === 0) {
+        return;
+      }
       await tx.order.update({
         where: { id: payment.orderId },
         data: {
-          paidAmount: { decrement: refunded },
+          paidAmount: { decrement: delta },
           tip: { decrement: isFull ? Number(payment.tip || 0) : 0 },
         },
       });
     });
+
+    if (claimedCount === 0) {
+      this.logger.warn(
+        `Webhook refund: payment ${payment.id} could not be claimed (concurrent refund or replay); skipping`,
+      );
+      return;
+    }
 
     this.metricsService.incrementPaymentsRefunded();
     this.eventEmitter.emit('payments.refunded', {

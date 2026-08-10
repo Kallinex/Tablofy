@@ -13,6 +13,18 @@ import { UpdateWebhookDto } from './dto/update-webhook.dto';
 import { QueryWebhookDto } from './dto/query-webhook.dto';
 import { WebhookDeliveryService } from './webhook-delivery.service';
 import { buildPaginationMeta, calculateSkip } from '../../common/utils/pagination.util';
+import { SsrfBlockedError } from '../../common/ssrf/ssrf-guard';
+import { SsrfClientService } from '../../common/ssrf/ssrf-client.service';
+import {
+  isValidWebhookEventName,
+  normalizeWebhookEventName,
+  webhookEventCandidates,
+} from './webhook-events';
+
+const MAX_WEBHOOK_EVENTS = 50;
+const MAX_WEBHOOK_HEADERS = 20;
+const MAX_WEBHOOK_HEADER_VALUE_LENGTH = 256;
+const MAX_WEBHOOK_METADATA_KEYS = 20;
 
 @Injectable()
 export class WebhooksService {
@@ -24,6 +36,7 @@ export class WebhooksService {
     private readonly auditLogsService: AuditLogsService,
     private readonly configService: ConfigService,
     private readonly logger: AppLoggerService,
+    private readonly ssrfClient: SsrfClientService,
   ) {
     this.maxRegistrationsPerTenant = this.configService.get(
       'webhook.maxRegistrationsPerTenant',
@@ -32,7 +45,75 @@ export class WebhooksService {
     this.logger.setContext('WebhooksService');
   }
 
+  private async assertSafeWebhookUrl(url: string): Promise<void> {
+    try {
+      await this.ssrfClient.assertUrlSafe(url);
+    } catch (error) {
+      if (error instanceof SsrfBlockedError) {
+        throw new BadRequestException(`Webhook URL is not allowed: ${error.message}`);
+      }
+      throw error;
+    }
+  }
+
+  private normalizeEvents(events: string[]): string[] {
+    if (events.length === 0) {
+      throw new BadRequestException('At least one webhook event is required');
+    }
+    if (events.length > MAX_WEBHOOK_EVENTS) {
+      throw new BadRequestException(
+        `At most ${MAX_WEBHOOK_EVENTS} webhook events are allowed per registration`,
+      );
+    }
+    const invalid = events.filter((event) => !isValidWebhookEventName(event));
+    if (invalid.length > 0) {
+      throw new BadRequestException(`Unknown webhook event(s): ${invalid.join(', ')}`);
+    }
+    return events.map((event) => normalizeWebhookEventName(event) as string);
+  }
+
+  private assertHeaderBounds(headers?: Record<string, string>): void {
+    if (!headers) return;
+    const keys = Object.keys(headers);
+    if (keys.length > MAX_WEBHOOK_HEADERS) {
+      throw new BadRequestException(`At most ${MAX_WEBHOOK_HEADERS} webhook headers are allowed`);
+    }
+    for (const [key, value] of Object.entries(headers)) {
+      if (key.length > 256 || value.length > MAX_WEBHOOK_HEADER_VALUE_LENGTH) {
+        throw new BadRequestException(
+          'Webhook header keys and values must be 256 characters or fewer',
+        );
+      }
+    }
+  }
+
+  private assertMetadataBounds(metadata?: Record<string, unknown>): void {
+    if (!metadata) return;
+    const keys = Object.keys(metadata);
+    if (keys.length > MAX_WEBHOOK_METADATA_KEYS) {
+      throw new BadRequestException(
+        `At most ${MAX_WEBHOOK_METADATA_KEYS} webhook metadata keys are allowed`,
+      );
+    }
+    for (const [key, value] of Object.entries(metadata)) {
+      if (key.length > 256) {
+        throw new BadRequestException('Webhook metadata keys must be 256 characters or fewer');
+      }
+      if (value !== null && typeof value === 'object' && Array.isArray(value) === false) {
+        continue;
+      }
+      if (value !== null && typeof value !== 'object' && String(value).length > 1000) {
+        throw new BadRequestException('Webhook metadata values must be 1000 characters or fewer');
+      }
+    }
+  }
+
   async create(dto: CreateWebhookDto, tenantId: string, userId: string) {
+    await this.assertSafeWebhookUrl(dto.url);
+    const events = this.normalizeEvents(dto.events);
+    this.assertHeaderBounds(dto.headers);
+    this.assertMetadataBounds(dto.metadata);
+
     const existing = await this.prisma.webhookRegistration.findFirst({
       where: { tenantId, name: dto.name, deletedAt: null },
     });
@@ -58,7 +139,7 @@ export class WebhooksService {
         name: dto.name,
         url: dto.url,
         description: dto.description,
-        events: dto.events,
+        events,
         secretHash: hash,
         secretPrefix: prefix,
         encryptedSecret,
@@ -116,11 +197,23 @@ export class WebhooksService {
   async update(id: string, dto: UpdateWebhookDto, tenantId: string, userId: string) {
     await this.findOne(id, tenantId);
 
+    if (dto.url !== undefined) {
+      await this.assertSafeWebhookUrl(dto.url);
+    }
+
+    if (dto.events !== undefined) {
+      this.normalizeEvents(dto.events);
+    }
+    this.assertHeaderBounds(dto.headers);
+    this.assertMetadataBounds(dto.metadata);
+
     const data: Record<string, unknown> = {};
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.url !== undefined) data.url = dto.url;
     if (dto.description !== undefined) data.description = dto.description;
-    if (dto.events !== undefined) data.events = dto.events;
+    if (dto.events !== undefined) {
+      data.events = dto.events.map((event) => normalizeWebhookEventName(event) as string);
+    }
     if (dto.retryCount !== undefined) data.retryCount = dto.retryCount;
     if (dto.timeoutMs !== undefined) data.timeoutMs = dto.timeoutMs;
     if (dto.headers !== undefined) data.headers = dto.headers;
@@ -187,8 +280,11 @@ export class WebhooksService {
   }
 
   async getActiveWebhooksForEvent(eventType: string, tenantId: string) {
+    const canonical = normalizeWebhookEventName(eventType);
+    if (!canonical) return [];
+    const candidates = webhookEventCandidates(canonical);
     return this.prisma.webhookRegistration.findMany({
-      where: { tenantId, isActive: true, deletedAt: null, events: { has: eventType } },
+      where: { tenantId, isActive: true, deletedAt: null, events: { hasSome: [...candidates] } },
     });
   }
 }

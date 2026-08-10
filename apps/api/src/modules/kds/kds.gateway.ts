@@ -7,13 +7,15 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
+import { WsAuthService } from '../../common/ws/ws-auth.service';
 
 @WebSocketGateway({
   namespace: '/kitchen',
-  cors: { origin: '*', credentials: true },
 })
 export class KdsGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(KdsGateway.name);
+
+  constructor(private readonly wsAuthService: WsAuthService) {}
 
   @WebSocketServer()
   server!: Server;
@@ -22,7 +24,18 @@ export class KdsGateway implements OnGatewayInit, OnGatewayConnection, OnGateway
     this.logger.log('KDS WebSocket gateway initialized');
   }
 
-  handleConnection(client: Socket) {
+  async handleConnection(client: Socket) {
+    const authenticated = await this.wsAuthService.authenticate(client);
+    if (!authenticated) {
+      return;
+    }
+    const joined = await this.wsAuthService.joinAuthorizedRoom(
+      client,
+      this.wsAuthService.resolveRequestedTenantId(client),
+    );
+    if (!joined) {
+      return;
+    }
     this.logger.log(`KDS client connected: ${client.id}`);
   }
 
@@ -40,9 +53,5 @@ export class KdsGateway implements OnGatewayInit, OnGatewayConnection, OnGateway
 
   broadcastStationUpdate(tenantId: string, event: string, data: unknown) {
     this.server?.to(`tenant:${tenantId}`)?.emit(event, data);
-  }
-
-  joinTenantRoom(client: Socket, tenantId: string) {
-    client.join(`tenant:${tenantId}`);
   }
 }

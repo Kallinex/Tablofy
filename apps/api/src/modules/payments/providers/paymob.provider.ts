@@ -487,6 +487,7 @@ export class PaymobProvider implements PaymentProvider {
           type: 'refund.succeeded',
           reference,
           refundedAmount: refundedAmount || undefined,
+          refundedAmountIsTotal: false,
           raw: payload,
         };
       }

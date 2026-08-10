@@ -1,6 +1,6 @@
 import { HealthIndicator, HealthIndicatorResult, HealthCheckError } from '@nestjs/terminus';
 import { Injectable } from '@nestjs/common';
-import { QueueService } from '../modules/queues/queue.service';
+import { QueueService, QUEUE_NAMES } from '../modules/queues/queue.service';
 
 @Injectable()
 export class BullHealthIndicator extends HealthIndicator {
@@ -10,7 +10,7 @@ export class BullHealthIndicator extends HealthIndicator {
 
   async isHealthy(key: string): Promise<HealthIndicatorResult> {
     try {
-      const queueNames = ['email', 'cleanup', 'notification', 'kitchen', 'print'];
+      const queueNames = [...QUEUE_NAMES];
       const details: Record<string, unknown> = {};
 
       for (const name of queueNames) {

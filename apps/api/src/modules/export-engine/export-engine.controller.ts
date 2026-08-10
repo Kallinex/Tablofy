@@ -1,11 +1,13 @@
 import { Controller, Get, Post, Param, Query, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { ExportEngineService } from './export-engine.service';
 import { GenerateExportDto } from './dto/generate-export.dto';
 import { ExportQueryDto } from './dto/export-query.dto';
 
 @Controller('export-engine')
+@Permissions('reports:read')
 export class ExportEngineController {
   constructor(private readonly exportEngineService: ExportEngineService) {}
 

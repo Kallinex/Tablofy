@@ -30,6 +30,10 @@ describe('AuthController', () => {
             changePassword: jest.fn(),
             verifyEmail: jest.fn(),
             resendVerificationEmail: jest.fn(),
+            getTwoFactorStatus: jest.fn(),
+            setupTwoFactor: jest.fn(),
+            enableTwoFactor: jest.fn(),
+            disableTwoFactor: jest.fn(),
           },
         },
       ],
@@ -188,6 +192,72 @@ describe('AuthController', () => {
       );
 
       expect(result).toEqual({ message: expect.any(String) });
+    });
+  });
+
+  describe('two-factor authentication', () => {
+    it('should return the 2FA status', async () => {
+      authService.getTwoFactorStatus.mockResolvedValue({
+        enabled: false,
+        verified: false,
+      } as never);
+
+      const result = await controller.getTwoFactorStatus({
+        id: testUserId,
+        email: 'test@test.com',
+        role: 'OWNER',
+        tenantId: 'tenant-1',
+      });
+
+      expect(authService.getTwoFactorStatus).toHaveBeenCalledWith(testUserId);
+      expect(result).toEqual({ enabled: false, verified: false });
+    });
+
+    it('should return the generated 2FA secret', async () => {
+      authService.setupTwoFactor.mockResolvedValue({
+        secret: 'base32secret',
+        qrCodeUrl: 'otpauth://...',
+      } as never);
+
+      const result = await controller.setupTwoFactor({
+        id: testUserId,
+        email: 'test@test.com',
+        role: 'OWNER',
+        tenantId: 'tenant-1',
+      });
+
+      expect(authService.setupTwoFactor).toHaveBeenCalledWith(testUserId);
+      expect(result).toEqual({ secret: 'base32secret', qrCodeUrl: 'otpauth://...' });
+    });
+
+    it('should enable two-factor authentication', async () => {
+      authService.enableTwoFactor.mockResolvedValue({ backupCodes: [] } as never);
+
+      const result = await controller.enableTwoFactor(
+        { id: testUserId, email: 'test@test.com', role: 'OWNER', tenantId: 'tenant-1' },
+        { code: '123456' },
+      );
+
+      expect(authService.enableTwoFactor).toHaveBeenCalledWith(testUserId, '123456');
+      expect(result).toEqual({
+        message: 'Two-factor authentication enabled',
+        backupCodes: [],
+      });
+    });
+
+    it('should disable two-factor authentication', async () => {
+      authService.disableTwoFactor.mockResolvedValue({ recoveryCodesRegenerated: false } as never);
+
+      const result = await controller.disableTwoFactor(
+        { id: testUserId, email: 'test@test.com', role: 'OWNER', tenantId: 'tenant-1' },
+        { code: '123456' },
+      );
+
+      expect(authService.disableTwoFactor).toHaveBeenCalledWith(testUserId, '123456');
+      expect(result).toEqual({
+        message: 'Two-factor authentication disabled',
+        recoveryCodesRegenerated: false,
+      });
     });
   });
 });

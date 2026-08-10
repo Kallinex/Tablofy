@@ -21,6 +21,7 @@ import {
   SegmentType,
   ReferralStatus,
 } from '@prisma/client';
+import { roundMoney } from '../../common/money/money.util';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { QueryCustomerDto } from './dto/query-customer.dto';
@@ -786,29 +787,33 @@ export class CustomersService {
   ) {
     const wallet = await this.ensureWallet(customerId, tenantId);
 
-    const amount = Math.round(dto.amount * 100) / 100;
+    const amount = roundMoney(dto.amount);
 
-    const updated = await this.prisma.wallet.update({
-      where: { id: wallet.id },
-      data: {
-        balance: { increment: amount },
-        version: { increment: 1 },
-      },
-    });
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          balance: { increment: amount },
+          version: { increment: 1 },
+        },
+      });
 
-    const txn = await this.prisma.walletTransaction.create({
-      data: {
-        walletId: wallet.id,
-        tenantId,
-        customerId,
-        type: WalletTransactionType.RECHARGE,
-        amount,
-        balanceBefore: Number(wallet.balance),
-        balanceAfter: Number(updated.balance),
-        description: dto.description ?? 'Wallet recharge',
-        referenceId: dto.referenceId,
-        referenceType: dto.referenceType,
-      },
+      const txn = await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          tenantId,
+          customerId,
+          type: WalletTransactionType.RECHARGE,
+          amount,
+          balanceBefore: roundMoney(wallet.balance),
+          balanceAfter: roundMoney(updated.balance),
+          description: dto.description ?? 'Wallet recharge',
+          referenceId: dto.referenceId,
+          referenceType: dto.referenceType,
+        },
+      });
+
+      return { wallet: updated, transaction: txn };
     });
 
     await this.auditLogsService.log({
@@ -817,48 +822,63 @@ export class CustomersService {
       resourceId: wallet.id,
       userId,
       tenantId,
-      newValues: { customerId, amount, balance: Number(updated.balance) },
+      newValues: { customerId, amount, balance: roundMoney(result.wallet.balance) },
     });
 
     await this.cacheService.delete(tenantId, `customer:${customerId}`);
     this.gateway.broadcastWalletUpdate(tenantId, 'wallet.updated', {
       customerId,
-      balance: Number(updated.balance),
+      balance: roundMoney(result.wallet.balance),
     });
 
-    return { wallet: updated, transaction: txn };
+    return result;
   }
 
   async spendWallet(customerId: string, dto: WalletSpendDto, tenantId: string, userId: string) {
     const wallet = await this.ensureWallet(customerId, tenantId);
 
-    const amount = Math.round(dto.amount * 100) / 100;
+    const amount = roundMoney(dto.amount);
 
-    if (Number(wallet.balance) < amount) {
-      throw new BadRequestException('Insufficient wallet balance');
-    }
+    const result = await this.prisma.$transaction(async (tx) => {
+      const before = await tx.wallet.findUnique({ where: { id: wallet.id } });
+      if (!before) {
+        throw new NotFoundException('Wallet not found');
+      }
+      const balanceBefore = roundMoney(before.balance);
 
-    const updated = await this.prisma.wallet.update({
-      where: { id: wallet.id },
-      data: {
-        balance: { decrement: amount },
-        version: { increment: 1 },
-      },
-    });
+      const claimed = await tx.wallet.updateMany({
+        where: { id: wallet.id, balance: { gte: amount } },
+        data: {
+          balance: { decrement: amount },
+          version: { increment: 1 },
+        },
+      });
+      if (claimed.count === 0) {
+        throw new BadRequestException('Insufficient wallet balance');
+      }
 
-    const txn = await this.prisma.walletTransaction.create({
-      data: {
-        walletId: wallet.id,
-        tenantId,
-        customerId,
-        type: WalletTransactionType.SPEND,
-        amount: -amount,
-        balanceBefore: Number(wallet.balance),
-        balanceAfter: Number(updated.balance),
-        description: dto.description ?? 'Wallet spend',
-        referenceId: dto.referenceId,
-        referenceType: dto.referenceType,
-      },
+      const after = await tx.wallet.findUnique({ where: { id: wallet.id } });
+      if (!after) {
+        throw new NotFoundException('Wallet not found');
+      }
+      const balanceAfter = roundMoney(after.balance);
+
+      const txn = await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          tenantId,
+          customerId,
+          type: WalletTransactionType.SPEND,
+          amount: -amount,
+          balanceBefore,
+          balanceAfter,
+          description: dto.description ?? 'Wallet spend',
+          referenceId: dto.referenceId,
+          referenceType: dto.referenceType,
+        },
+      });
+
+      return { wallet: after, transaction: txn };
     });
 
     await this.auditLogsService.log({
@@ -867,44 +887,48 @@ export class CustomersService {
       resourceId: wallet.id,
       userId,
       tenantId,
-      newValues: { customerId, amount, balance: Number(updated.balance) },
+      newValues: { customerId, amount, balance: roundMoney(result.wallet.balance) },
     });
 
     await this.cacheService.delete(tenantId, `customer:${customerId}`);
     this.gateway.broadcastWalletUpdate(tenantId, 'wallet.updated', {
       customerId,
-      balance: Number(updated.balance),
+      balance: roundMoney(result.wallet.balance),
     });
 
-    return { wallet: updated, transaction: txn };
+    return result;
   }
 
   async refundWallet(customerId: string, dto: WalletRefundDto, tenantId: string, userId: string) {
     const wallet = await this.ensureWallet(customerId, tenantId);
 
-    const amount = Math.round(dto.amount * 100) / 100;
+    const amount = roundMoney(dto.amount);
 
-    const updated = await this.prisma.wallet.update({
-      where: { id: wallet.id },
-      data: {
-        balance: { increment: amount },
-        version: { increment: 1 },
-      },
-    });
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          balance: { increment: amount },
+          version: { increment: 1 },
+        },
+      });
 
-    const txn = await this.prisma.walletTransaction.create({
-      data: {
-        walletId: wallet.id,
-        tenantId,
-        customerId,
-        type: WalletTransactionType.REFUND,
-        amount,
-        balanceBefore: Number(wallet.balance),
-        balanceAfter: Number(updated.balance),
-        description: dto.description ?? 'Wallet refund',
-        referenceId: dto.referenceId,
-        referenceType: dto.referenceType,
-      },
+      const txn = await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          tenantId,
+          customerId,
+          type: WalletTransactionType.REFUND,
+          amount,
+          balanceBefore: roundMoney(wallet.balance),
+          balanceAfter: roundMoney(updated.balance),
+          description: dto.description ?? 'Wallet refund',
+          referenceId: dto.referenceId,
+          referenceType: dto.referenceType,
+        },
+      });
+
+      return { wallet: updated, transaction: txn };
     });
 
     await this.auditLogsService.log({
@@ -913,16 +937,16 @@ export class CustomersService {
       resourceId: wallet.id,
       userId,
       tenantId,
-      newValues: { customerId, amount, balance: Number(updated.balance) },
+      newValues: { customerId, amount, balance: roundMoney(result.wallet.balance) },
     });
 
     await this.cacheService.delete(tenantId, `customer:${customerId}`);
     this.gateway.broadcastWalletUpdate(tenantId, 'wallet.updated', {
       customerId,
-      balance: Number(updated.balance),
+      balance: roundMoney(result.wallet.balance),
     });
 
-    return { wallet: updated, transaction: txn };
+    return result;
   }
 
   async getWalletTransactions(customerId: string, tenantId: string, page = 1, limit = 20) {
@@ -1181,9 +1205,9 @@ export class CustomersService {
   // Analytics
   // ============================================
 
-  async getCustomerAnalytics(customerId: string, _tenantId: string) {
-    const analytics = await this.prisma.customerAnalytics.findUnique({
-      where: { customerId },
+  async getCustomerAnalytics(customerId: string, tenantId: string) {
+    const analytics = await this.prisma.customerAnalytics.findFirst({
+      where: { customerId, tenantId, deletedAt: null },
     });
 
     if (!analytics) {
@@ -1207,6 +1231,14 @@ export class CustomersService {
   }
 
   async recomputeAnalytics(customerId: string, tenantId: string) {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
     const visits = await this.prisma.visitHistory.findMany({
       where: { customerId, tenantId },
     });

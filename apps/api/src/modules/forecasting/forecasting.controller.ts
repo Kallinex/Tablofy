@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Put, Param, Query, Body } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { ForecastingService } from './forecasting.service';
 import { GenerateForecastDto } from './dto/generate-forecast.dto';
@@ -10,6 +11,7 @@ import {
 } from './dto/reorder-suggestion.dto';
 
 @Controller('forecasts')
+@Permissions('inventory:read')
 export class ForecastingController {
   constructor(private readonly forecastingService: ForecastingService) {}
 

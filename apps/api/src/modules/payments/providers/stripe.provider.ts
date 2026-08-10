@@ -400,6 +400,7 @@ export class StripeProvider implements PaymentProvider {
           type: amountRefunded < amount ? 'refund.partial' : 'refund.succeeded',
           reference: String(obj.payment_intent ?? obj.id ?? ''),
           refundedAmount: amountRefunded / 100,
+          refundedAmountIsTotal: true,
           raw: payload,
         };
       }
@@ -410,6 +411,7 @@ export class StripeProvider implements PaymentProvider {
           type: 'refund.succeeded',
           reference: String(refundObj.payment_intent ?? refundObj.id ?? ''),
           refundedAmount: typeof refundObj.amount === 'number' ? refundObj.amount / 100 : undefined,
+          refundedAmountIsTotal: false,
           raw: payload,
         };
       }

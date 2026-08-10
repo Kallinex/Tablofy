@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { RecipesService } from './recipes.service';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
@@ -33,12 +34,14 @@ export class RecipesController {
     return this.recipesService.createRecipe(dto, user.tenantId!, user.id);
   }
 
+  @Permissions('inventory:read')
   @Get()
   @ApiOperation({ summary: 'List recipes' })
   async findAll(@Query() query: QueryRecipeDto, @CurrentUser() user: CurrentUserData) {
     return this.recipesService.listRecipes(user.tenantId!, query);
   }
 
+  @Permissions('inventory:read')
   @Get(':id')
   @ApiOperation({ summary: 'Get recipe by ID' })
   async findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
@@ -64,6 +67,7 @@ export class RecipesController {
     await this.recipesService.deleteRecipe(id, user.tenantId!, user.id);
   }
 
+  @Permissions('inventory:read')
   @Get(':id/cost')
   @ApiOperation({ summary: 'Get recipe cost breakdown' })
   async getCost(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
@@ -114,6 +118,7 @@ export class RecipesController {
     return this.recipesService.rollbackDeduction(orderId, user.tenantId!);
   }
 
+  @Permissions('inventory:read')
   @Get('deduction/:orderId')
   @ApiOperation({ summary: 'Get deduction report for order' })
   async getDeduction(@Param('orderId') orderId: string, @CurrentUser() user: CurrentUserData) {

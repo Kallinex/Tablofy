@@ -1027,6 +1027,7 @@ model Order {
   @@unique([restaurantId, orderNumber])
   @@index([branchId])
   @@index([createdAt])
+  @@index([customerPhone])
   @@index([deletedAt])
   @@index([orderType])
   @@index([restaurantId])
@@ -1179,6 +1180,7 @@ model Payment {
   method       PaymentMethod
   status       PaymentStatus @default(PENDING)
   amount       Decimal       @db.Decimal(10, 2)
+  amountRefunded Decimal     @default(0) @db.Decimal(10, 2)
   tip          Decimal       @default(0) @db.Decimal(10, 2)
   reference    String?
   gatewayRef   String?
@@ -1652,6 +1654,7 @@ model Customer {
   @@index([tenantId, restaurantId])
   @@index([tenantId, createdAt])
   @@index([tenantId, deletedAt])
+  @@index([phone])
   @@map("customers")
 }
 
@@ -1932,6 +1935,7 @@ model WalletTransaction {
   @@index([tenantId])
   @@index([type])
   @@index([walletId])
+  @@index([referenceType, referenceId])
   @@map("wallet_transactions")
 }
 
@@ -3583,6 +3587,7 @@ model ConsumptionRecord {
   @@index([period])
   @@index([tenantId, createdAt])
   @@index([tenantId])
+  @@index([tenantId, inventoryItemId, date])
   @@map("consumption_records")
 }
 
@@ -3815,7 +3820,7 @@ model WebhookDelivery {
   id           String                @id @default(uuid())
   webhookId    String
   tenantId     String
-  eventType    WebhookEventType
+  eventType    String
   eventId      String
   payload      Json
   status       WebhookDeliveryStatus @default(PENDING)
@@ -4130,32 +4135,6 @@ enum WebhookDeliveryStatus {
   RETRYING
   DELIVERED
   DEAD_LETTER
-}
-
-enum WebhookEventType {
-  ORDERS_CREATED          @map("orders.created")
-  ORDERS_UPDATED          @map("orders.updated")
-  ORDERS_COMPLETED        @map("orders.completed")
-  ORDERS_CANCELLED        @map("orders.cancelled")
-  CUSTOMERS_CREATED       @map("customers.created")
-  CUSTOMERS_UPDATED       @map("customers.updated")
-  CUSTOMERS_DELETED       @map("customers.deleted")
-  INVENTORY_LOW_STOCK     @map("inventory.low_stock")
-  INVENTORY_OUT_OF_STOCK  @map("inventory.out_of_stock")
-  INVENTORY_RECEIVED      @map("inventory.received")
-  PAYMENTS_COMPLETED      @map("payments.completed")
-  PAYMENTS_FAILED         @map("payments.failed")
-  PAYMENTS_REFUNDED       @map("payments.refunded")
-  LOYALTY_POINTS_EARNED   @map("loyalty.points_earned")
-  LOYALTY_POINTS_REDEEMED @map("loyalty.points_redeemed")
-  LOYALTY_TIER_CHANGED    @map("loyalty.tier_changed")
-  CAMPAIGNS_SENT          @map("campaigns.sent")
-  CAMPAIGNS_OPENED        @map("campaigns.opened")
-  CAMPAIGNS_CLICKED       @map("campaigns.clicked")
-  SUPPLIERS_CREATED       @map("suppliers.created")
-  SUPPLIERS_UPDATED       @map("suppliers.updated")
-  TRANSFERS_CREATED       @map("transfers.created")
-  TRANSFERS_COMPLETED     @map("transfers.completed")
 }
 
 enum BackupRecordType {

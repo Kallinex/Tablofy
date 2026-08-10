@@ -9,6 +9,7 @@ import {
   Max,
   IsObject,
   IsBoolean,
+  ArrayMaxSize,
 } from 'class-validator';
 
 export class CreateWebhookDto {
@@ -26,7 +27,9 @@ export class CreateWebhookDto {
   description?: string;
 
   @IsArray()
+  @ArrayMaxSize(50)
   @IsString({ each: true })
+  @MaxLength(100, { each: true })
   events!: string[];
 
   @IsOptional()

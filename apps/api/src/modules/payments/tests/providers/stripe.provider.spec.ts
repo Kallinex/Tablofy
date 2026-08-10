@@ -282,6 +282,7 @@ describe('StripeProvider', () => {
       expect(event?.type).toBe('refund.partial');
       expect(event?.reference).toBe('pi_1');
       expect(event?.refundedAmount).toBe(10);
+      expect(event?.refundedAmountIsTotal).toBe(true);
     });
 
     it('should return null for unknown events', () => {

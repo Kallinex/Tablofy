@@ -27,6 +27,12 @@ export interface GatewayWebhookEvent {
   amount?: number;
   currency?: string;
   refundedAmount?: number;
+  /**
+   * Whether `refundedAmount` is the cumulative total refunded on the charge/payment
+   * (e.g. Stripe `charge.refunded` -> `amount_refunded`) rather than the amount of a
+   * single refund event (e.g. Stripe `refund.created`, Paymob `refund.transaction.updated`).
+   */
+  refundedAmountIsTotal?: boolean;
   raw: unknown;
 }
 

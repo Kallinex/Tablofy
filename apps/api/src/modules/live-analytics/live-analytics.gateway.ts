@@ -7,15 +7,17 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
+import { WsAuthService } from '../../common/ws/ws-auth.service';
 
 @WebSocketGateway({
   namespace: '/live-analytics',
-  cors: { origin: '*', credentials: true },
 })
 export class LiveAnalyticsGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   private readonly logger = new Logger(LiveAnalyticsGateway.name);
+
+  constructor(private readonly wsAuthService: WsAuthService) {}
 
   @WebSocketServer()
   server!: Server;
@@ -24,9 +26,18 @@ export class LiveAnalyticsGateway
     this.logger.log('Live Analytics gateway initialized');
   }
 
-  handleConnection(client: Socket) {
-    const tenantId = client.handshake.query.tenantId as string;
-    if (tenantId) client.join(`tenant:${tenantId}`);
+  async handleConnection(client: Socket) {
+    const authenticated = await this.wsAuthService.authenticate(client);
+    if (!authenticated) {
+      return;
+    }
+    const joined = await this.wsAuthService.joinAuthorizedRoom(
+      client,
+      this.wsAuthService.resolveRequestedTenantId(client),
+    );
+    if (!joined) {
+      return;
+    }
     this.logger.log(`Live Analytics client connected: ${client.id}`);
   }
 

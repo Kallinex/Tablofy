@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { QueueService, QueueJobData } from './queue.service';
+import { MetricsService } from '../../common/metrics/metrics.service';
 
 interface DeadLetterJobData {
   originalQueue?: string;
@@ -16,7 +18,11 @@ interface DeadLetterJobData {
 export class DeadLetterProcessor {
   private readonly logger = new Logger(DeadLetterProcessor.name);
 
-  constructor(private readonly queueService: QueueService) {
+  constructor(
+    private readonly queueService: QueueService,
+    private readonly metricsService: MetricsService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {
     this.queueService.registerWorker('dead-letter', this.handleDeadLetter.bind(this), 5);
   }
 
@@ -35,6 +41,18 @@ export class DeadLetterProcessor {
         error: data.error?.message,
       },
     );
+
+    this.metricsService.incrementBullQueueDeadLetter(originalQueue);
+
+    this.eventEmitter.emit('queue.dead-letter', {
+      queue: originalQueue,
+      jobId: originalJobId,
+      jobName: data.originalJobName,
+      attemptsMade: data.attemptsMade,
+      failedAt: data.failedAt,
+      error: data.error?.message,
+    });
+
     return { consumed: true, originalQueue };
   }
 }

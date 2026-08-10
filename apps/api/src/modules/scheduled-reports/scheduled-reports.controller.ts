@@ -11,6 +11,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { ScheduledReportsService } from './scheduled-reports.service';
 import { CreateScheduledReportDto } from './dto/create-scheduled-report.dto';
@@ -18,6 +19,7 @@ import { UpdateScheduledReportDto } from './dto/update-scheduled-report.dto';
 import { ScheduledReportQueryDto } from './dto/scheduled-report-query.dto';
 
 @Controller('scheduled-reports')
+@Permissions('reports:read')
 export class ScheduledReportsController {
   constructor(private readonly scheduledReportsService: ScheduledReportsService) {}
 

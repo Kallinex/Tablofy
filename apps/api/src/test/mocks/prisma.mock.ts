@@ -141,6 +141,7 @@ function createMockDelegate() {
 function createMockDelegateWithTransaction() {
   return {
     ...createMockDelegate(),
+    $queryRaw: jest.fn().mockResolvedValue([]),
   };
 }
 

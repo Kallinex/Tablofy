@@ -126,7 +126,14 @@ describe('InventoryProcessor', () => {
       });
       expect(queueServiceMock.addJob).toHaveBeenCalledWith('notification', 'low-stock-alert', {
         tenantId: 'tenant-1',
-        payload: { items: ['item-1'] },
+        userId: 'user-1',
+        payload: {
+          title: 'Low stock alert',
+          message: '1 item(s) below reorder level in your inventory.',
+          type: 'LOW_STOCK',
+          channel: 'in_app',
+          recipientUserIds: ['user-1'],
+        },
       });
     });
 
@@ -168,6 +175,7 @@ describe('InventoryProcessor', () => {
         },
       ]);
       prismaMock.expirationAlert.findMany.mockResolvedValue([]);
+      prismaMock.user.findMany.mockResolvedValue([{ id: 'user-1', tenantId: 'tenant-1' }]);
 
       const result = await (processor as unknown as Record<string, (job: Job) => Promise<never>>)[
         'handleExpirationChecks'
@@ -185,7 +193,14 @@ describe('InventoryProcessor', () => {
       });
       expect(queueServiceMock.addJob).toHaveBeenCalledWith('notification', 'expiration-alert', {
         tenantId: 'tenant-1',
-        payload: { alertCount: 1, inventoryItemIds: ['item-1'] },
+        userId: 'user-1',
+        payload: {
+          title: 'Inventory expiration alert',
+          message: '1 batch(es) expiring soon or already expired in your inventory.',
+          type: 'EXPIRY',
+          channel: 'in_app',
+          recipientUserIds: ['user-1'],
+        },
       });
     });
 

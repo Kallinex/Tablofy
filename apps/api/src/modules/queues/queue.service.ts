@@ -9,6 +9,15 @@ export interface QueueJobData {
   payload: Record<string, unknown>;
 }
 
+export type NotificationJobPayload = {
+  title: string;
+  message: string;
+  type: string;
+  channel: 'push' | 'email' | 'in_app' | 'sms';
+  recipientUserIds?: string[];
+  meta?: Record<string, unknown>;
+} & Record<string, unknown>;
+
 interface QueueJobOptions {
   attempts?: number;
   backoff?: { type: 'exponential'; delay: number };
@@ -53,6 +62,8 @@ const QUEUE_JOB_OPTIONS: Record<string, QueueJobOptions> = {
 };
 
 const DLQ_MONITOR_INTERVAL_MS = 60000;
+
+export const QUEUE_NAMES: ReadonlyArray<string> = Object.freeze(Object.keys(QUEUE_JOB_OPTIONS));
 
 @Injectable()
 export class QueueService implements OnModuleInit, OnModuleDestroy {

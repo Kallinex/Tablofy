@@ -29,6 +29,14 @@ import { ChangeStatusDto } from './dto/change-status.dto';
 import { OrderStatus, validateTransition, isTerminalStatus } from './order-state-machine';
 import { CACHE_TTL } from '@tablofy/shared/constants';
 import { MetricsService } from '../../common/metrics/metrics.service';
+import {
+  addMoney,
+  mulMoney,
+  subMoney,
+  sumMoney,
+  percentOf,
+  roundMoney,
+} from '../../common/money/money.util';
 
 type OrderWithIncludes = Prisma.OrderGetPayload<{
   include: {
@@ -66,84 +74,107 @@ export class OrdersService {
   ) {
     await this.validateBusinessRules(dto, tenantId);
 
-    const orderNumber = await this.generateOrderNumber(dto.restaurantId);
+    let result: Prisma.OrderGetPayload<{
+      include: { items: { include: { modifiers: true } }; statusHistory: true };
+    }> | null = null;
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const subtotal = dto.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    for (let attempt = 1; attempt <= this.orderNumberMaxRetries; attempt++) {
+      try {
+        const orderNumber = await this.generateOrderNumber(dto.restaurantId);
 
-      const order = await tx.order.create({
-        data: {
-          orderNumber,
-          tenantId,
-          restaurantId: dto.restaurantId,
-          branchId: dto.branchId,
-          tableId: dto.tableId || null,
-          userId,
-          orderType: dto.orderType || OrderType.DINE_IN,
-          source: dto.source || 'POS',
-          subtotal,
-          total: subtotal,
-          customerName: dto.customerName,
-          customerPhone: dto.customerPhone,
-          customerEmail: dto.customerEmail,
-          deliveryAddress: dto.deliveryAddress,
-          deliveryFee: dto.deliveryFee || 0,
-          notes: dto.notes,
-        },
-      });
+        result = await this.prisma.$transaction(async (tx) => {
+          const subtotal = sumMoney(
+            dto.items.map((item) => mulMoney(item.unitPrice, item.quantity)),
+          );
 
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId: order.id,
-          tenantId,
-          toStatus: PrismaOrderStatus.DRAFT,
-          changedByUserId: userId,
-          reason: 'Order created',
-        },
-      });
-
-      for (const itemDto of dto.items) {
-        const itemTotal = itemDto.unitPrice * itemDto.quantity;
-        const modifiersTotal = (itemDto.modifiers || []).reduce(
-          (s, m) => s + m.price * (m.quantity || 1),
-          0,
-        );
-
-        await tx.orderItem.create({
-          data: {
-            orderId: order.id,
-            tenantId,
-            productId: itemDto.productId,
-            productName: itemDto.productName,
-            variantId: itemDto.variantId,
-            variantName: itemDto.variantName,
-            sku: itemDto.sku,
-            quantity: itemDto.quantity,
-            unitPrice: itemDto.unitPrice,
-            total: itemTotal + modifiersTotal - (itemDto.discount || 0),
-            discount: itemDto.discount || 0,
-            preparationNotes: itemDto.preparationNotes,
-            priceSnapshot: itemDto.unitPrice as unknown as Prisma.InputJsonValue,
-            modifiers: {
-              create: (itemDto.modifiers || []).map((m) => ({
-                tenantId,
-                modifierId: m.modifierId,
-                name: m.name,
-                quantity: m.quantity || 1,
-                price: m.price,
-              })),
+          const order = await tx.order.create({
+            data: {
+              orderNumber,
+              tenantId,
+              restaurantId: dto.restaurantId,
+              branchId: dto.branchId,
+              tableId: dto.tableId || null,
+              userId,
+              orderType: dto.orderType || OrderType.DINE_IN,
+              source: dto.source || 'POS',
+              subtotal,
+              total: subtotal,
+              customerName: dto.customerName,
+              customerPhone: dto.customerPhone,
+              customerEmail: dto.customerEmail,
+              deliveryAddress: dto.deliveryAddress,
+              deliveryFee: roundMoney(dto.deliveryFee || 0),
+              notes: dto.notes,
             },
-          },
+          });
+
+          await tx.orderStatusHistory.create({
+            data: {
+              orderId: order.id,
+              tenantId,
+              toStatus: PrismaOrderStatus.DRAFT,
+              changedByUserId: userId,
+              reason: 'Order created',
+            },
+          });
+
+          for (const itemDto of dto.items) {
+            const itemTotal = mulMoney(itemDto.unitPrice, itemDto.quantity);
+            const modifiersTotal = sumMoney(
+              (itemDto.modifiers || []).map((m) => mulMoney(m.price, m.quantity || 1)),
+            );
+
+            await tx.orderItem.create({
+              data: {
+                orderId: order.id,
+                tenantId,
+                productId: itemDto.productId,
+                productName: itemDto.productName,
+                variantId: itemDto.variantId,
+                variantName: itemDto.variantName,
+                sku: itemDto.sku,
+                quantity: itemDto.quantity,
+                unitPrice: itemDto.unitPrice,
+                total: subMoney(addMoney(itemTotal, modifiersTotal), itemDto.discount || 0),
+                discount: roundMoney(itemDto.discount || 0),
+                preparationNotes: itemDto.preparationNotes,
+                priceSnapshot: itemDto.unitPrice as unknown as Prisma.InputJsonValue,
+                modifiers: {
+                  create: (itemDto.modifiers || []).map((m) => ({
+                    tenantId,
+                    modifierId: m.modifierId,
+                    name: m.name,
+                    quantity: m.quantity || 1,
+                    price: m.price,
+                  })),
+                },
+              },
+            });
+          }
+
+          const fullOrder = await tx.order.findUnique({
+            where: { id: order.id },
+            include: { items: { include: { modifiers: true } }, statusHistory: true },
+          });
+
+          return fullOrder;
         });
+
+        break;
+      } catch (error) {
+        if (this.isOrderNumberConflict(error) && attempt < this.orderNumberMaxRetries) {
+          this.logger.warn(
+            `Order number conflict for restaurant ${dto.restaurantId}; retrying (attempt ${attempt}/${this.orderNumberMaxRetries})`,
+          );
+          continue;
+        }
+        throw error;
       }
+    }
 
-      const fullOrder = await tx.order.findUnique({
-        where: { id: order.id },
-        include: { items: { include: { modifiers: true } }, statusHistory: true },
-      });
-
-      return fullOrder;
-    });
+    if (!result) {
+      throw new ConflictException('Could not allocate a unique order number');
+    }
 
     await this.auditLogsService.log({
       action: 'ORDER_CREATED',
@@ -296,7 +327,7 @@ export class OrdersService {
       if (dto.customerPhone !== undefined) updateData.customerPhone = dto.customerPhone;
       if (dto.customerEmail !== undefined) updateData.customerEmail = dto.customerEmail;
       if (dto.deliveryAddress !== undefined) updateData.deliveryAddress = dto.deliveryAddress;
-      if (dto.deliveryFee !== undefined) updateData.deliveryFee = dto.deliveryFee;
+      if (dto.deliveryFee !== undefined) updateData.deliveryFee = roundMoney(dto.deliveryFee);
 
       if (Object.keys(updateData).length > 0) {
         await tx.order.update({ where: { id }, data: updateData });
@@ -317,27 +348,40 @@ export class OrdersService {
 
             if (itemDto.unitPrice !== undefined && itemDto.quantity !== undefined) {
               const modifiersTotal = await tx.orderItemModifier.aggregate({
-                where: { orderItemId: itemDto.id },
+                where: { orderItemId: itemDto.id, tenantId },
                 _sum: { price: true },
               });
-              const modTotal = Number(modifiersTotal._sum.price || 0) * (itemDto.quantity || 1);
-              itemUpdateData.total =
-                itemDto.unitPrice * itemDto.quantity + modTotal - (itemDto.discount || 0);
+              const modTotal = mulMoney(modifiersTotal._sum.price, itemDto.quantity || 1);
+              itemUpdateData.total = subMoney(
+                addMoney(mulMoney(itemDto.unitPrice, itemDto.quantity), modTotal),
+                itemDto.discount || 0,
+              );
             }
 
-            await tx.orderItem.update({ where: { id: itemDto.id }, data: itemUpdateData });
+            if (Object.keys(itemUpdateData).length > 0) {
+              const itemUpdated = await tx.orderItem.updateMany({
+                where: { id: itemDto.id, orderId: id, tenantId },
+                data: itemUpdateData as Prisma.OrderItemUpdateManyMutationInput,
+              });
+              if (itemUpdated.count === 0) {
+                throw new NotFoundException('Order item not found in this order');
+              }
+            }
 
             if (itemDto.modifiers) {
               for (const modDto of itemDto.modifiers) {
                 if (modDto.id) {
-                  await tx.orderItemModifier.update({
-                    where: { id: modDto.id },
+                  const modUpdated = await tx.orderItemModifier.updateMany({
+                    where: { id: modDto.id, orderItemId: itemDto.id, tenantId },
                     data: {
                       name: modDto.name,
                       quantity: modDto.quantity || 1,
                       price: modDto.price,
                     },
                   });
+                  if (modUpdated.count === 0) {
+                    throw new NotFoundException('Order item modifier not found in this order');
+                  }
                 } else {
                   await tx.orderItemModifier.create({
                     data: {
@@ -495,9 +539,11 @@ export class OrdersService {
     }
 
     const discountAmount =
-      dto.discountType === 'PERCENTAGE' ? (Number(existing.subtotal) * dto.value) / 100 : dto.value;
+      dto.discountType === 'PERCENTAGE'
+        ? percentOf(existing.subtotal, dto.value)
+        : roundMoney(dto.value);
 
-    if (discountAmount > Number(existing.subtotal)) {
+    if (discountAmount > roundMoney(existing.subtotal)) {
       throw new BadRequestException('Discount cannot exceed subtotal');
     }
 
@@ -641,6 +687,14 @@ export class OrdersService {
     userId: string,
     meta?: { ipAddress?: string; userAgent?: string },
   ) {
+    const order = await this.prisma.order.findFirst({
+      where: { id, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
     const note = await this.prisma.orderNote.create({
       data: {
         orderId: id,
@@ -718,8 +772,8 @@ export class OrdersService {
         }
 
         const remainingQuantity = originalItem.quantity - movedQuantity;
-        const unitPrice = Number(originalItem.unitPrice);
-        const itemSubtotal = unitPrice * movedQuantity;
+        const unitPrice = roundMoney(originalItem.unitPrice);
+        const itemSubtotal = mulMoney(unitPrice, movedQuantity);
 
         await tx.orderItem.create({
           data: {
@@ -738,7 +792,7 @@ export class OrdersService {
           },
         });
 
-        movedSubtotal += itemSubtotal;
+        movedSubtotal = addMoney(movedSubtotal, itemSubtotal);
 
         if (remainingQuantity > 0) {
           await tx.orderItem.update({
@@ -915,9 +969,8 @@ export class OrdersService {
     const result = await this.prisma.$transaction(async (tx) => {
       const newOrderNumber = await this.generateOrderNumber(existing.restaurantId);
 
-      const subtotal = existing.items.reduce(
-        (sum, item) => sum + Number(item.unitPrice) * item.quantity,
-        0,
+      const subtotal = sumMoney(
+        existing.items.map((item) => mulMoney(item.unitPrice, item.quantity)),
       );
 
       const newOrder = await tx.order.create({
@@ -945,9 +998,8 @@ export class OrdersService {
       });
 
       for (const item of existing.items) {
-        const modifiersTotal = item.modifiers.reduce(
-          (sum, mod) => sum + Number(mod.price) * mod.quantity,
-          0,
+        const modifiersTotal = sumMoney(
+          item.modifiers.map((mod) => mulMoney(mod.price, mod.quantity)),
         );
 
         await tx.orderItem.create({
@@ -962,7 +1014,7 @@ export class OrdersService {
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             discount: 0,
-            total: Number(item.unitPrice) * item.quantity + modifiersTotal,
+            total: addMoney(mulMoney(item.unitPrice, item.quantity), modifiersTotal),
             preparationNotes: item.preparationNotes,
             priceSnapshot: item.priceSnapshot as Prisma.InputJsonValue | undefined,
           },
@@ -1026,7 +1078,7 @@ export class OrdersService {
     }
 
     const rate = Number(sc.rate);
-    const scAmount = sc.isPercentage ? (Number(existing.subtotal) * rate) / 100 : rate;
+    const scAmount = sc.isPercentage ? percentOf(existing.subtotal, rate) : roundMoney(rate);
 
     const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.order.update({
@@ -1078,8 +1130,8 @@ export class OrdersService {
     }
 
     const rate = Number(tax.rate);
-    const taxableAmount = Number(existing.subtotal) - Number(existing.discount);
-    const taxAmount = taxableAmount * rate;
+    const taxableAmount = subMoney(existing.subtotal, existing.discount);
+    const taxAmount = mulMoney(taxableAmount, rate);
 
     const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.order.update({
@@ -1388,6 +1440,19 @@ export class OrdersService {
     }
   }
 
+  private readonly orderNumberMaxRetries = 10;
+
+  private isOrderNumberConflict(error: unknown): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+      return false;
+    }
+    const target = error.meta?.target;
+    if (Array.isArray(target)) {
+      return target.some((field) => String(field).includes('orderNumber'));
+    }
+    return String(target ?? '').includes('orderNumber');
+  }
+
   private async generateOrderNumber(restaurantId: string): Promise<number> {
     const lastOrder = await this.prisma.order.findFirst({
       where: { restaurantId },
@@ -1402,7 +1467,7 @@ export class OrdersService {
       where: { orderId, voidedAt: null },
     });
 
-    const subtotal = items.reduce((sum, item) => sum + Number(item.unitPrice) * item.quantity, 0);
+    const subtotal = sumMoney(items.map((item) => mulMoney(item.unitPrice, item.quantity)));
     let discount = 0;
     let taxAmount = 0;
     let serviceCharge = 0;
@@ -1410,16 +1475,17 @@ export class OrdersService {
 
     const order = await tx.order.findUnique({ where: { id: orderId } });
     if (order) {
-      discount = Number(order.discount);
-      serviceCharge = Number(order.serviceCharge);
-      taxAmount = Number(order.taxAmount);
-      deliveryFee = Number(order.deliveryFee);
+      discount = roundMoney(order.discount);
+      serviceCharge = roundMoney(order.serviceCharge);
+      taxAmount = roundMoney(order.taxAmount);
+      deliveryFee = roundMoney(order.deliveryFee);
     }
 
-    const itemTotal = items.reduce((sum, item) => sum + Number(item.total), 0);
-    const total = itemTotal + serviceCharge + taxAmount + deliveryFee;
+    const itemTotal = sumMoney(items.map((item) => item.total));
+    const total = addMoney(itemTotal, addMoney(serviceCharge, addMoney(taxAmount, deliveryFee)));
     const cappedDiscount = Math.min(discount, itemTotal);
-    const finalTotal = Math.max(0, total - cappedDiscount);
+    const paidAmountFloor = order ? roundMoney(order.paidAmount) : 0;
+    const finalTotal = Math.max(paidAmountFloor, subMoney(total, cappedDiscount));
 
     await tx.order.update({
       where: { id: orderId },

@@ -105,5 +105,135 @@ describe('CustomerAnalyticsService', () => {
       expect(result).toHaveProperty('retentionRate');
       expect(result).toHaveProperty('cohortAnalysis');
     });
+
+    it('should run a tenant-scoped parameterized cohort query', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.customer.count.mockResolvedValue(10);
+      prisma.order.groupBy.mockResolvedValue([{ customerPhone: 'p1', _count: { id: 2 } }]);
+      prisma.$queryRaw.mockResolvedValueOnce([
+        { cohortMonth: '2026-01', totalCustomers: 2, retainedCustomers: 1 },
+      ]);
+
+      await service.getRetention(testTenantId, {
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+      } as never);
+
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+      const sqlArg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as {
+        text: string;
+        values: unknown[];
+      };
+      expect(sqlArg.values[0]).toBe(testTenantId);
+      expect(sqlArg.values[1]).toBe(testTenantId);
+      expect(sqlArg.values[2]).toBeInstanceOf(Date);
+      expect(sqlArg.values[3]).toBeInstanceOf(Date);
+      expect(sqlArg.text).toContain('"tenantId"');
+      expect(sqlArg.text).toContain('"customerPhone"');
+      expect(sqlArg.text).toContain('"cohortMonth"');
+      expect(sqlArg.text).not.toContain('tenant_id');
+    });
+  });
+
+  describe('getChurn', () => {
+    it('should bind tenant and date as parameters in the inactivity query', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.$queryRaw.mockResolvedValueOnce([{ count: 3 }]);
+
+      const result = await service.getChurn(testTenantId, {
+        startDate: '2026-01-01',
+      } as never);
+
+      expect(result.churnedByInactivity).toBe(3);
+      const sqlArg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as {
+        text: string;
+        values: unknown[];
+      };
+      expect(sqlArg.values[0]).toBe(testTenantId);
+      expect(sqlArg.values[1]).toBeInstanceOf(Date);
+      expect(sqlArg.text).toContain('"tenantId"');
+      expect(sqlArg.text).not.toContain('2026-01-01');
+    });
+  });
+
+  describe('getVisitFrequency', () => {
+    it('should run a tenant-scoped parameterized frequency query', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.$queryRaw.mockResolvedValueOnce([
+        { customerPhone: 'p1', orderCount: 4 },
+        { customerPhone: 'p2', orderCount: 2 },
+      ]);
+
+      const result = await service.getVisitFrequency(testTenantId, {
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+      } as never);
+
+      expect(result.totalActiveCustomers).toBe(2);
+      const sqlArg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as {
+        text: string;
+        values: unknown[];
+      };
+      expect(sqlArg.values[0]).toBe(testTenantId);
+      expect(sqlArg.values[1]).toBeInstanceOf(Date);
+      expect(sqlArg.values[2]).toBeInstanceOf(Date);
+      expect(sqlArg.text).toContain('"orderCount"');
+      expect(sqlArg.text).not.toContain('order_count');
+    });
+  });
+
+  describe('getRfmSegmentation', () => {
+    it('should run a tenant-scoped parameterized RFM query', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.$queryRaw.mockResolvedValueOnce([
+        { customerPhone: 'p1', recency: 3, frequency: 5, monetary: 120 },
+      ]);
+
+      const result = await service.getRfmSegmentation(testTenantId, {} as never);
+
+      expect(result.segments.length).toBeGreaterThan(0);
+      const sqlArg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as {
+        text: string;
+        values: unknown[];
+      };
+      expect(sqlArg.values[0]).toBe(testTenantId);
+      expect(sqlArg.text).toContain('"customerPhone"');
+    });
+
+    it('should return cached result without querying', async () => {
+      cache.get.mockResolvedValueOnce({ segments: [], customers: [] });
+
+      const result = await service.getRfmSegmentation(testTenantId, {} as never);
+
+      expect(result).toEqual({ segments: [], customers: [] });
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getWalletActivity', () => {
+    it('should run a tenant-scoped parameterized trend query', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.walletTransaction.findMany.mockResolvedValue([
+        { type: 'RECHARGE', amount: 10, createdAt: new Date(), referenceType: null },
+      ]);
+      prisma.wallet.aggregate.mockResolvedValue({ _avg: { balance: 5 }, _sum: { balance: 15 } });
+      prisma.$queryRaw.mockResolvedValueOnce([{ date: '2026-01-01', credits: 10, debits: 0 }]);
+
+      const result = await service.getWalletActivity(testTenantId, {
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+      } as never);
+
+      expect(result.totalCredits).toBe(10);
+      expect(result.trend).toHaveLength(1);
+      const sqlArg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as {
+        text: string;
+        values: unknown[];
+      };
+      expect(sqlArg.values[0]).toBe(testTenantId);
+      expect(sqlArg.values[1]).toBeInstanceOf(Date);
+      expect(sqlArg.values[2]).toBeInstanceOf(Date);
+      expect(sqlArg.text).toContain('wallet_transactions');
+    });
   });
 });

@@ -8,7 +8,7 @@ import {
   UserRole,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { QueueService, QueueJobData } from '../queues/queue.service';
+import { QueueService, QueueJobData, NotificationJobPayload } from '../queues/queue.service';
 
 interface InventoryJobData extends QueueJobData {
   tenantId?: string;
@@ -118,9 +118,20 @@ export class InventoryProcessor {
 
     for (const tenant of tenants) {
       const tenantItems = lowStockItems.filter((item) => item.tenantId === tenant);
+      const recipientUserIds = recipients
+        .filter((user) => user.tenantId === tenant)
+        .map((user) => user.id);
+      const notificationPayload: NotificationJobPayload = {
+        title: 'Low stock alert',
+        message: `${tenantItems.length} item(s) below reorder level in your inventory.`,
+        type: NotificationType.LOW_STOCK,
+        channel: 'in_app',
+        recipientUserIds,
+      };
       await this.queueService.addJob('notification', 'low-stock-alert', {
         tenantId: tenant,
-        payload: { items: tenantItems.map((item) => item.id) },
+        userId: recipientUserIds[0],
+        payload: notificationPayload,
       });
     }
 
@@ -203,14 +214,30 @@ export class InventoryProcessor {
     }
 
     const tenants = Array.from(new Set(alerts.map((alert) => alert.tenantId)));
+    const recipients = await this.prisma.user.findMany({
+      where: {
+        status: 'ACTIVE',
+        role: { in: [UserRole.OWNER, UserRole.MANAGER] },
+        tenantId: { in: tenants },
+      },
+      select: { id: true, tenantId: true },
+    });
     for (const tenant of tenants) {
       const tenantAlerts = alerts.filter((alert) => alert.tenantId === tenant);
+      const recipientUserIds = recipients
+        .filter((user) => user.tenantId === tenant)
+        .map((user) => user.id);
+      const notificationPayload: NotificationJobPayload = {
+        title: 'Inventory expiration alert',
+        message: `${tenantAlerts.length} batch(es) expiring soon or already expired in your inventory.`,
+        type: NotificationType.EXPIRY,
+        channel: 'in_app',
+        recipientUserIds,
+      };
       await this.queueService.addJob('notification', 'expiration-alert', {
         tenantId: tenant,
-        payload: {
-          alertCount: tenantAlerts.length,
-          inventoryItemIds: tenantAlerts.map((a) => a.inventoryItemId),
-        },
+        userId: recipientUserIds[0],
+        payload: notificationPayload,
       });
     }
 

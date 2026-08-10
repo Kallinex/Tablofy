@@ -1,54 +1,34 @@
 import { Injectable } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { QueueService, QueueJobData } from '../queues/queue.service';
 import { WebhooksService } from './webhooks.service';
 import { WebhookDeliveryService } from './webhook-delivery.service';
 import { AppLoggerService } from '../../common/logger/logger.service';
+import { normalizeWebhookEventName } from './webhook-events';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class WebhookEventEmitter {
-  private readonly subscribedEvents = new Set([
-    'orders.created',
-    'orders.updated',
-    'orders.completed',
-    'orders.cancelled',
-    'customers.created',
-    'customers.updated',
-    'customers.deleted',
-    'inventory.low_stock',
-    'inventory.out_of_stock',
-    'inventory.received',
-    'payments.completed',
-    'payments.failed',
-    'payments.refunded',
-    'loyalty.points_earned',
-    'loyalty.points_redeemed',
-    'loyalty.tier_changed',
-    'campaigns.sent',
-    'campaigns.opened',
-    'campaigns.clicked',
-    'suppliers.created',
-    'suppliers.updated',
-    'transfers.created',
-    'transfers.completed',
-  ]);
-
   constructor(
+    private readonly eventEmitter: EventEmitter2,
     private readonly queueService: QueueService,
     private readonly webhooksService: WebhooksService,
     private readonly deliveryService: WebhookDeliveryService,
     private readonly logger: AppLoggerService,
   ) {
     this.logger.setContext('WebhookEventEmitter');
+    // EventEmitter2 (wildcard mode) forwards only the payload to "**" listeners,
+    // so listen via onAny, which passes the emitted event name as the first arg.
+    this.eventEmitter.onAny((eventName, payload) => {
+      void this.handleEvent(String(eventName), payload as Record<string, unknown>);
+    });
   }
 
-  @OnEvent('**')
-  async handleEvent(payload: Record<string, unknown>, eventName?: string) {
-    const eventType = eventName || (payload?.eventType as string | undefined);
+  async handleEvent(eventName: string, payload: Record<string, unknown> = {}) {
+    const eventType = normalizeWebhookEventName(eventName);
     const tenantId = payload?.tenantId as string | undefined;
 
-    if (!eventType || !tenantId || !this.subscribedEvents.has(eventType)) {
+    if (!eventType || !tenantId) {
       return;
     }
 

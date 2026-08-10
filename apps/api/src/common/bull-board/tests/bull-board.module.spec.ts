@@ -3,9 +3,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { RequestHandler } from 'express';
+import { UserRole, UserStatus } from '@prisma/client';
 import { BullBoardModule, BULL_BOARD_PATH } from '../bull-board.module';
 import { QueueService } from '../../../modules/queues/queue.service';
 import { RedisService } from '../../../redis/redis.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { Queue } from '../../../test/mocks/bullmq.mock';
 
 const queueServiceMock = {
@@ -22,14 +24,21 @@ const redisServiceMock = {
   isTokenBlacklisted: jest.fn().mockResolvedValue(false),
 };
 
+const prismaServiceMock = {
+  user: {
+    findUnique: jest.fn(),
+  },
+};
+
 @Global()
 @Module({
   providers: [
     { provide: QueueService, useValue: queueServiceMock },
     { provide: RedisService, useValue: redisServiceMock },
     { provide: ConfigService, useValue: configServiceMock },
+    { provide: PrismaService, useValue: prismaServiceMock },
   ],
-  exports: [QueueService, RedisService, ConfigService],
+  exports: [QueueService, RedisService, ConfigService, PrismaService],
 })
 class BullBoardTestSupportModule {}
 
@@ -48,6 +57,14 @@ describe('BullBoardModule', () => {
     aud: 'tablofy-api',
   };
 
+  const superAdminRecord = {
+    id: 'user-1',
+    role: UserRole.SUPER_ADMIN,
+    status: UserStatus.ACTIVE,
+    tenantId: null,
+    deletedAt: null,
+  };
+
   beforeAll(async () => {
     module = await Test.createTestingModule({
       imports: [BullBoardModule, BullBoardTestSupportModule],
@@ -58,6 +75,11 @@ describe('BullBoardModule', () => {
 
     bullBoard = module.get(BullBoardModule);
     jwtService = module.get(JwtService);
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prismaServiceMock.user.findUnique.mockResolvedValue(superAdminRecord);
   });
 
   it('exposes the Bull Board base path', () => {
@@ -88,7 +110,7 @@ describe('BullBoardModule', () => {
       return { status: res.status, json: res.json, next };
     };
 
-    const ownToken = (role = 'OWNER', extra: Record<string, unknown> = {}) =>
+    const signToken = (role = 'OWNER', extra: Record<string, unknown> = {}) =>
       jwtService.sign({ ...basePayload, role, ...extra });
 
     it('returns 401 when no bearer token is present', async () => {
@@ -108,21 +130,67 @@ describe('BullBoardModule', () => {
     it('returns 401 for a revoked token', async () => {
       redisServiceMock.isTokenBlacklisted.mockResolvedValueOnce(true);
       const middleware = bullBoard.createAuthMiddleware();
-      const { status, next } = await run(middleware, `Bearer ${ownToken()}`);
+      const { status, next } = await run(middleware, `Bearer ${signToken()}`);
       expect(status).toHaveBeenCalledWith(401);
       expect(next).not.toHaveBeenCalled();
     });
 
-    it('returns 403 for a non-OWNER role', async () => {
+    it('returns 403 for a non-SUPER_ADMIN role', async () => {
+      prismaServiceMock.user.findUnique.mockResolvedValueOnce({
+        ...superAdminRecord,
+        role: UserRole.OWNER,
+      });
       const middleware = bullBoard.createAuthMiddleware();
-      const { status, next } = await run(middleware, `Bearer ${ownToken('MANAGER')}`);
+      const { status, next } = await run(middleware, `Bearer ${signToken('OWNER')}`);
       expect(status).toHaveBeenCalledWith(403);
       expect(next).not.toHaveBeenCalled();
     });
 
-    it('grants access to an OWNER token', async () => {
+    it('returns 403 when the DB record no longer has SUPER_ADMIN role', async () => {
+      prismaServiceMock.user.findUnique.mockResolvedValueOnce({
+        ...superAdminRecord,
+        role: UserRole.MANAGER,
+      });
       const middleware = bullBoard.createAuthMiddleware();
-      const { status, next } = await run(middleware, `Bearer ${ownToken()}`);
+      const { status, next } = await run(middleware, `Bearer ${signToken('SUPER_ADMIN')}`);
+      expect(status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when the user is missing in the database', async () => {
+      prismaServiceMock.user.findUnique.mockResolvedValueOnce(null);
+      const middleware = bullBoard.createAuthMiddleware();
+      const { status, next } = await run(middleware, `Bearer ${signToken('SUPER_ADMIN')}`);
+      expect(status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when the user is not ACTIVE', async () => {
+      prismaServiceMock.user.findUnique.mockResolvedValueOnce({
+        ...superAdminRecord,
+        status: UserStatus.INACTIVE,
+      });
+      const middleware = bullBoard.createAuthMiddleware();
+      const { status, next } = await run(middleware, `Bearer ${signToken('SUPER_ADMIN')}`);
+      expect(status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when the authorization lookup fails', async () => {
+      prismaServiceMock.user.findUnique.mockRejectedValueOnce(new Error('db down'));
+      const middleware = bullBoard.createAuthMiddleware();
+      const { status, next } = await run(middleware, `Bearer ${signToken('SUPER_ADMIN')}`);
+      expect(status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('grants access to an ACTIVE SUPER_ADMIN confirmed by the database', async () => {
+      const middleware = bullBoard.createAuthMiddleware();
+      const { status, next } = await run(middleware, `Bearer ${signToken('SUPER_ADMIN')}`);
+      expect(prismaServiceMock.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        select: { id: true, role: true, status: true, tenantId: true, deletedAt: true },
+      });
       expect(status).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalled();
     });

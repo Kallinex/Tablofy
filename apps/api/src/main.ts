@@ -6,6 +6,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app/app.module';
 import { AppLoggerService } from './common/logger/logger.service';
+import { SocketIoAdapter } from './common/ws/socket-io.adapter';
 import { BullBoardModule, BULL_BOARD_PATH } from './common/bull-board/bull-board.module';
 
 async function bootstrap(): Promise<void> {
@@ -41,6 +42,8 @@ async function bootstrap(): Promise<void> {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: corsCredentials,
   });
+
+  app.useWebSocketAdapter(new SocketIoAdapter(app));
 
   app.use(
     helmet({

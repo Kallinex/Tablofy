@@ -5,6 +5,7 @@ import {
   Min,
   IsOptional,
   IsEnum,
+  MaxLength,
   ValidateNested,
   ArrayMinSize,
   ArrayMaxSize,
@@ -24,6 +25,11 @@ export class SplitItemDto {
   @IsNumber()
   @Min(0)
   tip?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  reference?: string;
 }
 
 export class SplitPaymentDto {

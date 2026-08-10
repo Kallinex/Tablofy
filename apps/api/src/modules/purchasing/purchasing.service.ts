@@ -6,6 +6,7 @@ import { CacheService } from '../../common/services/cache.service';
 import { QueueService } from '../queues/queue.service';
 import { PurchasingGateway } from './purchasing.gateway';
 import { Prisma, PurchaseOrderStatus, GoodsReceiptStatus, StockMovementType } from '@prisma/client';
+import { addMoney, mulMoney } from '../../common/money/money.util';
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto';
 import { UpdatePurchaseOrderDto } from './dto/update-purchase-order.dto';
 import { QueryPurchaseOrderDto } from './dto/query-purchase-order.dto';
@@ -36,8 +37,8 @@ export class PurchasingService {
     const po = await this.prisma.$transaction(async (tx) => {
       let subtotal = 0;
       const itemData = dto.items.map((item, idx) => {
-        const lineTotal = Number((item.quantity * item.unitPrice).toFixed(2));
-        subtotal += lineTotal;
+        const lineTotal = mulMoney(item.quantity, item.unitPrice);
+        subtotal = addMoney(subtotal, lineTotal);
         return {
           tenantId,
           inventoryItemId: item.inventoryItemId,
@@ -49,8 +50,6 @@ export class PurchasingService {
           notes: item.notes,
         };
       });
-
-      subtotal = Number(subtotal.toFixed(2));
 
       const created = await tx.purchaseOrder.create({
         data: {
@@ -208,8 +207,8 @@ export class PurchasingService {
 
         let subtotal = 0;
         const itemData = dto.items.map((item, idx) => {
-          const lineTotal = Number((item.quantity * item.unitPrice).toFixed(2));
-          subtotal += lineTotal;
+          const lineTotal = mulMoney(item.quantity, item.unitPrice);
+          subtotal = addMoney(subtotal, lineTotal);
           return {
             tenantId,
             inventoryItemId: item.inventoryItemId,
@@ -221,7 +220,6 @@ export class PurchasingService {
             notes: item.notes,
           };
         });
-        subtotal = Number(subtotal.toFixed(2));
 
         return tx.purchaseOrder.update({
           where: { id },
@@ -680,6 +678,25 @@ export class PurchasingService {
       );
     }
 
+    const validPoItemIds = new Set(po.items.map((item) => item.id));
+    for (const item of dto.items) {
+      if (!validPoItemIds.has(item.purchaseOrderItemId)) {
+        throw new BadRequestException(
+          `PO line item ${item.purchaseOrderItemId} does not belong to purchase order ${dto.purchaseOrderId}`,
+        );
+      }
+    }
+
+    const inventoryItemIds = dto.items.map((item) => item.inventoryItemId);
+    const distinctInventoryItemIds = [...new Set(inventoryItemIds)];
+    const tenantInventoryItems = await this.prisma.inventoryItem.findMany({
+      where: { id: { in: distinctInventoryItemIds }, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+    if (tenantInventoryItems.length !== distinctInventoryItemIds.length) {
+      throw new NotFoundException('One or more inventory items were not found in this tenant');
+    }
+
     const grnNumber = await this.generateGRNNumber(tenantId);
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -724,15 +741,27 @@ export class PurchasingService {
         if (!invItem)
           throw new NotFoundException(`Inventory item ${item.inventoryItemId} not found`);
 
-        const unitPrice = item.unitPrice ?? 0;
-        const totalCost = Number((item.quantityReceived * unitPrice).toFixed(4));
-        const currentQty = Number(invItem.currentQuantity);
-        const currentAvgCost = Number(invItem.averageCost ?? 0);
-        const newQty = currentQty + Number(item.quantityReceived);
-        const newAvgCost =
-          newQty > 0
-            ? Number(((currentAvgCost * currentQty + totalCost) / newQty).toFixed(4))
-            : unitPrice;
+        const unitPriceDecimal = new Prisma.Decimal(item.unitPrice ?? 0).toDecimalPlaces(
+          4,
+          Prisma.Decimal.ROUND_HALF_UP,
+        );
+        const unitPrice = unitPriceDecimal.toNumber();
+        const quantityReceived = new Prisma.Decimal(item.quantityReceived);
+        const totalCost = unitPriceDecimal
+          .times(quantityReceived)
+          .toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP)
+          .toNumber();
+        const currentQty = new Prisma.Decimal(invItem.currentQuantity);
+        const currentAvgCost = new Prisma.Decimal(invItem.averageCost ?? 0);
+        const newQty = currentQty.plus(quantityReceived);
+        const newAvgCost = newQty.gt(0)
+          ? currentAvgCost
+              .times(currentQty)
+              .plus(totalCost)
+              .div(newQty)
+              .toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP)
+              .toNumber()
+          : unitPrice;
 
         await tx.inventoryItem.update({
           where: { id: item.inventoryItemId },
@@ -1027,9 +1056,11 @@ export class PurchasingService {
               type: StockMovementType.ADJUSTMENT,
               quantity: -item.quantityReceived,
               unitCost: item.unitPrice,
-              totalCost: Number(
-                (-Number(item.quantityReceived) * Number(item.unitPrice ?? 0)).toFixed(4),
-              ),
+              totalCost: new Prisma.Decimal(item.quantityReceived)
+                .times(item.unitPrice ?? 0)
+                .neg()
+                .toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP)
+                .toNumber(),
               referenceType: 'GoodsReceipt',
               referenceId: grn.id,
               notes: `GRN cancellation ${grn.grnNumber}`,

@@ -11,6 +11,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { EnableTwoFactorDto, DisableTwoFactorDto } from './dto/two-factor.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { Authenticated } from '../../common/decorators/authenticated.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { SkipTenantCheck } from '../../common/decorators/skip-tenant.decorator';
 import { Request } from 'express';
@@ -18,6 +19,7 @@ import { Request } from 'express';
 @ApiTags('auth')
 @Controller('auth')
 @SkipTenantCheck()
+@Authenticated()
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 

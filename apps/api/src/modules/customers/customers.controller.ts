@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto } from './dto/create-customer.dto';
@@ -38,6 +39,7 @@ import { RewardStatus } from '@prisma/client';
 @ApiTags('Customers')
 @ApiBearerAuth()
 @Controller('customers')
+@Permissions('customers:read')
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 

@@ -21,10 +21,36 @@ export class RecipesProcessor {
   @OnEvent('order.completed')
   async onOrderCompleted(payload: { orderId: string; tenantId: string }) {
     this.logger.log(`Order completed event received: ${payload.orderId}`);
-    await this.queueService.addJob('inventory-deduction', 'deduct-inventory', {
-      tenantId: payload.tenantId,
-      payload: { orderId: payload.orderId },
-    });
+    await this.queueService.addJob(
+      'inventory-deduction',
+      'deduct-inventory',
+      {
+        tenantId: payload.tenantId,
+        payload: { orderId: payload.orderId },
+      },
+      { jobId: `deduct-${payload.orderId}` },
+    );
+  }
+
+  @OnEvent('payments.completed')
+  async onPaymentsCompleted(payload: { orderId: string; tenantId: string }) {
+    const completed = await this.recipesService.isOrderCompletedForDeduction(
+      payload.orderId,
+      payload.tenantId,
+    );
+    if (!completed) {
+      return;
+    }
+    this.logger.log(`Order completed via payment event received: ${payload.orderId}`);
+    await this.queueService.addJob(
+      'inventory-deduction',
+      'deduct-inventory',
+      {
+        tenantId: payload.tenantId,
+        payload: { orderId: payload.orderId },
+      },
+      { jobId: `deduct-${payload.orderId}` },
+    );
   }
 
   @OnEvent('order.cancelled')

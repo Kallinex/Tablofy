@@ -8,13 +8,15 @@ import {
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
+import { WsAuthService } from '../../common/ws/ws-auth.service';
 
 @WebSocketGateway({
   namespace: '/crm',
-  cors: { origin: '*', credentials: true },
 })
 export class CrmGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(CrmGateway.name);
+
+  constructor(private readonly wsAuthService: WsAuthService) {}
 
   @WebSocketServer() server!: Server;
 
@@ -22,7 +24,18 @@ export class CrmGateway implements OnGatewayInit, OnGatewayConnection, OnGateway
     this.logger.log('CRM Gateway initialized');
   }
 
-  handleConnection(client: Socket) {
+  async handleConnection(client: Socket) {
+    const authenticated = await this.wsAuthService.authenticate(client);
+    if (!authenticated) {
+      return;
+    }
+    const joined = await this.wsAuthService.joinAuthorizedRoom(
+      client,
+      this.wsAuthService.resolveRequestedTenantId(client),
+    );
+    if (!joined) {
+      return;
+    }
     this.logger.log(`Client connected: ${client.id}`);
   }
 
@@ -32,6 +45,10 @@ export class CrmGateway implements OnGatewayInit, OnGatewayConnection, OnGateway
 
   @SubscribeMessage('joinTenant')
   handleJoinTenant(client: Socket, tenantId: string) {
+    if (!this.wsAuthService.assertTenantAllowed(client, tenantId)) {
+      this.logger.warn(`Client ${client.id} denied join for tenant:${tenantId}`);
+      return;
+    }
     client.join(`tenant:${tenantId}`);
     this.logger.log(`Client ${client.id} joined tenant:${tenantId}`);
   }
