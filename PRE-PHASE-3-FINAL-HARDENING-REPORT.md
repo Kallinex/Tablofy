@@ -190,7 +190,7 @@ Re-verified still true in committed source; full detail in the two authority rep
 
 - **Commit `dde94897b31abb9659096815b15a0a6201065746`** on `feature/phase7-m5` (hardening).
 - 33 files, +4032/−396; scope = only intended hardening: purchasing `FOR UPDATE`, Redis auth/config/compose/env-validation, schema + 2 migrations, test-mock reset, config tests, P1-05/P1-06 reports.
-- **Commit (report)** — `PRE-PHASE-3-FINAL-HARDENING-REPORT.md` committed as a separate docs commit (this file).
+- **Commit `b5e89a48264e384011890a53d6cef4facd84e085`** (report) — `PRE-PHASE-3-FINAL-HARDENING-REPORT.md` committed as a separate docs commit (this file).
 - Pre-commit verification: `git status` dirty tree = only intended files; staged set reviewed; secret scan of full diff clean; working tree now clean. **Not pushed** (per instruction).
 
 ---
