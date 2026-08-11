@@ -7,10 +7,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: tablofy
-      POSTGRES_PASSWORD: tablofy_prod
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tablofy_prod}
       POSTGRES_DB: tablofy_prod
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -25,18 +25,24 @@ services:
     image: redis:7-alpine
     container_name: tablofy-redis
     restart: unless-stopped
+    environment:
+      # Dev-only default so Redis always starts with auth. Override via REDIS_PASSWORD
+      # (e.g. docker/.env). This value is NEVER used in production: docker-compose.prod.yml
+      # hard-requires REDIS_PASSWORD with ${REDIS_PASSWORD:?...}.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-582c9d3922fead974706e3c9e33cf1b51c4c8867003b750688d83a8d6f8c3e95}
     ports:
-      - '6379:6379'
+      - '127.0.0.1:6379:6379'
     volumes:
       - redis_data:/data
     networks:
       - tablofy-network
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ['CMD-SHELL', 'redis-cli $${REDIS_PASSWORD:+-a $$REDIS_PASSWORD} ping']
       interval: 10s
       timeout: 5s
       retries: 5
-    command: redis-server --appendonly yes
+    command: >
+      sh -c 'exec redis-server --appendonly yes $${REDIS_PASSWORD:+--requirepass $$REDIS_PASSWORD}'
 
 volumes:
   postgres_data:

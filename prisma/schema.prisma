@@ -1526,6 +1526,7 @@ model KitchenTicketItem {
   station   KitchenStation? @relation(fields: [stationId], references: [id], onDelete: SetNull)
 
   @@index([orderItemId])
+  @@unique([orderItemId])
   @@index([startedAt])
   @@index([stationId])
   @@index([status])
@@ -2709,7 +2710,9 @@ model InventoryBatch {
   updatedAt       DateTime  @updatedAt
 
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  receipts      GoodsReceiptItem[]
 
+  @@unique([inventoryItemId, tenantId, batchNumber, lotNumber, expiryDate])
   @@index([batchNumber])
   @@index([expiryDate])
   @@index([inventoryItemId])
@@ -2945,22 +2948,25 @@ model GoodsReceiptItem {
   purchaseOrderItemId String?
   inventoryItemId     String?
   tenantId            String
-  quantityReceived    Decimal   @db.Decimal(12, 4)
-  unitPrice           Decimal?  @db.Decimal(12, 4)
+  quantityReceived    Decimal          @db.Decimal(12, 4)
+  unitPrice           Decimal?         @db.Decimal(12, 4)
   batchNumber         String?
   lotNumber           String?
   expiryDate          DateTime?
+  inventoryBatchId    String?
   notes               String?
-  createdAt           DateTime  @default(now())
+  createdAt           DateTime         @default(now())
   deletedAt           DateTime?
-  updatedAt           DateTime  @updatedAt
+  updatedAt           DateTime         @updatedAt
 
   goodsReceipt      GoodsReceipt       @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
   purchaseOrderItem PurchaseOrderItem? @relation(fields: [purchaseOrderItemId], references: [id], onDelete: SetNull)
   inventoryItem     InventoryItem?     @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  inventoryBatch    InventoryBatch?    @relation(fields: [inventoryBatchId], references: [id], onDelete: SetNull)
 
   @@index([goodsReceiptId])
   @@index([inventoryItemId])
+  @@index([inventoryBatchId])
   @@index([purchaseOrderItemId])
   @@index([tenantId, createdAt])
   @@index([tenantId])

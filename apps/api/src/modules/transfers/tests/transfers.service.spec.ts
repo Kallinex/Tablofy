@@ -294,13 +294,14 @@ describe('TransfersService', () => {
       prisma.branchTransfer.findFirst.mockResolvedValue(
         mockTransfer({ status: TransferStatus.APPROVED, items: [item] }),
       );
+      prisma.branchTransfer.updateMany.mockResolvedValue({ count: 1 });
       prisma.inventoryItem.findFirst.mockResolvedValue({
         id: 'item-1',
         name: 'Tomato',
         currentQuantity: 100,
         averageCost: 2,
       });
-      prisma.inventoryItem.update.mockResolvedValue({});
+      prisma.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
       prisma.stockMovement.create.mockResolvedValue({});
       prisma.branchTransfer.update.mockResolvedValue(
         mockTransfer({ status: TransferStatus.IN_TRANSIT }),
@@ -308,9 +309,13 @@ describe('TransfersService', () => {
 
       const result = await service.startTransfer('trf-1', testTenantId, testUserId);
 
-      expect(prisma.inventoryItem.update).toHaveBeenCalledWith(
+      expect(prisma.inventoryItem.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'item-1' },
+          where: expect.objectContaining({
+            id: 'item-1',
+            currentQuantity: { gte: 10 },
+            availableQuantity: { gte: 10 },
+          }),
           data: expect.objectContaining({
             currentQuantity: { decrement: 10 },
             availableQuantity: { decrement: 10 },
@@ -338,6 +343,7 @@ describe('TransfersService', () => {
       prisma.branchTransfer.findFirst.mockResolvedValue(
         mockTransfer({ status: TransferStatus.APPROVED, items: [item] }),
       );
+      prisma.branchTransfer.updateMany.mockResolvedValue({ count: 1 });
       prisma.inventoryItem.findFirst.mockResolvedValue({
         id: 'item-1',
         name: 'Tomato',
@@ -348,7 +354,7 @@ describe('TransfersService', () => {
       await expect(service.startTransfer('trf-1', testTenantId, testUserId)).rejects.toThrow(
         'Insufficient quantity',
       );
-      expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+      expect(prisma.inventoryItem.updateMany).not.toHaveBeenCalled();
       expect(prisma.stockMovement.create).not.toHaveBeenCalled();
     });
   });
@@ -382,6 +388,7 @@ describe('TransfersService', () => {
       prisma.branchTransfer.findFirst.mockResolvedValue(
         mockTransfer({ status: TransferStatus.IN_TRANSIT, items: [transferItem] }),
       );
+      prisma.branchTransfer.updateMany.mockResolvedValue({ count: 1 });
 
       await expect(
         service.receiveTransfer(
@@ -397,6 +404,7 @@ describe('TransfersService', () => {
       prisma.branchTransfer.findFirst.mockResolvedValue(
         mockTransfer({ status: TransferStatus.IN_TRANSIT, items: [transferItem] }),
       );
+      prisma.branchTransfer.updateMany.mockResolvedValue({ count: 1 });
       prisma.branchTransferItem.update.mockResolvedValue({});
       prisma.inventoryItem.findFirst.mockResolvedValue({
         id: 'item-1',
@@ -464,6 +472,7 @@ describe('TransfersService', () => {
       prisma.branchTransfer.findFirst.mockResolvedValue(
         mockTransfer({ status: TransferStatus.IN_TRANSIT, items: [item] }),
       );
+      prisma.branchTransfer.updateMany.mockResolvedValue({ count: 1 });
       prisma.inventoryItem.findFirst.mockResolvedValue({
         id: 'item-1',
         name: 'Tomato',

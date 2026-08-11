@@ -438,6 +438,17 @@ export class KdsService {
       return;
     }
 
+    const existingTicket = await this.prisma.kitchenTicket.findFirst({
+      where: { orderId, tenantId },
+      select: { id: true },
+    });
+    if (existingTicket) {
+      this.logger.warn(
+        `Order ${orderId} already has kitchen tickets; skipping duplicate batch (idempotent)`,
+      );
+      return;
+    }
+
     const groups = this.groupItemsByStation(order.items);
     if (groups.length === 0) {
       this.logger.warn(`Order ${orderId} has no items to ticket`);
@@ -454,13 +465,19 @@ export class KdsService {
         );
         created = true;
       } catch (error) {
-        if (!this.isTicketNumberConflict(error)) {
+        if (this.isTicketNumberConflict(error)) {
+          lastError = error;
+          this.logger.warn(
+            `Kitchen ticket number conflict for order ${orderId}, retrying (${attempt}/${maxAttempts})`,
+          );
+        } else if (this.isOrderItemTicketConflict(error)) {
+          this.logger.warn(
+            `Order ${orderId} was concurrently ticketed by another handler; skipping duplicate batch (idempotent)`,
+          );
+          created = true;
+        } else {
           throw error;
         }
-        lastError = error;
-        this.logger.warn(
-          `Kitchen ticket number conflict for order ${orderId}, retrying (${attempt}/${maxAttempts})`,
-        );
       }
     }
     if (!created) {
@@ -557,6 +574,14 @@ export class KdsService {
         Array.isArray(target) &&
         (target as string[]).every((field) => ['orderId', 'ticketNumber'].includes(field))
       );
+    }
+    return false;
+  }
+
+  private isOrderItemTicketConflict(error: unknown): boolean {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const target = error.meta?.target;
+      return Array.isArray(target) && (target as string[]).includes('orderItemId');
     }
     return false;
   }

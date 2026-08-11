@@ -192,6 +192,12 @@ export function createMockPrisma() {
       this.softDeleteWhere.mockClear();
       this.$connect.mockClear();
       this.$disconnect.mockClear();
+      this.$queryRaw.mockReset();
+      this.$queryRaw.mockResolvedValue([]);
+      this.$queryRawUnsafe.mockReset();
+      this.$queryRawUnsafe.mockResolvedValue([]);
+      this.$executeRawUnsafe.mockReset();
+      this.$executeRawUnsafe.mockResolvedValue([]);
     },
   };
 }

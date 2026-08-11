@@ -375,6 +375,56 @@ describe('PaymentsService', () => {
         amountRefunded: 50,
       });
     });
+
+    it('should let only one of two concurrent full refunds win the CAS (P1-01)', async () => {
+      prisma.payment.findFirst.mockResolvedValue(mockPayment);
+      const release: Array<() => void> = [];
+      const barrier = new Promise<void>((resolve) => {
+        release.push(resolve);
+        release.push(resolve);
+      });
+      let claimCount = 0;
+      let updateWhere: Record<string, unknown> | undefined;
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          await barrier;
+          const winner = ++claimCount === 1;
+          const updateMany = jest.fn().mockImplementation(({ where }) => {
+            updateWhere = where;
+            return { count: winner ? 1 : 0 };
+          });
+          const tx = {
+            payment: {
+              updateMany,
+              findUnique: jest.fn().mockResolvedValue({
+                ...mockPayment,
+                status: PaymentStatus.REFUNDED,
+              }),
+            },
+            order: { update: jest.fn().mockResolvedValue({}) },
+          };
+          return cb(tx);
+        },
+      );
+
+      const first = service.refund('payment-1', 'tenant-1', 'user-1');
+      const second = service.refund('payment-1', 'tenant-1', 'user-1');
+      release.forEach((r) => r());
+      const results = await Promise.allSettled([first, second]);
+
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toBeInstanceOf(ConflictException);
+      expect(claimCount).toBe(2);
+      expect(updateWhere).toMatchObject({
+        id: 'payment-1',
+        amountRefunded: 0,
+        status: { in: [PaymentStatus.COMPLETED, PaymentStatus.PARTIALLY_REFUNDED] },
+      });
+    });
   });
 
   describe('partialRefund', () => {
@@ -606,61 +656,98 @@ describe('PaymentsService', () => {
   });
 
   describe('splitPayment', () => {
-    it('should split across methods', async () => {
-      prisma.order.findFirst.mockResolvedValue(mockOrder);
-      prisma.$transaction.mockImplementation(
-        async (cb: (tx: Record<string, unknown>) => unknown) => {
-          const tx = {
-            payment: {
-              create: jest
-                .fn()
-                .mockResolvedValueOnce({
-                  ...mockPayment,
-                  id: 'payment-2',
-                  method: PaymentMethod.CASH,
-                  amount: 30,
-                })
-                .mockResolvedValueOnce({
-                  ...mockPayment,
-                  id: 'payment-3',
-                  method: PaymentMethod.CREDIT_CARD,
-                  amount: 70,
-                  status: PaymentStatus.PENDING,
-                }),
-              update: jest
-                .fn()
-                .mockResolvedValueOnce({
-                  ...mockPayment,
-                  id: 'payment-2',
-                  method: PaymentMethod.CASH,
-                  amount: 30,
-                })
-                .mockResolvedValueOnce({
-                  ...mockPayment,
-                  id: 'payment-3',
-                  method: PaymentMethod.CREDIT_CARD,
-                  amount: 70,
-                  status: PaymentStatus.COMPLETED,
-                }),
-              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-              findUnique: jest.fn().mockResolvedValue({
-                ...mockPayment,
-                id: 'payment-3',
-                method: PaymentMethod.CREDIT_CARD,
-                amount: 70,
-                status: PaymentStatus.COMPLETED,
-              }),
+    function stubSplitProvider(behavior: {
+      create?: { success: boolean; data?: { id: string; status: string }; error?: string };
+      confirm?: {
+        success: boolean;
+        data?: { status: string; transactionId?: string };
+        error?: string;
+      };
+    }) {
+      (service as unknown as { providerRegistry: Map<string, unknown> }).providerRegistry.set(
+        'stripe',
+        {
+          mode: 'mock',
+          initialize: async () => undefined,
+          createPaymentIntent: jest.fn().mockResolvedValue(
+            behavior.create ?? {
+              success: true,
+              data: { id: 'pi_split_1', status: 'requires_confirmation' },
             },
-            order: {
-              findFirst: jest.fn().mockResolvedValue(mockOrder),
-              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-              update: jest.fn().mockResolvedValue({}),
+          ),
+          confirmPayment: jest.fn().mockResolvedValue(
+            behavior.confirm ?? {
+              success: true,
+              data: { status: 'succeeded', transactionId: 'txn_split_1' },
             },
-            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
-          };
-          return cb(tx);
+          ),
         },
       );
+    }
+
+    function mockCreateTx(payments: Array<Record<string, unknown>>) {
+      const create = jest.fn();
+      payments.forEach((p) => create.mockResolvedValueOnce(p));
+      return {
+        order: {
+          findFirst: jest.fn().mockResolvedValue(mockOrder),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          update: jest.fn().mockResolvedValue({}),
+        },
+        payment: {
+          create,
+          update: jest.fn().mockResolvedValue(payments[0]),
+        },
+        orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+      };
+    }
+
+    function mockFinalizeTx(completedRows: Array<Record<string, unknown>>) {
+      return {
+        order: {
+          findFirst: jest.fn().mockResolvedValue(mockOrder),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          update: jest.fn().mockResolvedValue({}),
+        },
+        payment: {
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          findMany: jest.fn().mockResolvedValue(completedRows),
+        },
+        orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+      };
+    }
+
+    function cashSplit() {
+      return { ...mockPayment, id: 'payment-2', method: PaymentMethod.CASH, amount: 30 };
+    }
+
+    function cardSplitPending() {
+      return {
+        ...mockPayment,
+        id: 'payment-3',
+        method: PaymentMethod.CREDIT_CARD,
+        amount: 70,
+        status: PaymentStatus.PENDING,
+        idempotencyKey: 'idem-3',
+      };
+    }
+
+    it('should split across methods, completing cash in-tx and card via provider out-of-tx (P1-10)', async () => {
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+      stubSplitProvider({});
+      prisma.$transaction
+        .mockImplementationOnce(async (cb) => cb(mockCreateTx([cashSplit(), cardSplitPending()])))
+        .mockImplementationOnce(async (cb) =>
+          cb(
+            mockFinalizeTx([
+              {
+                ...cardSplitPending(),
+                status: PaymentStatus.COMPLETED,
+                gatewayRef: 'txn_split_1',
+              },
+            ]),
+          ),
+        );
 
       const dto: SplitPaymentDto = {
         orderId: 'order-1',
@@ -672,6 +759,250 @@ describe('PaymentsService', () => {
 
       const results = await service.splitPayment('order-1', dto, 'tenant-1', 'user-1');
       expect(results).toHaveLength(2);
+      expect(results.map((r) => r.status)).toEqual(
+        expect.arrayContaining([PaymentStatus.COMPLETED, PaymentStatus.COMPLETED]),
+      );
+      expect(metrics.incrementPaymentsCompleted).toHaveBeenCalledTimes(2);
+    });
+
+    it('should mark provider split FAILED without crediting the order when gateway rejects (P1-10)', async () => {
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+      stubSplitProvider({ create: { success: false, error: 'Gateway rejected payment' } });
+      prisma.$transaction
+        .mockImplementationOnce(async (cb) => cb(mockCreateTx([cashSplit(), cardSplitPending()])))
+        .mockImplementationOnce(async (cb) => {
+          const order = {
+            findFirst: jest.fn(),
+            updateMany: jest.fn(),
+            update: jest.fn(),
+          };
+          const result = cb({
+            order,
+            payment: {
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              findMany: jest.fn().mockResolvedValue([
+                {
+                  ...cardSplitPending(),
+                  status: PaymentStatus.FAILED,
+                },
+              ]),
+            },
+            orderStatusHistory: { create: jest.fn() },
+          });
+          expect(order.updateMany).not.toHaveBeenCalled();
+          expect(order.update).not.toHaveBeenCalled();
+          return result;
+        });
+
+      const dto: SplitPaymentDto = {
+        orderId: 'order-1',
+        splits: [
+          { method: PaymentMethod.CASH, amount: 30 },
+          { method: PaymentMethod.CREDIT_CARD, amount: 70 },
+        ],
+      };
+
+      const results = await service.splitPayment('order-1', dto, 'tenant-1', 'user-1');
+      expect(results.find((r) => r.id === 'payment-3')?.status).toBe(PaymentStatus.FAILED);
+      expect(metrics.incrementPaymentsFailed).toHaveBeenCalledTimes(1);
+      expect(metrics.incrementPaymentsCompleted).toHaveBeenCalledTimes(1);
+    });
+
+    it('should keep provider split PENDING and attach gatewayRef on async confirmation (P1-10)', async () => {
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+      stubSplitProvider({ confirm: { success: true, data: { status: 'pending' } } });
+      prisma.$transaction
+        .mockImplementationOnce(async (cb) => cb(mockCreateTx([cashSplit(), cardSplitPending()])))
+        .mockImplementationOnce(async (cb) =>
+          cb(
+            mockFinalizeTx([
+              {
+                ...cardSplitPending(),
+                status: PaymentStatus.PENDING,
+                gatewayRef: 'pi_split_1',
+              },
+            ]),
+          ),
+        );
+
+      const dto: SplitPaymentDto = {
+        orderId: 'order-1',
+        splits: [
+          { method: PaymentMethod.CASH, amount: 30 },
+          { method: PaymentMethod.CREDIT_CARD, amount: 70 },
+        ],
+      };
+
+      const results = await service.splitPayment('order-1', dto, 'tenant-1', 'user-1');
+      expect(results.find((r) => r.id === 'payment-3')?.status).toBe(PaymentStatus.PENDING);
+      expect(metrics.incrementPaymentsCompleted).toHaveBeenCalledTimes(1);
+      expect(metrics.incrementPaymentsFailed).not.toHaveBeenCalled();
+    });
+
+    it('should pass the payment idempotency key to the gateway for safe retries (P1-10)', async () => {
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+      stubSplitProvider({});
+      prisma.$transaction
+        .mockImplementationOnce(async (cb) => cb(mockCreateTx([cashSplit(), cardSplitPending()])))
+        .mockImplementationOnce(async (cb) =>
+          cb(mockFinalizeTx([{ ...cardSplitPending(), status: PaymentStatus.COMPLETED }])),
+        );
+
+      const dto: SplitPaymentDto = {
+        orderId: 'order-1',
+        splits: [
+          { method: PaymentMethod.CASH, amount: 30 },
+          { method: PaymentMethod.CREDIT_CARD, amount: 70 },
+        ],
+      };
+
+      await service.splitPayment('order-1', dto, 'tenant-1', 'user-1');
+      const provider = (
+        service as unknown as { providerRegistry: Map<string, unknown> }
+      ).providerRegistry.get('stripe') as {
+        createPaymentIntent: jest.Mock;
+        confirmPayment: jest.Mock;
+      };
+      expect(provider.createPaymentIntent).toHaveBeenCalledWith(expect.any(Object), 'idem-3');
+      expect(provider.confirmPayment).toHaveBeenCalledWith(expect.any(String), 'idem-3');
+    });
+
+    it('should credit the order only once when two split payments race on the version CAS (P1-10)', async () => {
+      prisma.order.findFirst.mockResolvedValue(mockOrder);
+      const release: Array<() => void> = [];
+      const barrier = new Promise<void>((resolve) => {
+        release.push(resolve);
+        release.push(resolve);
+      });
+      let claimCount = 0;
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          await barrier;
+          const winner = ++claimCount === 1;
+          return cb({
+            order: {
+              findFirst: jest.fn().mockResolvedValue(mockOrder),
+              updateMany: jest.fn().mockResolvedValue({ count: winner ? 1 : 0 }),
+              update: jest.fn().mockResolvedValue({}),
+            },
+            payment: {
+              create: jest.fn().mockResolvedValue({
+                ...mockPayment,
+                id: 'payment-x',
+                method: PaymentMethod.CASH,
+                amount: 50,
+              }),
+              update: jest.fn().mockResolvedValue({
+                ...mockPayment,
+                id: 'payment-x',
+                method: PaymentMethod.CASH,
+                amount: 50,
+                status: PaymentStatus.COMPLETED,
+              }),
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          });
+        },
+      );
+
+      const dto: SplitPaymentDto = {
+        orderId: 'order-1',
+        splits: [{ method: PaymentMethod.CASH, amount: 50 }],
+      };
+      const first = service.splitPayment('order-1', dto, 'tenant-1', 'user-1');
+      const second = service.splitPayment('order-1', dto, 'tenant-1', 'user-1');
+      release.forEach((r) => r());
+      const results = await Promise.allSettled([first, second]);
+
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toBeInstanceOf(ConflictException);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    });
+
+    it('should credit a provider split only once when finalized concurrently (P1-10)', async () => {
+      const pending = {
+        ...mockPayment,
+        id: 'payment-9',
+        method: PaymentMethod.CREDIT_CARD,
+        amount: 40,
+        status: PaymentStatus.PENDING,
+        idempotencyKey: 'idem-9',
+      };
+      const release: Array<() => void> = [];
+      const barrier = new Promise<void>((resolve) => {
+        release.push(resolve);
+        release.push(resolve);
+      });
+      let claimCount = 0;
+      let orderCredits = 0;
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          await barrier;
+          const winner = ++claimCount === 1;
+          return cb({
+            order: {
+              findFirst: jest.fn().mockResolvedValue(mockOrder),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              update: jest.fn().mockImplementation(() => {
+                orderCredits += 1;
+                return {};
+              }),
+            },
+            payment: {
+              updateMany: jest.fn().mockResolvedValue({ count: winner ? 1 : 0 }),
+              findMany: jest
+                .fn()
+                .mockResolvedValue([
+                  { ...pending, status: PaymentStatus.COMPLETED, gatewayRef: 'txn_9' },
+                ]),
+            },
+            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          });
+        },
+      );
+
+      const svc = service as unknown as {
+        finalizeProviderSplitPayments: (
+          orderId: string,
+          tenantId: string,
+          userId: string,
+          outcomes: Array<{
+            paymentId: string;
+            outcome: 'completed';
+            gatewayRef: string | null;
+            gatewayData: unknown;
+          }>,
+          createdPayments: Array<Record<string, unknown>>,
+        ) => Promise<Array<Record<string, unknown>>>;
+      };
+
+      const outcome = {
+        paymentId: 'payment-9',
+        outcome: 'completed' as const,
+        gatewayRef: 'txn_9',
+        gatewayData: {},
+      };
+      const first = svc.finalizeProviderSplitPayments(
+        'order-1',
+        'tenant-1',
+        'user-1',
+        [outcome],
+        [pending],
+      );
+      const second = svc.finalizeProviderSplitPayments(
+        'order-1',
+        'tenant-1',
+        'user-1',
+        [outcome],
+        [pending],
+      );
+      release.forEach((r) => r());
+      await Promise.all([first, second]);
+
+      expect(orderCredits).toBe(1);
+      expect(claimCount).toBe(2);
     });
 
     it('should reject split total exceeding balance', async () => {

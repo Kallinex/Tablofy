@@ -253,35 +253,66 @@ export class CycleCountService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      // Claim the cycle count: a COMPLETED/APPROVED count can be reconciled exactly once.
+      // Concurrent reconcile calls serialize on this CAS and the loser is rejected.
+      const claimed = await tx.cycleCount.updateMany({
+        where: {
+          id,
+          tenantId,
+          status: {
+            in: [CycleCountStatus.COMPLETED, CycleCountStatus.APPROVED],
+          },
+        },
+        data: {
+          status: CycleCountStatus.RECONCILED,
+          approvedById: userId,
+          approvedAt: new Date(),
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException(
+          'Cycle count is not COMPLETED/APPROVED or has already been reconciled',
+        );
+      }
+
       for (const item of existing.items) {
         if (item.actualQuantity == null) continue;
 
-        const variance = Number(item.actualQuantity) - Number(item.expectedQuantity);
-        if (variance === 0) continue;
+        const variance = new Prisma.Decimal(item.actualQuantity).minus(item.expectedQuantity);
+        if (variance.isZero()) continue;
 
-        const inventoryItem = await tx.inventoryItem.findFirst({
-          where: { id: item.inventoryItemId, tenantId, deletedAt: null },
-        });
-        if (!inventoryItem) continue;
+        const magnitude = variance.abs();
+        const isNegative = variance.isNegative();
 
-        const newCurrent = Number(inventoryItem.currentQuantity) + variance;
-        const newAvailable = newCurrent - Number(inventoryItem.reservedQuantity);
-
-        await tx.inventoryItem.update({
-          where: { id: item.inventoryItemId },
+        // CAS + atomic arithmetic: never read→compute→write, never goes negative.
+        const result = await tx.inventoryItem.updateMany({
+          where: {
+            id: item.inventoryItemId,
+            tenantId,
+            deletedAt: null,
+            ...(isNegative
+              ? { currentQuantity: { gte: magnitude }, availableQuantity: { gte: magnitude } }
+              : {}),
+          },
           data: {
-            currentQuantity: newCurrent,
-            availableQuantity: newAvailable < 0 ? 0 : newAvailable,
+            currentQuantity: isNegative ? { decrement: magnitude } : { increment: magnitude },
+            availableQuantity: isNegative ? { decrement: magnitude } : { increment: magnitude },
             version: { increment: 1 },
           },
         });
+        if (result.count !== 1) {
+          throw new BadRequestException(
+            `Cannot reconcile item ${item.inventoryItemId}: quantity changed or insufficient to apply variance`,
+          );
+        }
       }
     });
 
-    const updated = await this.prisma.cycleCount.update({
-      where: { id },
-      data: { status: CycleCountStatus.RECONCILED, approvedById: userId, approvedAt: new Date() },
+    const updated = await this.prisma.cycleCount.findFirst({
+      where: { id, tenantId, deletedAt: null },
+      include: { items: true },
     });
+    if (!updated) throw new NotFoundException('Cycle count not found');
 
     await this.auditLogsService.log({
       action: 'CYCLE_COUNT_RECONCILED',

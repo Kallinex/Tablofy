@@ -475,8 +475,8 @@ export class InventoryService {
     const reservedQty = dto.reservedQuantity ?? Number(item.reservedQuantity);
     const availableQty = currentQty - reservedQty;
 
-    const updated = await this.prisma.inventoryItem.update({
-      where: { id },
+    const updatedCount = await this.prisma.inventoryItem.updateMany({
+      where: { id, tenantId, version: item.version, deletedAt: null },
       data: {
         name: dto.name,
         description: dto.description,
@@ -502,6 +502,15 @@ export class InventoryService {
         metadata: dto.metadata !== undefined ? (dto.metadata as Prisma.InputJsonValue) : undefined,
         version: { increment: 1 },
       },
+    });
+    if (updatedCount.count !== 1) {
+      throw new ConflictException(
+        'Inventory item was modified by another request. Reload and retry.',
+      );
+    }
+
+    const updated = await this.prisma.inventoryItem.findFirst({
+      where: { id, tenantId, deletedAt: null },
     });
 
     await this.auditLogsService.log({
@@ -698,17 +707,18 @@ export class InventoryService {
 
       if (dto.type === AdjustmentType.INCREASE) {
         const qtyChange = dto.quantity;
-        const newCurrent = Number(item.currentQuantity) + qtyChange;
-        const newAvailable = newCurrent - Number(item.reservedQuantity);
 
-        await tx.inventoryItem.update({
-          where: { id: dto.inventoryItemId },
+        const updated = await tx.inventoryItem.updateMany({
+          where: { id: dto.inventoryItemId, tenantId, deletedAt: null },
           data: {
-            currentQuantity: newCurrent,
-            availableQuantity: newAvailable < 0 ? 0 : newAvailable,
+            currentQuantity: { increment: qtyChange },
+            availableQuantity: { increment: qtyChange },
             version: { increment: 1 },
           },
         });
+        if (updated.count !== 1) {
+          throw new NotFoundException('Inventory item not found');
+        }
 
         await tx.stockMovement.create({
           data: {
@@ -767,27 +777,54 @@ export class InventoryService {
       });
       if (!item) throw new NotFoundException('Inventory item not found');
 
-      const newCurrent = Number(item.currentQuantity) + qtyChange;
-      if (newCurrent < 0) {
-        throw new BadRequestException('Insufficient stock to apply this adjustment');
-      }
-
       const updated = await tx.stockAdjustment.updateMany({
         where: { id, tenantId, status: 'PENDING', deletedAt: null },
         data: { status: 'APPROVED', approvedById: userId, approvedAt: new Date() },
       });
       if (updated.count !== 1) throw new BadRequestException('Adjustment is not PENDING');
 
-      const newAvailable = newCurrent - Number(item.reservedQuantity);
+      if (adjustment.type === AdjustmentType.INCREASE) {
+        const claimed = await tx.inventoryItem.updateMany({
+          where: { id: adjustment.inventoryItemId, tenantId, deletedAt: null },
+          data: {
+            currentQuantity: { increment: adjustment.quantity },
+            availableQuantity: { increment: adjustment.quantity },
+            version: { increment: 1 },
+          },
+        });
+        if (claimed.count !== 1) throw new NotFoundException('Inventory item not found');
+      } else {
+        const decrementQty = Number(adjustment.quantity);
+        const claimed = await tx.inventoryItem.updateMany({
+          where: {
+            id: adjustment.inventoryItemId,
+            tenantId,
+            currentQuantity: { gte: decrementQty },
+          },
+          data: {
+            currentQuantity: { decrement: decrementQty },
+            version: { increment: 1 },
+          },
+        });
+        if (claimed.count !== 1) {
+          throw new BadRequestException('Insufficient stock to apply this adjustment');
+        }
 
-      await tx.inventoryItem.update({
-        where: { id: adjustment.inventoryItemId },
-        data: {
-          currentQuantity: newCurrent,
-          availableQuantity: newAvailable < 0 ? 0 : newAvailable,
-          version: { increment: 1 },
-        },
-      });
+        const availableClaimed = await tx.inventoryItem.updateMany({
+          where: {
+            id: adjustment.inventoryItemId,
+            tenantId,
+            availableQuantity: { gte: decrementQty },
+          },
+          data: { availableQuantity: { decrement: decrementQty } },
+        });
+        if (availableClaimed.count !== 1) {
+          await tx.inventoryItem.updateMany({
+            where: { id: adjustment.inventoryItemId, tenantId },
+            data: { availableQuantity: 0 },
+          });
+        }
+      }
 
       await tx.stockMovement.create({
         data: {
@@ -906,17 +943,35 @@ export class InventoryService {
         },
       });
 
-      const newCurrent = currentQty - dto.quantity;
-      const newAvailable = newCurrent - Number(item.reservedQuantity);
-
-      await tx.inventoryItem.update({
-        where: { id: dto.inventoryItemId },
+      const claimed = await tx.inventoryItem.updateMany({
+        where: {
+          id: dto.inventoryItemId,
+          tenantId,
+          currentQuantity: { gte: dto.quantity },
+        },
         data: {
-          currentQuantity: newCurrent,
-          availableQuantity: newAvailable < 0 ? 0 : newAvailable,
+          currentQuantity: { decrement: dto.quantity },
           version: { increment: 1 },
         },
       });
+      if (claimed.count !== 1) {
+        throw new BadRequestException('Insufficient stock to record waste');
+      }
+
+      const availableClaimed = await tx.inventoryItem.updateMany({
+        where: {
+          id: dto.inventoryItemId,
+          tenantId,
+          availableQuantity: { gte: dto.quantity },
+        },
+        data: { availableQuantity: { decrement: dto.quantity } },
+      });
+      if (availableClaimed.count !== 1) {
+        await tx.inventoryItem.updateMany({
+          where: { id: dto.inventoryItemId, tenantId },
+          data: { availableQuantity: 0 },
+        });
+      }
 
       await tx.stockMovement.create({
         data: {

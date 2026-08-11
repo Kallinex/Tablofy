@@ -140,57 +140,80 @@ describe('PaymentFlowIntegration', () => {
 
   it('should handle split payment across methods', async () => {
     prisma.order.findFirst.mockResolvedValue(mockOrder);
-    prisma.$transaction.mockImplementation(async (cb: (tx: Record<string, unknown>) => unknown) => {
-      const tx = {
-        payment: {
-          create: jest
-            .fn()
-            .mockResolvedValueOnce({
+    (service as unknown as { providerRegistry: Map<string, unknown> }).providerRegistry.set(
+      'stripe',
+      {
+        mode: 'mock',
+        initialize: async () => undefined,
+        createPaymentIntent: jest.fn().mockResolvedValue({
+          success: true,
+          data: { id: 'pi_split_1', status: 'requires_confirmation' },
+        }),
+        confirmPayment: jest.fn().mockResolvedValue({
+          success: true,
+          data: { status: 'succeeded', transactionId: 'txn_split_1' },
+        }),
+      },
+    );
+
+    prisma.$transaction
+      .mockImplementationOnce(async (cb: (tx: Record<string, unknown>) => unknown) => {
+        const tx = {
+          payment: {
+            create: jest
+              .fn()
+              .mockResolvedValueOnce({
+                ...mockCompletedPayment,
+                id: 'payment-2',
+                method: PaymentMethod.CASH,
+                amount: 30,
+              })
+              .mockResolvedValueOnce({
+                ...mockCompletedPayment,
+                id: 'payment-3',
+                method: PaymentMethod.CREDIT_CARD,
+                amount: 70,
+                status: PaymentStatus.PENDING,
+              }),
+            update: jest.fn().mockResolvedValue({
               ...mockCompletedPayment,
               id: 'payment-2',
               method: PaymentMethod.CASH,
               amount: 30,
-            })
-            .mockResolvedValueOnce({
-              ...mockCompletedPayment,
-              id: 'payment-3',
-              method: PaymentMethod.CREDIT_CARD,
-              amount: 70,
-              status: PaymentStatus.PENDING,
             }),
-          update: jest
-            .fn()
-            .mockResolvedValueOnce({
-              ...mockCompletedPayment,
-              id: 'payment-2',
-              method: PaymentMethod.CASH,
-              amount: 30,
-            })
-            .mockResolvedValueOnce({
-              ...mockCompletedPayment,
-              id: 'payment-3',
-              method: PaymentMethod.CREDIT_CARD,
-              amount: 70,
-              status: PaymentStatus.COMPLETED,
-            }),
-          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-          findUnique: jest.fn().mockResolvedValue({
-            ...mockCompletedPayment,
-            id: 'payment-3',
-            method: PaymentMethod.CREDIT_CARD,
-            amount: 70,
-            status: PaymentStatus.COMPLETED,
-          }),
-        },
-        order: {
-          findFirst: jest.fn().mockResolvedValue(mockOrder),
-          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-          update: jest.fn().mockResolvedValue({}),
-        },
-        orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
-      };
-      return cb(tx);
-    });
+          },
+          order: {
+            findFirst: jest.fn().mockResolvedValue(mockOrder),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            update: jest.fn().mockResolvedValue({}),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      })
+      .mockImplementationOnce(async (cb: (tx: Record<string, unknown>) => unknown) => {
+        const tx = {
+          payment: {
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findMany: jest.fn().mockResolvedValue([
+              {
+                ...mockCompletedPayment,
+                id: 'payment-3',
+                method: PaymentMethod.CREDIT_CARD,
+                amount: 70,
+                status: PaymentStatus.COMPLETED,
+              },
+            ]),
+          },
+          order: {
+            findFirst: jest.fn().mockResolvedValue(mockOrder),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            update: jest.fn().mockResolvedValue({}),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
 
     const dto: SplitPaymentDto = {
       orderId: 'order-1',
@@ -202,6 +225,7 @@ describe('PaymentFlowIntegration', () => {
 
     const results = await service.splitPayment('order-1', dto, 'tenant-1', 'user-1');
     expect(results).toHaveLength(2);
+    expect(results.every((r) => r.status === PaymentStatus.COMPLETED)).toBe(true);
   });
 
   it('should mark payment as failed when provider fails', async () => {

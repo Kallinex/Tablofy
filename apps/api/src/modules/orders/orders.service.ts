@@ -739,6 +739,14 @@ export class OrdersService {
     }
 
     const result = await this.withOrderNumberRetry(existing.restaurantId, async (tx) => {
+      const sourceVer = await tx.order.updateMany({
+        where: { id, version: existing.version },
+        data: { version: { increment: 1 } },
+      });
+      if (sourceVer.count === 0) {
+        throw new ConflictException('Order was modified by another user. Please retry.');
+      }
+
       const newOrderNumber = await this.generateOrderNumber(existing.restaurantId);
 
       const newOrder = await tx.order.create({
@@ -797,9 +805,18 @@ export class OrdersService {
         movedSubtotal = addMoney(movedSubtotal, itemSubtotal);
 
         if (remainingQuantity > 0) {
+          const remainingModifiersTotal = sumMoney(
+            (originalItem.modifiers ?? []).map((mod) => mulMoney(mod.price, mod.quantity)),
+          );
           await tx.orderItem.update({
             where: { id: originalItem.id },
-            data: { quantity: remainingQuantity },
+            data: {
+              quantity: remainingQuantity,
+              total: subMoney(
+                addMoney(mulMoney(unitPrice, remainingQuantity), remainingModifiersTotal),
+                roundMoney(originalItem.discount),
+              ),
+            },
           });
         }
       }
@@ -810,6 +827,7 @@ export class OrdersService {
       });
 
       await this.recalculateOrder(tx, id);
+      await this.recalculateOrder(tx, newOrder.id);
 
       await tx.orderStatusHistory.create({
         data: {
@@ -866,6 +884,21 @@ export class OrdersService {
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
+      const targetVer = await tx.order.updateMany({
+        where: { id: targetId, version: target.version },
+        data: { version: { increment: 1 } },
+      });
+      if (targetVer.count === 0) {
+        throw new ConflictException('Target order was modified by another user. Please retry.');
+      }
+      const sourceVer = await tx.order.updateMany({
+        where: { id: dto.sourceOrderId, version: source.version },
+        data: { version: { increment: 1 } },
+      });
+      if (sourceVer.count === 0) {
+        throw new ConflictException('Source order was modified by another user. Please retry.');
+      }
+
       for (const item of source.items) {
         await tx.orderItem.create({
           data: {
@@ -1494,6 +1527,7 @@ export class OrdersService {
   private async recalculateOrder(tx: Prisma.TransactionClient, orderId: string) {
     const items = await tx.orderItem.findMany({
       where: { orderId, voidedAt: null },
+      include: { modifiers: true },
     });
 
     const subtotal = sumMoney(items.map((item) => mulMoney(item.unitPrice, item.quantity)));
@@ -1510,7 +1544,17 @@ export class OrdersService {
       deliveryFee = roundMoney(order.deliveryFee);
     }
 
-    const itemTotal = sumMoney(items.map((item) => item.total));
+    const itemTotal = sumMoney(
+      items.map((item) => {
+        const modifiersTotal = sumMoney(
+          (item.modifiers ?? []).map((mod) => mulMoney(mod.price, mod.quantity)),
+        );
+        return subMoney(
+          addMoney(mulMoney(item.unitPrice, item.quantity), modifiersTotal),
+          roundMoney(item.discount),
+        );
+      }),
+    );
     const total = addMoney(itemTotal, addMoney(serviceCharge, addMoney(taxAmount, deliveryFee)));
     const cappedDiscount = Math.min(discount, itemTotal);
     const paidAmountFloor = order ? roundMoney(order.paidAmount) : 0;

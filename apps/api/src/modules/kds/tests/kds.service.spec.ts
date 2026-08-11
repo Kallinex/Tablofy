@@ -231,6 +231,48 @@ describe('KdsService', () => {
       expect(prisma.$transaction).toHaveBeenCalledTimes(2);
     });
 
+    it('should skip idempotently when tickets already exist for the order (P1-03)', async () => {
+      prisma.order.findUnique.mockResolvedValue(
+        order([{ id: 'item-1', product: { stationId: 'st-1' } }]),
+      );
+      prisma.kitchenTicket.findFirst.mockResolvedValue({ id: 'ticket-1' });
+
+      await service.handleOrderConfirmed({ tenantId: testTenantId, orderId: 'order-1' });
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.kitchenTicket.create).not.toHaveBeenCalled();
+    });
+
+    it('should treat a concurrent duplicate orderItemId conflict as idempotent (P1-03)', async () => {
+      prisma.order.findUnique.mockResolvedValue(
+        order([{ id: 'item-1', product: { stationId: 'st-1' } }]),
+      );
+      const conflict = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`orderItemId`)',
+        {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: ['orderItemId'] },
+        },
+      );
+      const tx = {
+        kitchenTicket: {
+          count: jest.fn().mockResolvedValue(0),
+          create: jest.fn().mockResolvedValue({ id: 'ticket-1', ticketNumber: 1 }),
+          findUnique: jest.fn().mockResolvedValue({ id: 'ticket-1', items: [] }),
+        },
+        kitchenTicketItem: {
+          create: jest.fn().mockRejectedValue(conflict),
+        },
+      };
+      prisma.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+      await service.handleOrderConfirmed({ tenantId: testTenantId, orderId: 'order-1' });
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(tx.kitchenTicket.create).toHaveBeenCalledTimes(1);
+    });
+
     it('should propagate errors instead of swallowing them', async () => {
       prisma.order.findUnique.mockResolvedValue(
         order([{ id: 'item-1', product: { stationId: 'st-1' } }]),

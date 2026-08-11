@@ -751,6 +751,54 @@ export class PurchasingService {
     throw lastError ?? new ConflictException('Could not allocate a unique PO number');
   }
 
+  private readonly grnNumberMaxRetries = 5;
+
+  private isGRNNumberConflict(error: unknown): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+      return false;
+    }
+    const target = error.meta?.target;
+    if (Array.isArray(target)) {
+      return target.some((field) => String(field).includes('grnNumber'));
+    }
+    return String(target ?? '').includes('grnNumber');
+  }
+
+  private isBatchKeyConflict(error: unknown): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+      return false;
+    }
+    // The only unique constraint involving batchNumber/lotNumber/expiryDate is the
+    // inventory_batches natural key (goods_receipt_items has no such unique constraint).
+    const target = error.meta?.target;
+    const fields = Array.isArray(target) ? target : [target];
+    return fields.some((field) =>
+      ['batchNumber', 'lotNumber', 'expiryDate'].includes(String(field)),
+    );
+  }
+
+  private async withGRNNumberRetry<T>(
+    tenantId: string,
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= this.grnNumberMaxRetries; attempt++) {
+      try {
+        return await this.prisma.$transaction(fn);
+      } catch (error) {
+        lastError = error;
+        if (this.isGRNNumberConflict(error) && attempt < this.grnNumberMaxRetries) {
+          this.logger.warn(
+            `GRN number conflict for tenant ${tenantId}; retrying (attempt ${attempt}/${this.grnNumberMaxRetries})`,
+          );
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw lastError ?? new ConflictException('Could not allocate a unique GRN number');
+  }
+
   private async validatePOReferences(
     dto: {
       items: { inventoryItemId: string }[];
@@ -849,9 +897,11 @@ export class PurchasingService {
       throw new NotFoundException('One or more inventory items were not found in this tenant');
     }
 
-    const grnNumber = await this.generateGRNNumber(tenantId);
+    let grnNumber = '';
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.withGRNNumberRetry(tenantId, async (tx) => {
+      grnNumber = await this.generateGRNNumber(tenantId, tx);
+
       const grn = await tx.goodsReceipt.create({
         data: {
           grnNumber,
@@ -862,30 +912,45 @@ export class PurchasingService {
           notes: dto.notes,
           receivedById: userId,
           status: GoodsReceiptStatus.COMPLETED,
-          items: {
-            create: dto.items.map((item) => ({
-              purchaseOrderItemId: item.purchaseOrderItemId,
-              inventoryItemId: item.inventoryItemId,
-              tenantId,
-              quantityReceived: item.quantityReceived,
-              unitPrice: item.unitPrice ?? 0,
-              batchNumber: item.batchNumber,
-              lotNumber: item.lotNumber,
-              expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
-              notes: item.notes,
-            })),
-          },
         },
-        include: { items: true },
       });
 
       for (const item of dto.items) {
-        await tx.purchaseOrderItem.update({
+        const poLine = await tx.purchaseOrderItem.findUnique({
           where: { id: item.purchaseOrderItemId },
+          select: { id: true, quantity: true },
+        });
+        if (!poLine) {
+          throw new NotFoundException(`Purchase order line ${item.purchaseOrderItemId} not found`);
+        }
+
+        const remainingAllowed = new Prisma.Decimal(poLine.quantity).minus(item.quantityReceived);
+        const claimed = await tx.purchaseOrderItem.updateMany({
+          where: {
+            id: item.purchaseOrderItemId,
+            receivedQuantity: { lte: remainingAllowed.toDecimalPlaces(4).toNumber() },
+          },
           data: {
             receivedQuantity: { increment: item.quantityReceived },
           },
         });
+        if (claimed.count !== 1) {
+          throw new BadRequestException(
+            `Receiving ${item.quantityReceived} for line ${item.purchaseOrderItemId} exceeds the remaining PO quantity (over-receipt rejected)`,
+          );
+        }
+
+        // P1-06 N1: averageCost is a read→compute→write over currentQuantity and
+        // averageCost. Without a lock, two concurrent GRNs for the same item can
+        // both compute from the same base and the later write wins with a stale
+        // cost (inventory valuation lost update). Acquire the item row lock (same
+        // pattern as recipe deduction) so the computation is serialized.
+        await tx.$queryRaw`
+          SELECT "id"
+          FROM "inventory_items"
+          WHERE "id" = ${item.inventoryItemId} AND "tenantId" = ${tenantId}
+          FOR UPDATE
+        `;
 
         const invItem = await tx.inventoryItem.findFirst({
           where: { id: item.inventoryItemId, tenantId },
@@ -945,16 +1010,20 @@ export class PurchasingService {
           },
         });
 
+        let inventoryBatchId: string | null = null;
         if (item.batchNumber || item.lotNumber || item.expiryDate) {
+          const batchMatch = {
+            inventoryItemId: item.inventoryItemId,
+            tenantId,
+            batchNumber: item.batchNumber ?? null,
+            lotNumber: item.lotNumber ?? null,
+            expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
+            isActive: true,
+          };
+
           const existingBatch = await tx.inventoryBatch.findFirst({
-            where: {
-              inventoryItemId: item.inventoryItemId,
-              tenantId,
-              batchNumber: item.batchNumber ?? null,
-              lotNumber: item.lotNumber ?? null,
-              expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
-              isActive: true,
-            },
+            where: batchMatch,
+            select: { id: true },
           });
 
           if (existingBatch) {
@@ -964,20 +1033,57 @@ export class PurchasingService {
                 quantity: { increment: item.quantityReceived },
               },
             });
+            inventoryBatchId = existingBatch.id;
           } else {
-            await tx.inventoryBatch.create({
-              data: {
-                inventoryItemId: item.inventoryItemId,
-                tenantId,
-                batchNumber: item.batchNumber,
-                lotNumber: item.lotNumber,
-                expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
-                quantity: item.quantityReceived,
-                unitCost: unitPrice,
-              },
-            });
+            try {
+              const createdBatch = await tx.inventoryBatch.create({
+                data: {
+                  inventoryItemId: item.inventoryItemId,
+                  tenantId,
+                  batchNumber: item.batchNumber,
+                  lotNumber: item.lotNumber,
+                  expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
+                  quantity: item.quantityReceived,
+                  unitCost: unitPrice,
+                },
+                select: { id: true },
+              });
+              inventoryBatchId = createdBatch.id;
+            } catch (error) {
+              if (!this.isBatchKeyConflict(error)) throw error;
+              // A concurrent GRN created this batch first (unique natural key). Reuse it
+              // instead of failing: the batch represents one physical lot per item/tenant.
+              const reusedBatch = await tx.inventoryBatch.findFirst({
+                where: batchMatch,
+                select: { id: true },
+              });
+              if (!reusedBatch) throw error;
+              await tx.inventoryBatch.update({
+                where: { id: reusedBatch.id },
+                data: {
+                  quantity: { increment: item.quantityReceived },
+                },
+              });
+              inventoryBatchId = reusedBatch.id;
+            }
           }
         }
+
+        await tx.goodsReceiptItem.create({
+          data: {
+            goodsReceiptId: grn.id,
+            purchaseOrderItemId: item.purchaseOrderItemId,
+            inventoryItemId: item.inventoryItemId,
+            tenantId,
+            quantityReceived: item.quantityReceived,
+            unitPrice: item.unitPrice ?? 0,
+            batchNumber: item.batchNumber,
+            lotNumber: item.lotNumber,
+            expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
+            notes: item.notes,
+            inventoryBatchId,
+          },
+        });
       }
 
       const poItems = await tx.purchaseOrderItem.findMany({
@@ -1169,10 +1275,13 @@ export class PurchasingService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.goodsReceipt.update({
-        where: { id },
+      const claimResult = await tx.goodsReceipt.updateMany({
+        where: { id, status: { not: GoodsReceiptStatus.CANCELLED } },
         data: { status: GoodsReceiptStatus.CANCELLED },
       });
+      if (claimResult.count !== 1) {
+        throw new BadRequestException('Goods receipt is already cancelled');
+      }
 
       for (const item of grn.items) {
         await tx.purchaseOrderItem.update({
@@ -1182,54 +1291,69 @@ export class PurchasingService {
           },
         });
 
-        const invItem = await tx.inventoryItem.findFirst({
-          where: { id: item.inventoryItemId!, tenantId },
+        const receivedQty = item.quantityReceived;
+
+        // Item-level reversal: CAS (gte guard) + atomic decrement. Rejects the cancel if the
+        // received stock was already consumed or double-cancelled. Never clamps to zero.
+        const itemClaim = await tx.inventoryItem.updateMany({
+          where: {
+            id: item.inventoryItemId!,
+            tenantId,
+            currentQuantity: { gte: receivedQty },
+            availableQuantity: { gte: receivedQty },
+          },
+          data: {
+            currentQuantity: { decrement: receivedQty },
+            availableQuantity: { decrement: receivedQty },
+            version: { increment: 1 },
+          },
         });
-        if (invItem) {
-          const currentQty = Number(invItem.currentQuantity);
-          const receivedQty = Number(item.quantityReceived);
-          const newQty = Math.max(0, currentQty - receivedQty);
-          const newAvailable = Math.max(0, Number(invItem.availableQuantity) - receivedQty);
+        if (itemClaim.count !== 1) {
+          throw new BadRequestException(
+            `Cannot cancel GRN ${grn.grnNumber}: received quantity for item ${item.inventoryItemId} has already been consumed or is no longer available`,
+          );
+        }
 
-          await tx.inventoryItem.update({
-            where: { id: item.inventoryItemId! },
-            data: {
-              currentQuantity: newQty,
-              availableQuantity: newAvailable,
-              version: { increment: 1 },
-            },
-          });
+        await tx.stockMovement.create({
+          data: {
+            inventoryItemId: item.inventoryItemId!,
+            tenantId,
+            branchId: grn.branchId,
+            type: StockMovementType.ADJUSTMENT,
+            quantity: new Prisma.Decimal(item.quantityReceived).neg(),
+            unitCost: item.unitPrice,
+            totalCost: new Prisma.Decimal(item.quantityReceived)
+              .times(item.unitPrice ?? 0)
+              .neg()
+              .toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP)
+              .toNumber(),
+            referenceType: 'GoodsReceipt',
+            referenceId: grn.id,
+            notes: `GRN cancellation ${grn.grnNumber}`,
+            recordedById: userId,
+          },
+        });
 
-          await tx.stockMovement.create({
-            data: {
-              inventoryItemId: item.inventoryItemId!,
-              tenantId,
-              branchId: grn.branchId,
-              type: StockMovementType.ADJUSTMENT,
-              quantity: -item.quantityReceived,
-              unitCost: item.unitPrice,
-              totalCost: new Prisma.Decimal(item.quantityReceived)
-                .times(item.unitPrice ?? 0)
-                .neg()
-                .toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP)
-                .toNumber(),
-              referenceType: 'GoodsReceipt',
-              referenceId: grn.id,
-              notes: `GRN cancellation ${grn.grnNumber}`,
-              recordedById: userId,
-            },
-          });
-
-          await tx.inventoryBatch.updateMany({
+        // Batch-level reversal: touches ONLY the exact batch row this GRN line was
+        // attributed to (inventoryBatchId). No key-match-all, no per-batch 0-clamp.
+        // Legacy rows (created before attribution existed) have a null inventoryBatchId
+        // and are intentionally skipped — they never had an attributable batch row.
+        if (item.inventoryBatchId) {
+          const batchClaim = await tx.inventoryBatch.updateMany({
             where: {
-              inventoryItemId: item.inventoryItemId!,
-              tenantId,
+              id: item.inventoryBatchId,
               isActive: true,
+              quantity: { gte: receivedQty },
             },
             data: {
-              quantity: { decrement: item.quantityReceived },
+              quantity: { decrement: receivedQty },
             },
           });
+          if (batchClaim.count !== 1) {
+            throw new BadRequestException(
+              `Cannot cancel GRN ${grn.grnNumber}: batch stock for item ${item.inventoryItemId} has already been consumed`,
+            );
+          }
         }
       }
 
@@ -1276,11 +1400,14 @@ export class PurchasingService {
     return { id, status: GoodsReceiptStatus.CANCELLED };
   }
 
-  private async generateGRNNumber(tenantId: string): Promise<string> {
+  private async generateGRNNumber(
+    tenantId: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<string> {
     const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const prefix = `GRN-${datePart}-`;
 
-    const lastGRN = await this.prisma.goodsReceipt.findFirst({
+    const lastGRN = await client.goodsReceipt.findFirst({
       where: { tenantId, grnNumber: { startsWith: prefix } },
       orderBy: { grnNumber: 'desc' },
       select: { grnNumber: true },

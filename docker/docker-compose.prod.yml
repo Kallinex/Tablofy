@@ -7,10 +7,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: tablofy
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tablofy_prod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: tablofy_prod
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -25,18 +25,21 @@ services:
     image: redis:7-alpine
     container_name: tablofy-redis
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     ports:
-      - '6379:6379'
+      - '127.0.0.1:6379:6379'
     volumes:
       - redis_data:/data
     networks:
       - tablofy-network
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ['CMD-SHELL', 'redis-cli $${REDIS_PASSWORD:+-a $$REDIS_PASSWORD} ping']
       interval: 10s
       timeout: 5s
       retries: 5
-    command: redis-server --appendonly yes
+    command: >
+      sh -c 'exec redis-server --appendonly yes $${REDIS_PASSWORD:+--requirepass $$REDIS_PASSWORD}'
 
   api:
     build:
@@ -52,11 +55,11 @@ services:
       API_PREFIX: ${API_PREFIX:-api}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:4200}
       SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-15000}
-      DATABASE_URL: postgresql://tablofy:${POSTGRES_PASSWORD:-tablofy_prod}@postgres:5432/tablofy_prod?schema=public
+      DATABASE_URL: postgresql://tablofy:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/tablofy_prod?schema=public
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_URL: redis://redis:6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
       REDIS_TLS: ${REDIS_TLS:-false}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-15m}

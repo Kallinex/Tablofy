@@ -38,6 +38,13 @@ class PaymentAlreadyFinalizedError extends Error {
   }
 }
 
+interface SplitProviderOutcome {
+  paymentId: string;
+  outcome: 'completed' | 'failed' | 'pending';
+  gatewayRef: string | null;
+  gatewayData: Prisma.InputJsonValue;
+}
+
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
@@ -559,6 +566,7 @@ export class PaymentsService {
         where: {
           id: paymentId,
           status: { in: [PaymentStatus.COMPLETED, PaymentStatus.PARTIALLY_REFUNDED] },
+          amountRefunded: 0,
         },
         data: {
           status: PaymentStatus.REFUNDED,
@@ -789,6 +797,11 @@ export class PaymentsService {
       throw new BadRequestException('Split total exceeds remaining balance');
     }
 
+    const providerSplits = dto.splits.filter((split) => this.getProviderForMethod(split.method));
+    for (const split of providerSplits) {
+      this.assertNotMockInProduction(this.getProviderForMethod(split.method)!);
+    }
+
     const results = await this.prisma.$transaction(async (tx) => {
       const freshOrder = await tx.order.findFirst({
         where: { id: orderId, tenantId, deletedAt: null },
@@ -806,6 +819,7 @@ export class PaymentsService {
       }
 
       const createdPayments: Prisma.PaymentGetPayload<Record<string, never>>[] = [];
+      const pendingPayments: Prisma.PaymentGetPayload<Record<string, never>>[] = [];
       let completedAmount = 0;
 
       for (const split of dto.splits) {
@@ -839,81 +853,8 @@ export class PaymentsService {
             data: { status: PaymentStatus.COMPLETED, processedAt: new Date() },
           });
           completedAmount += split.amount;
-          createdPayments.push(payment);
-          continue;
-        }
-
-        this.assertNotMockInProduction(provider);
-        const intentResult = await provider.createPaymentIntent(
-          {
-            amount: Math.round(split.amount * 100),
-            currency: 'usd',
-            description: `Split payment for order ${order.orderNumber}`,
-            metadata: { orderId, tenantId, paymentId: payment.id },
-          },
-          idempotencyKey,
-        );
-
-        if (!this.isProviderSuccess(intentResult)) {
-          payment = await tx.payment.update({
-            where: { id: payment.id },
-            data: {
-              status: PaymentStatus.FAILED,
-              gatewayData: { error: intentResult?.error ?? 'Gateway rejected payment' },
-            },
-          });
-          createdPayments.push(payment);
-          continue;
-        }
-
-        const confirmResult = await provider.confirmPayment(intentResult.data.id, idempotencyKey);
-
-        if (confirmResult.success && confirmResult.data?.status === 'succeeded') {
-          const claimed = await tx.payment.updateMany({
-            where: { id: payment.id, status: PaymentStatus.PENDING },
-            data: {
-              status: PaymentStatus.COMPLETED,
-              gatewayRef: confirmResult.data.transactionId ?? intentResult.data.id,
-              gatewayData: intentResult.data as unknown as Prisma.InputJsonValue,
-              processedAt: new Date(),
-            },
-          });
-          if (claimed.count === 1) {
-            completedAmount += split.amount;
-          }
-          const finalized = await tx.payment.findUnique({ where: { id: payment.id } });
-          if (finalized) {
-            payment = finalized;
-          }
-        } else if (confirmResult.success && confirmResult.data?.status === 'failed') {
-          payment = await tx.payment.update({
-            where: { id: payment.id },
-            data: {
-              status: PaymentStatus.FAILED,
-              gatewayRef: intentResult.data.id,
-              gatewayData: intentResult.data as unknown as Prisma.InputJsonValue,
-            },
-          });
-        } else if (confirmResult.success) {
-          payment = await tx.payment.update({
-            where: { id: payment.id },
-            data: {
-              gatewayRef: intentResult.data.id,
-              gatewayData: intentResult.data as unknown as Prisma.InputJsonValue,
-            },
-          });
         } else {
-          payment = await tx.payment.update({
-            where: { id: payment.id },
-            data: {
-              status: PaymentStatus.FAILED,
-              gatewayRef: intentResult.data.id,
-              gatewayData: {
-                error: confirmResult.error ?? 'Gateway confirmation failed',
-                intent: intentResult.data,
-              },
-            },
-          });
+          pendingPayments.push(payment);
         }
         createdPayments.push(payment);
       }
@@ -952,10 +893,23 @@ export class PaymentsService {
         }
       }
 
-      return createdPayments;
+      return { createdPayments, pendingPayments };
     });
 
-    for (const payment of results) {
+    const providerOutcomes = await this.executeProviderSplitPayments(
+      order,
+      tenantId,
+      results.pendingPayments,
+    );
+    const finalized = await this.finalizeProviderSplitPayments(
+      orderId,
+      tenantId,
+      userId,
+      providerOutcomes,
+      results.createdPayments,
+    );
+
+    for (const payment of finalized) {
       if (payment.status === PaymentStatus.COMPLETED) {
         await this.auditLogsService.log({
           action: 'PAYMENT_ADDED',
@@ -982,7 +936,172 @@ export class PaymentsService {
       }
     }
 
-    return results.map((p) => this.toResponseDto(p));
+    return finalized.map((p) => this.toResponseDto(p));
+  }
+
+  private async executeProviderSplitPayments(
+    order: { orderNumber: number },
+    tenantId: string,
+    pendingPayments: Prisma.PaymentGetPayload<Record<string, never>>[],
+  ): Promise<SplitProviderOutcome[]> {
+    const outcomes: SplitProviderOutcome[] = [];
+    for (const payment of pendingPayments) {
+      const provider = this.getProviderForMethod(payment.method);
+      if (!provider) {
+        continue;
+      }
+
+      const intentResult = await provider.createPaymentIntent(
+        {
+          amount: Math.round(Number(payment.amount) * 100),
+          currency: 'usd',
+          description: `Split payment for order ${order.orderNumber}`,
+          metadata: { orderId: payment.orderId, tenantId, paymentId: payment.id },
+        },
+        payment.idempotencyKey ?? undefined,
+      );
+
+      if (!this.isProviderSuccess(intentResult)) {
+        outcomes.push({
+          paymentId: payment.id,
+          outcome: 'failed',
+          gatewayRef: null,
+          gatewayData: {
+            error: intentResult?.error ?? 'Gateway rejected payment',
+          } as Prisma.InputJsonValue,
+        });
+        continue;
+      }
+
+      const confirmResult = await provider.confirmPayment(
+        intentResult.data.id,
+        payment.idempotencyKey ?? undefined,
+      );
+
+      if (confirmResult.success && confirmResult.data?.status === 'succeeded') {
+        outcomes.push({
+          paymentId: payment.id,
+          outcome: 'completed',
+          gatewayRef: confirmResult.data.transactionId ?? intentResult.data.id,
+          gatewayData: intentResult.data as unknown as Prisma.InputJsonValue,
+        });
+      } else if (confirmResult.success && confirmResult.data?.status === 'failed') {
+        outcomes.push({
+          paymentId: payment.id,
+          outcome: 'failed',
+          gatewayRef: intentResult.data.id,
+          gatewayData: intentResult.data as unknown as Prisma.InputJsonValue,
+        });
+      } else if (confirmResult.success) {
+        outcomes.push({
+          paymentId: payment.id,
+          outcome: 'pending',
+          gatewayRef: intentResult.data.id,
+          gatewayData: intentResult.data as unknown as Prisma.InputJsonValue,
+        });
+      } else {
+        outcomes.push({
+          paymentId: payment.id,
+          outcome: 'failed',
+          gatewayRef: intentResult.data.id,
+          gatewayData: {
+            error: confirmResult.error ?? 'Gateway confirmation failed',
+            intent: intentResult.data,
+          } as Prisma.InputJsonValue,
+        });
+      }
+    }
+    return outcomes;
+  }
+
+  private async finalizeProviderSplitPayments(
+    orderId: string,
+    tenantId: string,
+    userId: string,
+    outcomes: SplitProviderOutcome[],
+    createdPayments: Prisma.PaymentGetPayload<Record<string, never>>[],
+  ): Promise<Prisma.PaymentGetPayload<Record<string, never>>[]> {
+    return this.prisma.$transaction(async (tx) => {
+      let completedAmount = 0;
+      for (const outcome of outcomes) {
+        if (outcome.outcome === 'completed') {
+          const claimed = await tx.payment.updateMany({
+            where: { id: outcome.paymentId, status: PaymentStatus.PENDING },
+            data: {
+              status: PaymentStatus.COMPLETED,
+              gatewayRef: outcome.gatewayRef,
+              gatewayData: outcome.gatewayData,
+              processedAt: new Date(),
+            },
+          });
+          if (claimed.count === 1) {
+            const payment = createdPayments.find((p) => p.id === outcome.paymentId);
+            completedAmount += payment ? Number(payment.amount) : 0;
+          }
+        } else if (outcome.outcome === 'failed') {
+          await tx.payment.updateMany({
+            where: { id: outcome.paymentId, status: PaymentStatus.PENDING },
+            data: {
+              status: PaymentStatus.FAILED,
+              gatewayRef: outcome.gatewayRef,
+              gatewayData: outcome.gatewayData,
+            },
+          });
+        } else {
+          await tx.payment.updateMany({
+            where: { id: outcome.paymentId, status: PaymentStatus.PENDING },
+            data: {
+              gatewayRef: outcome.gatewayRef,
+              gatewayData: outcome.gatewayData,
+            },
+          });
+        }
+      }
+
+      if (completedAmount > 0) {
+        const fresh = await tx.order.findFirst({
+          where: { id: orderId, tenantId, deletedAt: null },
+        });
+        if (!fresh) throw new NotFoundException('Order not found');
+        const verResult = await tx.order.updateMany({
+          where: { id: orderId, version: fresh.version },
+          data: { version: { increment: 1 } },
+        });
+        if (verResult.count === 0) {
+          throw new ConflictException('Order was modified by another user. Please retry.');
+        }
+
+        const newTotalPaid = Number(fresh.paidAmount) + completedAmount;
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            paidAmount: { increment: completedAmount },
+            ...(newTotalPaid >= Number(fresh.total)
+              ? { status: 'COMPLETED' as OrderStatus, completedAt: new Date() }
+              : {}),
+          },
+        });
+
+        if (newTotalPaid >= Number(fresh.total)) {
+          await tx.orderStatusHistory.create({
+            data: {
+              orderId,
+              tenantId,
+              fromStatus: fresh.status as OrderStatus,
+              toStatus: 'COMPLETED' as OrderStatus,
+              changedByUserId: userId,
+              reason: 'Split payment completed',
+            },
+          });
+        }
+      }
+
+      const finalizedIds = outcomes.map((o) => o.paymentId);
+      const finalizedRows = await tx.payment.findMany({
+        where: { id: { in: finalizedIds } },
+      });
+      return [...createdPayments.filter((p) => !finalizedIds.includes(p.id)), ...finalizedRows];
+    });
   }
 
   async findAll(

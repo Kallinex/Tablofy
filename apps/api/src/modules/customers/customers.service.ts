@@ -403,22 +403,37 @@ export class CustomersService {
     const multiplier = tierConfig?.multiplier ?? 1;
     const adjustedPoints = Math.round(Number(dto.points) * Number(multiplier));
 
-    const newBalance = membership.points + adjustedPoints;
-
     let txn;
     try {
-      txn = await this.prisma.loyaltyPointsTransaction.create({
-        data: {
-          customerId,
-          tenantId,
-          points: adjustedPoints,
-          type: LoyaltyTransactionType.EARNED,
-          description: dto.description ?? 'Points earned',
-          referenceId: dto.referenceId,
-          referenceType: dto.referenceType,
-          balanceAfter: newBalance,
-          expiresAt: await this.calculateExpiry(tenantId),
-        },
+      txn = await this.prisma.$transaction(async (tx) => {
+        const claimed = await tx.membership.updateMany({
+          where: { customerId, tenantId },
+          data: {
+            points: { increment: adjustedPoints },
+            lifetimePoints: { increment: adjustedPoints },
+            lastActivityAt: new Date(),
+          },
+        });
+        if (claimed.count !== 1) throw new NotFoundException('Membership not found');
+
+        const after = await tx.membership.findUnique({
+          where: { customerId_tenantId: { customerId, tenantId } },
+        });
+        if (!after) throw new NotFoundException('Membership not found');
+
+        return tx.loyaltyPointsTransaction.create({
+          data: {
+            customerId,
+            tenantId,
+            points: adjustedPoints,
+            type: LoyaltyTransactionType.EARNED,
+            description: dto.description ?? 'Points earned',
+            referenceId: dto.referenceId,
+            referenceType: dto.referenceType,
+            balanceAfter: after.points,
+            expiresAt: await this.calculateExpiry(tenantId),
+          },
+        });
       });
     } catch (error) {
       if (this.isUniqueConflict(error)) {
@@ -426,15 +441,6 @@ export class CustomersService {
       }
       throw error;
     }
-
-    await this.prisma.membership.update({
-      where: { customerId_tenantId: { customerId, tenantId } },
-      data: {
-        points: newBalance,
-        lifetimePoints: { increment: adjustedPoints },
-        lastActivityAt: new Date(),
-      },
-    });
 
     await this.checkTierUpgrade(customerId, tenantId);
 
@@ -444,7 +450,7 @@ export class CustomersService {
       resourceId: txn.id,
       userId,
       tenantId,
-      newValues: { customerId, points: adjustedPoints, total: newBalance },
+      newValues: { customerId, points: adjustedPoints, total: txn.balanceAfter },
     });
 
     await this.cacheService.delete(tenantId, `customer:${customerId}`);
@@ -452,7 +458,7 @@ export class CustomersService {
     this.gateway.broadcastLoyaltyUpdate(tenantId, 'loyalty.earned', {
       customerId,
       points: adjustedPoints,
-      balance: newBalance,
+      balance: txn.balanceAfter,
     });
 
     return txn;

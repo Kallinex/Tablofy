@@ -180,25 +180,27 @@ describe('CustomersService', () => {
         customerId: 'cust-1',
         tenantId: testTenantId,
       });
-      prisma.membership.findUnique.mockResolvedValue({
-        id: 'mem-1',
-        points: 100,
-        tier: 'BRONZE',
-        customerId: 'cust-1',
-        tenantId: testTenantId,
-      });
-      prisma.loyaltyTier.findMany.mockResolvedValue([
-        {
-          id: 'tier-1',
-          tier: 'SILVER',
-          minPoints: 150,
-          maxPoints: null,
+      prisma.membership.findUnique
+        .mockResolvedValueOnce({
+          id: 'mem-1',
+          points: 100,
+          tier: 'BRONZE',
+          customerId: 'cust-1',
           tenantId: testTenantId,
-          multiplier: 1,
-          benefits: {},
-        },
-      ]);
-      prisma.loyaltyPointsTransaction.create.mockResolvedValue({ id: 'txn-1' });
+        })
+        .mockResolvedValue({
+          id: 'mem-1',
+          points: 150,
+          tier: 'BRONZE',
+          customerId: 'cust-1',
+          tenantId: testTenantId,
+        });
+      prisma.$transaction.mockImplementation(async (fn: (tx: MockPrisma) => Promise<unknown>) =>
+        fn(prisma as unknown as MockPrisma),
+      );
+      prisma.membership.updateMany.mockResolvedValue({ count: 1 });
+      prisma.loyaltyTier.findMany.mockResolvedValue([]);
+      prisma.loyaltyPointsTransaction.create.mockResolvedValue({ id: 'txn-1', balanceAfter: 150 });
       prisma.membership.update.mockResolvedValue({ id: 'mem-1', points: 150 });
 
       const result = await service.earnPoints(
@@ -209,9 +211,79 @@ describe('CustomersService', () => {
       );
 
       expect(result).toBeDefined();
+      expect(prisma.membership.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ customerId: 'cust-1', tenantId: testTenantId }),
+          data: expect.objectContaining({
+            points: { increment: 50 },
+            lifetimePoints: { increment: 50 },
+          }),
+        }),
+      );
+      expect(prisma.loyaltyPointsTransaction.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ balanceAfter: 150, type: 'EARNED' }),
+        }),
+      );
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'LOYALTY_POINTS_EARNED' }),
       );
+    });
+
+    it('should not lose points when two concurrent earns race (P1-07)', async () => {
+      prisma.customer.findFirst.mockResolvedValue({ id: 'cust-1', tenantId: testTenantId });
+      prisma.membership.findFirst.mockResolvedValue({
+        id: 'mem-1',
+        points: 100,
+        tier: 'BRONZE',
+        customerId: 'cust-1',
+        tenantId: testTenantId,
+      });
+      prisma.$transaction.mockImplementation(async (fn: (tx: MockPrisma) => Promise<unknown>) =>
+        fn(prisma as unknown as MockPrisma),
+      );
+      prisma.loyaltyTier.findMany.mockResolvedValue([]);
+
+      const release: Array<() => void> = [];
+      const barrier = new Promise<void>((resolve) => {
+        release.push(resolve);
+        release.push(resolve);
+      });
+      let claims = 0;
+      prisma.membership.updateMany.mockImplementation(async () => {
+        await barrier;
+        claims += 1;
+        return { count: 1 };
+      });
+      let findUniqueCalls = 0;
+      prisma.membership.findUnique.mockImplementation(async () => {
+        findUniqueCalls += 1;
+        const points = findUniqueCalls <= 2 ? 100 : findUniqueCalls === 3 ? 150 : 200;
+        return {
+          id: 'mem-1',
+          points,
+          tier: 'BRONZE',
+          customerId: 'cust-1',
+          tenantId: testTenantId,
+        };
+      });
+      prisma.loyaltyPointsTransaction.create.mockImplementation(
+        (args: { data: { balanceAfter: number } }) =>
+          Promise.resolve({ id: 'txn', balanceAfter: args.data.balanceAfter }),
+      );
+
+      const dto = { points: 50, reason: 'Purchase' };
+      const first = service.earnPoints('cust-1', dto, testTenantId, testUserId);
+      const second = service.earnPoints('cust-1', dto, testTenantId, testUserId);
+      release.forEach((r) => r());
+      const results = await Promise.allSettled([first, second]);
+
+      expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+      expect(claims).toBe(2);
+      const balanceAfters = prisma.loyaltyPointsTransaction.create.mock.calls
+        .map((c) => c[0].data.balanceAfter)
+        .sort((a, b) => a - b);
+      expect(balanceAfters).toEqual([150, 200]);
     });
 
     it('should redeem points', async () => {

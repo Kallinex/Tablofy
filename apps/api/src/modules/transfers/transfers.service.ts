@@ -365,6 +365,14 @@ export class TransfersService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.branchTransfer.updateMany({
+        where: { id, tenantId, status: TransferStatus.APPROVED },
+        data: { status: TransferStatus.IN_TRANSIT },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException('Transfer is not APPROVED or has already been dispatched');
+      }
+
       for (const item of transfer.items) {
         if (!item.inventoryItemId) continue;
 
@@ -384,14 +392,25 @@ export class TransfersService {
           );
         }
 
-        await tx.inventoryItem.update({
-          where: { id: item.inventoryItemId },
+        // CAS + atomic decrement closes the check-then-act race between concurrent dispatches.
+        const itemClaim = await tx.inventoryItem.updateMany({
+          where: {
+            id: item.inventoryItemId,
+            tenantId,
+            currentQuantity: { gte: qty },
+            availableQuantity: { gte: qty },
+          },
           data: {
             currentQuantity: { decrement: qty },
             availableQuantity: { decrement: qty },
             version: { increment: 1 },
           },
         });
+        if (itemClaim.count !== 1) {
+          throw new BadRequestException(
+            `Insufficient quantity for item "${inventoryItem.name}". It was changed concurrently; retry.`,
+          );
+        }
 
         await tx.stockMovement.create({
           data: {
@@ -453,6 +472,18 @@ export class TransfersService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.branchTransfer.updateMany({
+        where: { id, tenantId, status: TransferStatus.IN_TRANSIT },
+        data: {
+          status: TransferStatus.RECEIVED,
+          receivedById: userId,
+          receivedAt: new Date(),
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException('Transfer is not IN_TRANSIT or has already been received');
+      }
+
       for (const receiveItem of dto.items) {
         const transferItem = transfer.items.find(
           (ti) => ti.inventoryItemId === receiveItem.inventoryItemId,
@@ -566,6 +597,27 @@ export class TransfersService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Claim the cancellation: only PENDING/APPROVED/IN_TRANSIT transfers can be cancelled,
+      // and only once. Concurrent cancels (or cancel vs receive) are serialized here.
+      const claimed = await tx.branchTransfer.updateMany({
+        where: {
+          id,
+          tenantId,
+          status: {
+            notIn: [TransferStatus.RECEIVED, TransferStatus.CANCELLED],
+          },
+        },
+        data: {
+          status: TransferStatus.CANCELLED,
+          cancelledById: userId,
+          cancelledAt: new Date(),
+          cancelReason: reason,
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException('Transfer cannot be cancelled in its current state');
+      }
+
       if (transfer.status === TransferStatus.IN_TRANSIT) {
         for (const item of transfer.items) {
           if (!item.inventoryItemId) continue;

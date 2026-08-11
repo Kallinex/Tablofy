@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { Queue, Worker, Job, JobsOptions } from 'bullmq';
 import { MetricsService } from '../../common/metrics/metrics.service';
+import { buildRedisConnectionOptions, RedisConnectionOptions } from '../../config/redis.config';
 
 export interface QueueJobData {
   tenantId?: string;
@@ -74,17 +75,15 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   private readonly dlqAlertThreshold: number;
   private onQueueCreated?: (queue: Queue) => void;
 
-  private redisConfig: { host: string; port: number; maxRetriesPerRequest: number | null };
+  private redisConfig: RedisConnectionOptions;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly metricsService: MetricsService,
   ) {
-    this.redisConfig = {
-      host: this.configService.get<string>('redis.host', 'localhost'),
-      port: this.configService.get<number>('redis.port', 6379),
+    this.redisConfig = buildRedisConnectionOptions(this.configService, {
       maxRetriesPerRequest: null,
-    };
+    });
     this.dlqAlertThreshold = parseInt(process.env.QUEUE_DLQ_ALERT_THRESHOLD || '50', 10);
   }
 

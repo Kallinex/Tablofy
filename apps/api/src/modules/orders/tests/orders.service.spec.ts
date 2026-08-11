@@ -547,7 +547,12 @@ describe('OrdersService', () => {
 
   function makeTx(overrides: Record<string, unknown> = {}) {
     return {
-      order: { create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findUnique: jest.fn() },
+      order: {
+        create: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUnique: jest.fn(),
+      },
       orderItem: {
         create: jest.fn(),
         update: jest.fn(),
@@ -892,6 +897,151 @@ describe('OrdersService', () => {
       expect(result).toEqual({ newOrderId: 'new-order-1' });
       expect(createdNumbers).toEqual([7]);
     });
+
+    it('should recompute the source item total with modifiers when quantity is reduced (P1-02)', async () => {
+      const withMods = orderWithIncludes({
+        id: 'order-1',
+        status: 'CONFIRMED',
+        restaurantId: 'restaurant-1',
+        orderNumber: 'ORD-1',
+        paidAmount: 0,
+        items: [
+          item({
+            id: 'item-1',
+            quantity: 3,
+            unitPrice: 10,
+            discount: 0,
+            total: 999,
+            modifiers: [
+              { id: 'mod-1', price: 2, quantity: 1 },
+              { id: 'mod-2', price: 1, quantity: 2 },
+            ],
+          }),
+        ],
+      });
+      cache.get.mockResolvedValue(null);
+      prisma.order.findFirst.mockResolvedValueOnce(withMods);
+      prisma.order.findFirst.mockResolvedValueOnce({ orderNumber: 5 });
+      const tx = makeTx();
+      tx.order.create.mockResolvedValue({ id: 'new-order-1' });
+      tx.orderItem.create.mockResolvedValue({});
+      tx.orderItem.update.mockResolvedValue({});
+      tx.orderStatusHistory.create.mockResolvedValue({});
+      mockTransaction(tx);
+      mockRecalculate(tx, withMods);
+
+      const result = await service.splitOrder(
+        'order-1',
+        { items: [{ id: 'item-1', quantity: 2 }] },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(result).toEqual({ newOrderId: 'new-order-1' });
+      expect(tx.orderItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'item-1' },
+          data: expect.objectContaining({ quantity: 1, total: 14 }),
+        }),
+      );
+    });
+
+    it('should recalculate the source order total from unit price, quantity and modifiers, ignoring stale stored item totals (P1-02)', async () => {
+      const withWrongTotals = orderWithIncludes({
+        id: 'order-1',
+        status: 'CONFIRMED',
+        restaurantId: 'restaurant-1',
+        orderNumber: 'ORD-1',
+        subtotal: 100,
+        discount: 0,
+        paidAmount: 0,
+        items: [
+          item({
+            id: 'item-1',
+            quantity: 2,
+            unitPrice: 10,
+            discount: 0,
+            total: 999,
+            modifiers: [
+              { id: 'mod-1', price: 2, quantity: 1 },
+              { id: 'mod-2', price: 1, quantity: 2 },
+            ],
+          }),
+        ],
+      });
+      cache.get.mockResolvedValue(null);
+      prisma.order.findFirst.mockResolvedValueOnce(withWrongTotals);
+      prisma.order.findFirst.mockResolvedValueOnce({ orderNumber: 5 });
+      const tx = makeTx();
+      tx.order.create.mockResolvedValue({ id: 'new-order-1' });
+      tx.orderItem.create.mockResolvedValue({});
+      tx.orderItem.update.mockResolvedValue({});
+      tx.orderStatusHistory.create.mockResolvedValue({});
+      mockTransaction(tx);
+      mockRecalculate(tx, withWrongTotals);
+
+      await service.splitOrder(
+        'order-1',
+        { items: [{ id: 'item-1', quantity: 2 }] },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(tx.order.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'order-1' },
+          data: expect.objectContaining({ total: 24, subtotal: 20 }),
+        }),
+      );
+      expect(tx.order.findUnique).toHaveBeenCalledTimes(2);
+    });
+
+    it('should let only one of two concurrent splits win the source-order version CAS (P1-02)', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.order.findFirst
+        .mockResolvedValueOnce(order)
+        .mockResolvedValueOnce(order)
+        .mockResolvedValue({ orderNumber: 5 });
+
+      const tx = makeTx();
+      const claimed = new Set<string>();
+      tx.order.updateMany.mockImplementation(async ({ where }: { where: { id: string } }) => {
+        if (claimed.has(where.id)) return { count: 0 };
+        claimed.add(where.id);
+        return { count: 1 };
+      });
+      tx.order.create.mockResolvedValue({ id: 'new-order-1' });
+      tx.orderItem.create.mockResolvedValue({});
+      tx.orderItem.update.mockResolvedValue({});
+      tx.orderStatusHistory.create.mockResolvedValue({});
+      mockTransaction(tx);
+      mockRecalculate(tx, order);
+
+      const results = await Promise.allSettled([
+        service.splitOrder(
+          'order-1',
+          { items: [{ id: 'item-1', quantity: 1 }] },
+          testTenantId,
+          testUserId,
+        ),
+        service.splitOrder(
+          'order-1',
+          { items: [{ id: 'item-1', quantity: 1 }] },
+          testTenantId,
+          testUserId,
+        ),
+      ]);
+
+      expect(tx.order.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'order-1', version: 1 }),
+          data: expect.objectContaining({ version: { increment: 1 } }),
+        }),
+      );
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const rejected = results.filter((r) => r.status === 'rejected')[0] as PromiseRejectedResult;
+      expect(rejected.reason).toBeInstanceOf(ConflictException);
+    });
   });
 
   describe('mergeOrders', () => {
@@ -950,6 +1100,42 @@ describe('OrdersService', () => {
       await expect(
         service.mergeOrders('order-1', { sourceOrderId: 'order-2' }, testTenantId, testUserId),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should let only one of two concurrent merges win the order version CAS (P1-02)', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.order.findFirst
+        .mockResolvedValueOnce(target)
+        .mockResolvedValueOnce(source)
+        .mockResolvedValueOnce(target)
+        .mockResolvedValueOnce(source);
+
+      const tx = makeTx();
+      const claimed = new Set<string>();
+      tx.order.updateMany.mockImplementation(async ({ where }: { where: { id: string } }) => {
+        if (claimed.has(where.id)) return { count: 0 };
+        claimed.add(where.id);
+        return { count: 1 };
+      });
+      tx.orderItem.create.mockResolvedValue({});
+      tx.order.update.mockResolvedValue({});
+      mockTransaction(tx);
+      mockRecalculate(tx, target);
+
+      const results = await Promise.allSettled([
+        service.mergeOrders('order-1', { sourceOrderId: 'order-2' }, testTenantId, testUserId),
+        service.mergeOrders('order-1', { sourceOrderId: 'order-2' }, testTenantId, testUserId),
+      ]);
+
+      expect(tx.order.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'order-1', version: 1 }),
+          data: expect.objectContaining({ version: { increment: 1 } }),
+        }),
+      );
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const rejected = results.filter((r) => r.status === 'rejected')[0] as PromiseRejectedResult;
+      expect(rejected.reason).toBeInstanceOf(ConflictException);
     });
   });
 

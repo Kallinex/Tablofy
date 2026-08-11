@@ -233,6 +233,15 @@ export function validate(config: Record<string, unknown>) {
 
   if (
     validatedConfig.NODE_ENV === Environment.Production &&
+    (!validatedConfig.REDIS_PASSWORD || validatedConfig.REDIS_PASSWORD.length < 16)
+  ) {
+    throw new Error(
+      'Production environment requires REDIS_PASSWORD (min 16 characters) to secure Redis.',
+    );
+  }
+
+  if (
+    validatedConfig.NODE_ENV === Environment.Production &&
     (!validatedConfig.WEBHOOK_ENCRYPTION_KEY || validatedConfig.WEBHOOK_ENCRYPTION_KEY.length < 32)
   ) {
     throw new Error(

@@ -60,6 +60,7 @@ describe('env.validation', () => {
           NODE_ENV: 'production',
           METRICS_AUTH_TOKEN: 'a-valid-metrics-token-123456',
           WEBHOOK_ENCRYPTION_KEY: 'webhook-encryption-key-at-least-32-chars',
+          REDIS_PASSWORD: 'redis-password-at-least-16-chars',
         }),
       ),
     ).not.toThrow();
@@ -72,15 +73,53 @@ describe('env.validation', () => {
           NODE_ENV: 'production',
           METRICS_ENABLED: 'false',
           WEBHOOK_ENCRYPTION_KEY: 'webhook-encryption-key-at-least-32-chars',
+          REDIS_PASSWORD: 'redis-password-at-least-16-chars',
         }),
       ),
     ).not.toThrow();
   });
 
+  it('rejects production without REDIS_PASSWORD', () => {
+    expect(() =>
+      validate(
+        baseEnv({
+          NODE_ENV: 'production',
+          METRICS_ENABLED: 'false',
+          WEBHOOK_ENCRYPTION_KEY: 'webhook-encryption-key-at-least-32-chars',
+        }),
+      ),
+    ).toThrow(/REDIS_PASSWORD/);
+  });
+
+  it('rejects production with a short REDIS_PASSWORD', () => {
+    expect(() =>
+      validate(
+        baseEnv({
+          NODE_ENV: 'production',
+          METRICS_ENABLED: 'false',
+          WEBHOOK_ENCRYPTION_KEY: 'webhook-encryption-key-at-least-32-chars',
+          REDIS_PASSWORD: 'short',
+        }),
+      ),
+    ).toThrow(/REDIS_PASSWORD/);
+  });
+
+  it('accepts development without REDIS_PASSWORD', () => {
+    expect(() =>
+      validate(baseEnv({ REDIS_PASSWORD: undefined as unknown as string })),
+    ).not.toThrow();
+  });
+
   it('rejects production without WEBHOOK_ENCRYPTION_KEY', () => {
-    expect(() => validate(baseEnv({ NODE_ENV: 'production', METRICS_ENABLED: 'false' }))).toThrow(
-      /WEBHOOK_ENCRYPTION_KEY/,
-    );
+    expect(() =>
+      validate(
+        baseEnv({
+          NODE_ENV: 'production',
+          METRICS_ENABLED: 'false',
+          REDIS_PASSWORD: 'redis-password-at-least-16-chars',
+        }),
+      ),
+    ).toThrow(/WEBHOOK_ENCRYPTION_KEY/);
   });
 
   it('accepts development without a token when metrics are enabled', () => {

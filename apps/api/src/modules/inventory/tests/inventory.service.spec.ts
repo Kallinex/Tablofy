@@ -1,5 +1,5 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+﻿import { Test, TestingModule } from '@nestjs/testing';
+import { ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InventoryService } from '../inventory.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
@@ -30,6 +30,7 @@ describe('InventoryService', () => {
     broadcastAdjustmentUpdate: jest.fn(),
     broadcastUnitUpdate: jest.fn(),
     broadcastCountUpdate: jest.fn(),
+    broadcastWasteUpdate: jest.fn(),
   };
 
   beforeAll(async () => {
@@ -262,7 +263,7 @@ describe('InventoryService', () => {
       const fakeTx = {
         stockAdjustment: { create: jest.fn().mockResolvedValue({ id: 'adj-1' }) },
         inventoryItem: {
-          update: jest.fn().mockResolvedValue({ id: 'item-1', currentQuantity: 60 }),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
         stockMovement: { create: jest.fn().mockResolvedValue({}) },
       };
@@ -275,10 +276,64 @@ describe('InventoryService', () => {
       );
 
       expect(fakeTx.stockAdjustment.create).toHaveBeenCalled();
+      expect(fakeTx.inventoryItem.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'item-1', tenantId: testTenantId }),
+          data: expect.objectContaining({
+            currentQuantity: { increment: 10 },
+            availableQuantity: { increment: 10 },
+          }),
+        }),
+      );
       expect(fakeTx.stockMovement.create).toHaveBeenCalled();
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'STOCK_ADJUSTMENT_CREATED' }),
       );
+    });
+
+    it('should not lose stock when two concurrent INCREASE adjustments race (P1-06)', async () => {
+      prisma.inventoryItem.findFirst.mockResolvedValue({
+        id: 'item-1',
+        tenantId: testTenantId,
+        currentQuantity: 50,
+        reservedQuantity: 0,
+        unitCost: 5,
+      });
+      const release: Array<() => void> = [];
+      const barrier = new Promise<void>((resolve) => {
+        release.push(resolve);
+        release.push(resolve);
+      });
+      let claims = 0;
+      const updateMany = jest.fn().mockImplementation(async () => {
+        await barrier;
+        claims += 1;
+        return { count: 1 };
+      });
+      const fakeTx = {
+        stockAdjustment: { create: jest.fn().mockResolvedValue({ id: 'adj-1' }) },
+        inventoryItem: { updateMany },
+        stockMovement: { create: jest.fn().mockResolvedValue({}) },
+      };
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(fakeTx));
+
+      const first = service.createAdjustment(
+        { ...dto, type: 'INCREASE' } as never,
+        testTenantId,
+        testUserId,
+      );
+      const second = service.createAdjustment(
+        { ...dto, type: 'INCREASE' } as never,
+        testTenantId,
+        testUserId,
+      );
+      release.forEach((r) => r());
+      const results = await Promise.allSettled([first, second]);
+
+      expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+      expect(claims).toBe(2);
+      expect(updateMany).toHaveBeenCalledTimes(2);
+      expect(fakeTx.stockMovement.create).toHaveBeenCalledTimes(2);
     });
 
     it('should throw NotFoundException for invalid item', async () => {
@@ -287,6 +342,144 @@ describe('InventoryService', () => {
       await expect(
         service.createAdjustment(dto as never, testTenantId, testUserId),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('approveAdjustment', () => {
+    const adjustment = (type: 'INCREASE' | 'DECREASE') => ({
+      id: 'adj-1',
+      tenantId: testTenantId,
+      inventoryItemId: 'item-1',
+      branchId: 'branch-1',
+      type,
+      quantity: 10,
+      unitCost: 5,
+      totalCost: 50,
+      reason: 'Stock check',
+      status: 'PENDING',
+      deletedAt: null,
+    });
+
+    it('should reject when the status claim fails because it is no longer PENDING (P1-06)', async () => {
+      prisma.stockAdjustment.findFirst.mockResolvedValue(adjustment('DECREASE'));
+      const fakeTx = {
+        inventoryItem: { findFirst: jest.fn().mockResolvedValue({ id: 'item-1' }) },
+        stockAdjustment: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        stockMovement: { create: jest.fn() },
+      };
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(fakeTx));
+
+      await expect(service.approveAdjustment('adj-1', testTenantId, testUserId)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(fakeTx.stockMovement.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a DECREASE when stock is insufficient (P1-06)', async () => {
+      prisma.stockAdjustment.findFirst.mockResolvedValue(adjustment('DECREASE'));
+      const fakeTx = {
+        inventoryItem: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'item-1', currentQuantity: 5 }),
+          updateMany: jest
+            .fn()
+            .mockResolvedValueOnce({ count: 0 })
+            .mockResolvedValueOnce({ count: 0 }),
+        },
+        stockAdjustment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        stockMovement: { create: jest.fn() },
+      };
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(fakeTx));
+
+      await expect(service.approveAdjustment('adj-1', testTenantId, testUserId)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(fakeTx.inventoryItem.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: 'item-1',
+            currentQuantity: { gte: 10 },
+          }),
+          data: expect.objectContaining({ currentQuantity: { decrement: 10 } }),
+        }),
+      );
+      expect(fakeTx.stockMovement.create).not.toHaveBeenCalled();
+    });
+
+    it('should atomically increment on INCREASE approval (P1-06)', async () => {
+      prisma.stockAdjustment.findFirst.mockResolvedValue(adjustment('INCREASE'));
+      prisma.stockAdjustment.findUnique.mockResolvedValue({ id: 'adj-1', status: 'APPROVED' });
+      const fakeTx = {
+        inventoryItem: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'item-1', currentQuantity: 50 }),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        stockAdjustment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        stockMovement: { create: jest.fn().mockResolvedValue({}) },
+      };
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(fakeTx));
+
+      const result = await service.approveAdjustment('adj-1', testTenantId, testUserId);
+
+      expect(result.status).toBe('APPROVED');
+      expect(fakeTx.inventoryItem.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            currentQuantity: { increment: 10 },
+            availableQuantity: { increment: 10 },
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('createWasteEntry', () => {
+    const dto = {
+      inventoryItemId: 'item-1',
+      type: 'SPOILAGE',
+      quantity: 30,
+      reason: 'Spoiled',
+    };
+
+    it('should allow only one of two concurrent waste entries that overdraw stock (P1-06)', async () => {
+      prisma.inventoryItem.findFirst.mockResolvedValue({
+        id: 'item-1',
+        tenantId: testTenantId,
+        currentQuantity: 50,
+        availableQuantity: 50,
+        unitCost: 5,
+      });
+      const release: Array<() => void> = [];
+      const barrier = new Promise<void>((resolve) => {
+        release.push(resolve);
+        release.push(resolve);
+      });
+      let claims = 0;
+      const fakeTx = {
+        wasteEntry: { create: jest.fn().mockResolvedValue({ id: 'waste-1' }) },
+        inventoryItem: {
+          updateMany: jest.fn().mockImplementation(async ({ where }) => {
+            if (where && where.currentQuantity) {
+              await barrier;
+              return { count: ++claims === 1 ? 1 : 0 };
+            }
+            return { count: 1 };
+          }),
+        },
+        stockMovement: { create: jest.fn().mockResolvedValue({}) },
+      };
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(fakeTx));
+
+      const first = service.createWasteEntry(dto as never, testTenantId, testUserId);
+      const second = service.createWasteEntry(dto as never, testTenantId, testUserId);
+      release.forEach((r) => r());
+      const results = await Promise.allSettled([first, second]);
+
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toBeInstanceOf(BadRequestException);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(claims).toBe(2);
+      expect(fakeTx.stockMovement.create).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -406,6 +599,212 @@ describe('InventoryService', () => {
         hasNext: false,
         hasPrevious: false,
       });
+    });
+  });
+
+  describe('P1-06 concurrency & lost-update scenarios', () => {
+    const item = (version = 3) => ({
+      id: 'item-1',
+      tenantId: testTenantId,
+      sku: 'SKU-1',
+      name: 'Flour',
+      currentQuantity: 50,
+      reservedQuantity: 0,
+      availableQuantity: 50,
+      version,
+    });
+
+    it('updateItem pushes the version into the WHERE and increments it on success', async () => {
+      prisma.inventoryItem.findFirst.mockResolvedValue(item(3));
+      prisma.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.updateItem(
+        'item-1',
+        { currentQuantity: 100, reservedQuantity: 10 } as never,
+        testTenantId,
+        testUserId,
+      );
+
+      expect(prisma.inventoryItem.updateMany).toHaveBeenCalledWith({
+        where: { id: 'item-1', tenantId: testTenantId, version: 3, deletedAt: null },
+        data: expect.objectContaining({
+          currentQuantity: 100,
+          reservedQuantity: 10,
+          availableQuantity: 90,
+          version: { increment: 1 },
+        }),
+      });
+    });
+
+    it('updateItem throws ConflictException when a concurrent write already bumped the version', async () => {
+      prisma.inventoryItem.findFirst.mockResolvedValue(item(3));
+      prisma.inventoryItem.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.updateItem('item-1', { currentQuantity: 100 } as never, testTenantId, testUserId),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.inventoryItem.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ version: 3 }) }),
+      );
+    });
+
+    it('concurrent updateItem calls serialize on the version â€” the stale caller gets ConflictException', async () => {
+      prisma.inventoryItem.findFirst.mockResolvedValue(item(3));
+
+      let stateVersion = 3;
+      let arrived = 0;
+      const release: Array<() => void> = [];
+      const gate = new Promise<void>((resolve) => {
+        release.push(resolve);
+      });
+      prisma.inventoryItem.updateMany.mockImplementation(
+        async (args: { where: { version: number } }) => {
+          arrived += 1;
+          if (arrived === 2) release[0]();
+          await gate;
+          if (args.where.version === stateVersion) {
+            stateVersion += 1;
+            return { count: 1 };
+          }
+          return { count: 0 };
+        },
+      );
+
+      const results = await Promise.allSettled([
+        service.updateItem('item-1', { currentQuantity: 100 } as never, testTenantId, testUserId),
+        service.updateItem('item-1', { currentQuantity: 200 } as never, testTenantId, testUserId),
+      ]);
+
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toBeInstanceOf(ConflictException);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(stateVersion).toBe(4);
+      expect(prisma.inventoryItem.updateMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('concurrent approvals of the same DECREASE adjustment apply the stock change exactly once', async () => {
+      const adjustment = {
+        id: 'adj-1',
+        tenantId: testTenantId,
+        inventoryItemId: 'item-1',
+        branchId: 'branch-1',
+        type: 'DECREASE',
+        quantity: 30,
+        unitCost: 5,
+        totalCost: 150,
+        reason: 'Stock check',
+        status: 'PENDING',
+        deletedAt: null,
+      };
+      prisma.stockAdjustment.findFirst.mockResolvedValue(adjustment);
+
+      let itemQty = 50;
+      let claims = 0;
+      let arrived = 0;
+      const release: Array<() => void> = [];
+      const gate = new Promise<void>((resolve) => {
+        release.push(resolve);
+      });
+      const fakeTx = {
+        inventoryItem: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'item-1', currentQuantity: itemQty }),
+          updateMany: jest
+            .fn()
+            .mockImplementation(async (args: { where: { currentQuantity?: { gte: number } } }) => {
+              if (args.where.currentQuantity) {
+                itemQty -= Number(args.where.currentQuantity.gte);
+              }
+              return { count: 1 };
+            }),
+        },
+        stockAdjustment: {
+          updateMany: jest.fn().mockImplementation(async () => {
+            arrived += 1;
+            if (arrived === 2) release[0]();
+            await gate;
+            return { count: ++claims === 1 ? 1 : 0 };
+          }),
+        },
+        stockMovement: { create: jest.fn().mockResolvedValue({}) },
+      };
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(fakeTx));
+      prisma.stockAdjustment.findUnique.mockResolvedValue({ id: 'adj-1', status: 'APPROVED' });
+
+      const results = await Promise.allSettled([
+        service.approveAdjustment('adj-1', testTenantId, testUserId),
+        service.approveAdjustment('adj-1', testTenantId, testUserId),
+      ]);
+
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toBeInstanceOf(BadRequestException);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(itemQty).toBe(20);
+      expect(fakeTx.stockMovement.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('two DECREASE approvals sharing one item cannot overdraw â€” the gte guard rejects the loser', async () => {
+      prisma.stockAdjustment.findFirst.mockImplementation(
+        async (args: { where: { id: string } }) => ({
+          id: args.where.id,
+          tenantId: testTenantId,
+          inventoryItemId: 'item-1',
+          branchId: 'branch-1',
+          type: 'DECREASE',
+          quantity: 30,
+          unitCost: 5,
+          totalCost: 150,
+          reason: 'Stock check',
+          status: 'PENDING',
+          deletedAt: null,
+        }),
+      );
+
+      let itemQty = 50;
+      let arrived = 0;
+      const release: Array<() => void> = [];
+      const gate = new Promise<void>((resolve) => {
+        release.push(resolve);
+      });
+      const fakeTx = {
+        inventoryItem: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'item-1', currentQuantity: itemQty }),
+          updateMany: jest
+            .fn()
+            .mockImplementation(
+              async (args: {
+                where: { currentQuantity?: { gte: number }; availableQuantity?: { gte: number } };
+              }) => {
+                if (args.where.currentQuantity) {
+                  arrived += 1;
+                  if (arrived === 2) release[0]();
+                  await gate;
+                  const qty = Number(args.where.currentQuantity.gte);
+                  if (itemQty < qty) return { count: 0 };
+                  itemQty -= qty;
+                  return { count: 1 };
+                }
+                return { count: 1 };
+              },
+            ),
+        },
+        stockAdjustment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        stockMovement: { create: jest.fn().mockResolvedValue({}) },
+      };
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(fakeTx));
+
+      const results = await Promise.allSettled([
+        service.approveAdjustment('adj-a', testTenantId, testUserId),
+        service.approveAdjustment('adj-b', testTenantId, testUserId),
+      ]);
+
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toBeInstanceOf(BadRequestException);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(itemQty).toBe(20);
+      expect(fakeTx.stockMovement.create).toHaveBeenCalledTimes(1);
     });
   });
 });

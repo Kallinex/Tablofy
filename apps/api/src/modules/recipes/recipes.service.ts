@@ -648,6 +648,16 @@ export class RecipesService {
       }
 
       for (const [, entry] of deductionMap) {
+        // Serialize concurrent deductions for the same ingredient (e.g. two different
+        // orders sharing a stock item): the read→compute→write below is protected by a
+        // row lock so the deducted amount is never computed from a stale quantity.
+        await tx.$queryRaw`
+          SELECT "id"
+          FROM "inventory_items"
+          WHERE "id" = ${entry.inventoryItemId}
+          FOR UPDATE
+        `;
+
         const inventoryItem = await tx.inventoryItem.findUnique({
           where: { id: entry.inventoryItemId },
         });
