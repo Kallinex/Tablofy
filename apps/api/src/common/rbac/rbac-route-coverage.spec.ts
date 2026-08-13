@@ -1,6 +1,6 @@
 import { join } from 'path';
 import { createRequire } from 'module';
-import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
+import { PATH_METADATA } from '@nestjs/common/constants';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
@@ -11,10 +11,21 @@ const glob = req('glob') as typeof import('glob');
 
 const GATE_KEYS = [ROLES_KEY, PERMISSIONS_KEY, IS_PUBLIC_KEY, ANY_AUTHENTICATED_KEY];
 
-function metadataOn(cls: unknown, prototype: unknown, key: string, methodName?: string): unknown {
-  return methodName
-    ? Reflect.getMetadata(key, prototype, methodName)
-    : Reflect.getMetadata(key, cls as object);
+// Nest's SetMetadata stores handler metadata on the decorated function
+// (descriptor.value), so class/route checks must read from the function,
+// not from (prototype, methodName).
+function classMetadata(cls: unknown, key: string): unknown {
+  return Reflect.getMetadata(key, cls as object);
+}
+
+function handlerMetadata(cls: unknown, methodName: string, key: string): unknown {
+  const proto = (cls as { prototype: Record<string, unknown> }).prototype;
+  return Reflect.getMetadata(key, proto[methodName]);
+}
+
+function isRouteHandler(cls: unknown, methodName: string): boolean {
+  const proto = (cls as { prototype: Record<string, unknown> }).prototype;
+  return Reflect.getMetadata(PATH_METADATA, proto[methodName]) !== undefined;
 }
 
 function collectUngatedHandlers(): { file: string; handler: string }[] {
@@ -30,18 +41,16 @@ function collectUngatedHandlers(): { file: string; handler: string }[] {
         continue;
       }
 
-      const classGate = GATE_KEYS.some((key) => !!metadataOn(cls, cls.prototype, key));
+      const classGate = GATE_KEYS.some((key) => !!classMetadata(cls, key));
       const proto = cls.prototype;
       let isController = false;
 
       for (const methodName of Object.getOwnPropertyNames(proto)) {
         if (methodName === 'constructor') continue;
-        const isRoute = Reflect.hasMetadata(PATH_METADATA, proto, methodName);
-        const hasMethod = Reflect.hasMetadata(METHOD_METADATA, proto, methodName);
-        if (!isRoute && !hasMethod) continue;
+        if (!isRouteHandler(cls, methodName)) continue;
 
         isController = true;
-        const handlerGate = GATE_KEYS.some((key) => !!metadataOn(cls, proto, key, methodName));
+        const handlerGate = GATE_KEYS.some((key) => !!handlerMetadata(cls, methodName, key));
         if (!classGate && !handlerGate) {
           failures.push({ file, handler: `${exportedName}.${methodName}` });
         }

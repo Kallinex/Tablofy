@@ -45,13 +45,16 @@ export class UsersService {
     tenantId: string,
     creatorRole: UserRole,
     meta?: { ipAddress?: string; userAgent?: string },
+    tx?: Prisma.TransactionClient,
   ) {
     const targetRole = dto.role ?? UserRole.STAFF;
     if (!canAssignRole(creatorRole, targetRole)) {
       throw new ForbiddenException(`Role ${targetRole} cannot be assigned by ${creatorRole}`);
     }
 
-    const existingUser = await this.prisma.user.findFirst({
+    const db = tx ?? this.prisma;
+
+    const existingUser = await db.user.findFirst({
       where: { email: dto.email.toLowerCase(), tenantId },
     });
 
@@ -61,30 +64,45 @@ export class UsersService {
 
     const hashedPassword = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email.toLowerCase(),
-        password: hashedPassword,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        phone: dto.phone,
-        role: targetRole,
+    try {
+      const user = await db.user.create({
+        data: {
+          email: dto.email.toLowerCase(),
+          password: hashedPassword,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone,
+          role: targetRole,
+          tenantId,
+        },
+        select: this.defaultSelect,
+      });
+
+      await this.auditLogsService.log({
+        action: 'USER_CREATED',
+        resource: 'User',
+        resourceId: user.id,
+        userId: creatorId,
         tenantId,
-      },
-      select: this.defaultSelect,
-    });
+        newValues: { email: user.email, role: user.role },
+        ...meta,
+      });
 
-    await this.auditLogsService.log({
-      action: 'USER_CREATED',
-      resource: 'User',
-      resourceId: user.id,
-      userId: creatorId,
-      tenantId,
-      newValues: { email: user.email, role: user.role },
-      ...meta,
-    });
-
-    return user;
+      return user;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const target: unknown[] = Array.isArray(error.meta?.target)
+          ? (error.meta.target as unknown[])
+          : [];
+        const isDuplicateEmailRace =
+          target.length === 0 ||
+          target.some((t) => typeof t === 'string' && (t === 'email' || t === 'tenantId'));
+        if (isDuplicateEmailRace) {
+          throw new ConflictException('A user with this email already exists');
+        }
+      }
+      throw error;
+    }
   }
 
   async findAll(params: {

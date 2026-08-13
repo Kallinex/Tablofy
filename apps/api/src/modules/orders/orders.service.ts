@@ -53,6 +53,12 @@ type OrderWithIncludes = Prisma.OrderGetPayload<{
   };
 }>;
 
+type CatalogPrices = {
+  products: Map<string, { basePrice: Prisma.Decimal }>;
+  variants: Map<string, { price: Prisma.Decimal }>;
+  modifiers: Map<string, { price: Prisma.Decimal }>;
+};
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -72,7 +78,7 @@ export class OrdersService {
     userId: string,
     meta?: { ipAddress?: string; userAgent?: string },
   ) {
-    await this.validateBusinessRules(dto, tenantId);
+    const catalog = await this.validateBusinessRules(dto, tenantId);
 
     let result: Prisma.OrderGetPayload<{
       include: { items: { include: { modifiers: true } }; statusHistory: true };
@@ -84,7 +90,9 @@ export class OrdersService {
 
         result = await this.prisma.$transaction(async (tx) => {
           const subtotal = sumMoney(
-            dto.items.map((item) => mulMoney(item.unitPrice, item.quantity)),
+            dto.items.map((item) =>
+              mulMoney(this.resolveItemUnitPrice(item, catalog), item.quantity),
+            ),
           );
 
           const order = await tx.order.create({
@@ -119,9 +127,12 @@ export class OrdersService {
           });
 
           for (const itemDto of dto.items) {
-            const itemTotal = mulMoney(itemDto.unitPrice, itemDto.quantity);
+            const unitPrice = this.resolveItemUnitPrice(itemDto, catalog);
+            const itemTotal = mulMoney(unitPrice, itemDto.quantity);
             const modifiersTotal = sumMoney(
-              (itemDto.modifiers || []).map((m) => mulMoney(m.price, m.quantity || 1)),
+              (itemDto.modifiers || []).map((m) =>
+                mulMoney(this.resolveModifierPrice(m, catalog), m.quantity || 1),
+              ),
             );
 
             await tx.orderItem.create({
@@ -134,18 +145,18 @@ export class OrdersService {
                 variantName: itemDto.variantName,
                 sku: itemDto.sku,
                 quantity: itemDto.quantity,
-                unitPrice: itemDto.unitPrice,
+                unitPrice,
                 total: subMoney(addMoney(itemTotal, modifiersTotal), itemDto.discount || 0),
                 discount: roundMoney(itemDto.discount || 0),
                 preparationNotes: itemDto.preparationNotes,
-                priceSnapshot: itemDto.unitPrice as unknown as Prisma.InputJsonValue,
+                priceSnapshot: unitPrice as unknown as Prisma.InputJsonValue,
                 modifiers: {
                   create: (itemDto.modifiers || []).map((m) => ({
                     tenantId,
                     modifierId: m.modifierId,
                     name: m.name,
                     quantity: m.quantity || 1,
-                    price: m.price,
+                    price: this.resolveModifierPrice(m, catalog),
                   })),
                 },
               },
@@ -338,7 +349,6 @@ export class OrdersService {
           if (itemDto.id) {
             const itemUpdateData: Prisma.OrderItemUpdateInput = {};
             if (itemDto.quantity !== undefined) itemUpdateData.quantity = itemDto.quantity;
-            if (itemDto.unitPrice !== undefined) itemUpdateData.unitPrice = itemDto.unitPrice;
             if (itemDto.productName !== undefined) itemUpdateData.productName = itemDto.productName;
             if (itemDto.variantId !== undefined) itemUpdateData.variantId = itemDto.variantId;
             if (itemDto.variantName !== undefined) itemUpdateData.variantName = itemDto.variantName;
@@ -355,9 +365,20 @@ export class OrdersService {
               if (!existingItem) {
                 throw new NotFoundException('Order item not found in this order');
               }
-              const unitPrice = itemDto.unitPrice ?? existingItem.unitPrice;
+              const existingUnitPrice = Number(existingItem.unitPrice);
               const quantity = itemDto.quantity ?? existingItem.quantity;
               const discount = itemDto.discount ?? existingItem.discount ?? 0;
+              let unitPrice: number = existingUnitPrice;
+              if (itemDto.unitPrice !== undefined || itemDto.variantId !== undefined) {
+                unitPrice = await this.resolveAuthoritativeItemPrice(
+                  tx,
+                  tenantId,
+                  itemDto.productId ?? existingItem.productId,
+                  itemDto.variantId !== undefined ? itemDto.variantId : existingItem.variantId,
+                  itemDto.unitPrice ?? existingUnitPrice,
+                );
+                itemUpdateData.unitPrice = unitPrice;
+              }
               const modifiersTotal = await tx.orderItemModifier.aggregate({
                 where: { orderItemId: itemDto.id, tenantId },
                 _sum: { price: true },
@@ -381,13 +402,21 @@ export class OrdersService {
 
             if (itemDto.modifiers) {
               for (const modDto of itemDto.modifiers) {
+                const modPrice = modDto.modifierId
+                  ? await this.resolveAuthoritativeModifierPrice(
+                      tx,
+                      tenantId,
+                      modDto.modifierId,
+                      modDto.price,
+                    )
+                  : roundMoney(modDto.price);
                 if (modDto.id) {
                   const modUpdated = await tx.orderItemModifier.updateMany({
                     where: { id: modDto.id, orderItemId: itemDto.id, tenantId },
                     data: {
                       name: modDto.name,
                       quantity: modDto.quantity || 1,
-                      price: modDto.price,
+                      price: modPrice,
                     },
                   });
                   if (modUpdated.count === 0) {
@@ -401,7 +430,7 @@ export class OrdersService {
                       modifierId: modDto.modifierId,
                       name: modDto.name,
                       quantity: modDto.quantity || 1,
-                      price: modDto.price,
+                      price: modPrice,
                     },
                   });
                 }
@@ -1386,7 +1415,10 @@ export class OrdersService {
     return restored;
   }
 
-  private async validateBusinessRules(dto: CreateOrderDto, tenantId: string) {
+  private async validateBusinessRules(
+    dto: CreateOrderDto,
+    tenantId: string,
+  ): Promise<CatalogPrices> {
     const restaurant = await this.prisma.restaurant.findFirst({
       where: { id: dto.restaurantId, tenantId, deletedAt: null },
     });
@@ -1416,8 +1448,9 @@ export class OrdersService {
     }
 
     const variantIds = dto.items.filter((i) => i.variantId).map((i) => i.variantId!);
+    let variants: Awaited<ReturnType<typeof this.prisma.productVariant.findMany>> = [];
     if (variantIds.length) {
-      const variants = await this.prisma.productVariant.findMany({
+      variants = await this.prisma.productVariant.findMany({
         where: { id: { in: variantIds }, tenantId, deletedAt: null },
       });
       const variantMap = new Map(variants.map((v) => [v.id, v]));
@@ -1427,6 +1460,91 @@ export class OrdersService {
         }
       }
     }
+
+    const modifierIds = dto.items
+      .flatMap((i) => i.modifiers || [])
+      .filter((m) => m.modifierId)
+      .map((m) => m.modifierId!);
+    let modifiers: Awaited<ReturnType<typeof this.prisma.modifier.findMany>> = [];
+    if (modifierIds.length) {
+      modifiers = await this.prisma.modifier.findMany({
+        where: { id: { in: modifierIds }, tenantId, deletedAt: null },
+      });
+      const modifierMap = new Map(modifiers.map((m) => [m.id, m]));
+      for (const modifierId of modifierIds) {
+        if (!modifierMap.has(modifierId))
+          throw new NotFoundException(`Modifier ${modifierId} not found`);
+      }
+    }
+
+    return {
+      products: new Map(
+        products.map(
+          (p) => [p.id, { basePrice: p.basePrice }] as [string, { basePrice: Prisma.Decimal }],
+        ),
+      ),
+      variants: new Map(
+        variants.map((v) => [v.id, { price: v.price }] as [string, { price: Prisma.Decimal }]),
+      ),
+      modifiers: new Map(
+        modifiers.map((m) => [m.id, { price: m.price }] as [string, { price: Prisma.Decimal }]),
+      ),
+    };
+  }
+
+  private resolveItemUnitPrice(
+    item: CreateOrderDto['items'][number],
+    catalog: CatalogPrices,
+  ): number {
+    if (item.variantId) {
+      const variant = catalog.variants.get(item.variantId);
+      return variant ? roundMoney(variant.price) : roundMoney(item.unitPrice);
+    }
+    const product = catalog.products.get(item.productId);
+    return product ? roundMoney(product.basePrice) : roundMoney(item.unitPrice);
+  }
+
+  private resolveModifierPrice(
+    modifier: NonNullable<CreateOrderDto['items'][number]['modifiers']>[number],
+    catalog: CatalogPrices,
+  ): number {
+    if (!modifier.modifierId) return roundMoney(modifier.price);
+    const catalogModifier = catalog.modifiers.get(modifier.modifierId);
+    return catalogModifier ? roundMoney(catalogModifier.price) : roundMoney(modifier.price);
+  }
+
+  private async resolveAuthoritativeItemPrice(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    productId: string,
+    variantId: string | null,
+    fallbackPrice: number,
+  ): Promise<number> {
+    if (variantId) {
+      const variant = await tx.productVariant.findFirst({
+        where: { id: variantId, tenantId, deletedAt: null },
+        select: { price: true },
+      });
+      if (variant) return roundMoney(variant.price);
+    }
+    const product = await tx.product.findFirst({
+      where: { id: productId, tenantId, deletedAt: null },
+      select: { basePrice: true },
+    });
+    return product ? roundMoney(product.basePrice) : roundMoney(fallbackPrice);
+  }
+
+  private async resolveAuthoritativeModifierPrice(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    modifierId: string,
+    fallbackPrice: number,
+  ): Promise<number> {
+    const modifier = await tx.modifier.findFirst({
+      where: { id: modifierId, tenantId, deletedAt: null },
+      select: { price: true },
+    });
+    return modifier ? roundMoney(modifier.price) : roundMoney(fallbackPrice);
   }
 
   private async updateKitchenStatus(

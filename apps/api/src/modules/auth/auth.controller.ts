@@ -146,6 +146,7 @@ export class AuthController {
 
   @Post('change-password')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Change password (requires current password)' })
   @ApiResponse({ status: 200, description: 'Password changed successfully' })

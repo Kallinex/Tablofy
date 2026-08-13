@@ -37,7 +37,7 @@ export class PurchasingController {
   // ============================================
 
   @Post('purchase-orders')
-  @Roles('OWNER', 'MANAGER', 'PURCHASING')
+  @Roles('OWNER', 'MANAGER')
   @ApiOperation({ summary: 'Create purchase order' })
   async createPO(@Body() dto: CreatePurchaseOrderDto, @CurrentUser() user: CurrentUserData) {
     return this.purchasingService.createPO(dto, user.tenantId!, user.id);
@@ -65,7 +65,7 @@ export class PurchasingController {
   }
 
   @Put('purchase-orders/:id')
-  @Roles('OWNER', 'MANAGER', 'PURCHASING')
+  @Roles('OWNER', 'MANAGER')
   @ApiOperation({ summary: 'Update purchase order' })
   async updatePO(
     @Param('id') id: string,
@@ -84,7 +84,7 @@ export class PurchasingController {
   }
 
   @Post('purchase-orders/:id/submit')
-  @Roles('OWNER', 'MANAGER', 'PURCHASING')
+  @Roles('OWNER', 'MANAGER')
   @ApiOperation({ summary: 'Submit purchase order for approval' })
   async submitPO(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.purchasingService.submitPO(id, user.tenantId!, user.id);
@@ -102,14 +102,14 @@ export class PurchasingController {
   }
 
   @Post('purchase-orders/:id/order')
-  @Roles('OWNER', 'MANAGER', 'PURCHASING')
+  @Roles('OWNER', 'MANAGER')
   @ApiOperation({ summary: 'Place order with supplier' })
   async orderPO(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.purchasingService.orderPO(id, user.tenantId!, user.id);
   }
 
   @Post('purchase-orders/:id/receive')
-  @Roles('OWNER', 'MANAGER', 'PURCHASING')
+  @Roles('OWNER', 'MANAGER')
   @ApiOperation({ summary: 'Mark purchase order as received' })
   async receivePO(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.purchasingService.receivePO(id, user.tenantId!, user.id);
@@ -138,7 +138,7 @@ export class PurchasingController {
   // ============================================
 
   @Post('goods-receipts')
-  @Roles('OWNER', 'MANAGER', 'PURCHASING', 'CASHIER')
+  @Roles('OWNER', 'MANAGER', 'CASHIER')
   @ApiOperation({ summary: 'Create goods receipt' })
   async createGRN(@Body() dto: CreateGoodsReceiptDto, @CurrentUser() user: CurrentUserData) {
     return this.purchasingService.createGRN(dto, user.tenantId!, user.id);

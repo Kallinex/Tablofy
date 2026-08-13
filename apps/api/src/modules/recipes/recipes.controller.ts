@@ -28,7 +28,7 @@ export class RecipesController {
   constructor(private readonly recipesService: RecipesService) {}
 
   @Post()
-  @Roles('OWNER', 'MANAGER', 'CHEF')
+  @Roles('OWNER', 'MANAGER', 'KITCHEN')
   @ApiOperation({ summary: 'Create recipe' })
   async create(@Body() dto: CreateRecipeDto, @CurrentUser() user: CurrentUserData) {
     return this.recipesService.createRecipe(dto, user.tenantId!, user.id);
@@ -49,7 +49,7 @@ export class RecipesController {
   }
 
   @Put(':id')
-  @Roles('OWNER', 'MANAGER', 'CHEF')
+  @Roles('OWNER', 'MANAGER', 'KITCHEN')
   @ApiOperation({ summary: 'Update recipe' })
   async update(
     @Param('id') id: string,
@@ -75,7 +75,7 @@ export class RecipesController {
   }
 
   @Post(':recipeId/items')
-  @Roles('OWNER', 'MANAGER', 'CHEF')
+  @Roles('OWNER', 'MANAGER', 'KITCHEN')
   @ApiOperation({ summary: 'Add item to recipe' })
   async addItem(
     @Param('recipeId') recipeId: string,
@@ -86,7 +86,7 @@ export class RecipesController {
   }
 
   @Put('items/:id')
-  @Roles('OWNER', 'MANAGER', 'CHEF')
+  @Roles('OWNER', 'MANAGER', 'KITCHEN')
   @ApiOperation({ summary: 'Update recipe item' })
   async updateItem(
     @Param('id') id: string,
@@ -97,7 +97,7 @@ export class RecipesController {
   }
 
   @Delete('items/:id')
-  @Roles('OWNER', 'MANAGER', 'CHEF')
+  @Roles('OWNER', 'MANAGER', 'KITCHEN')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove recipe item' })
   async removeItem(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {

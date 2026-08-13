@@ -163,6 +163,12 @@ export class AppLoggerService implements LoggerService {
     'refreshToken',
     'jwt',
     'bearer',
+    'clientSecret',
+    'client_secret',
+    'paymentKey',
+    'payment_key',
+    'hmac',
+    'signature',
   ]);
 
   private sanitize(obj: unknown, depth = 0): unknown {

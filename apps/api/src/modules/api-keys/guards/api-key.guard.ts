@@ -29,10 +29,6 @@ export class ApiKeyGuard implements CanActivate {
       throw new UnauthorizedException('Invalid authorization format');
     }
 
-    if (scheme.toLowerCase() === 'bearer') {
-      return true;
-    }
-
     if (scheme.toLowerCase() !== 'apikey') {
       throw new UnauthorizedException('Invalid authorization scheme');
     }
@@ -49,7 +45,7 @@ export class ApiKeyGuard implements CanActivate {
 
     const effectiveScopes = requiredScopes ?? this.getDefaultScopesByMethod(context);
 
-    if (effectiveScopes.length > 0 && result.scopes) {
+    if (effectiveScopes.length > 0) {
       const hasScope = effectiveScopes.some((s) => result.scopes?.includes(s));
       if (!hasScope) {
         throw new ForbiddenException('API key scope insufficient');

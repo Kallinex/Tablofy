@@ -1489,12 +1489,18 @@ export class PaymentsService {
       | Prisma.PaymentGetPayload<Record<string, never>>
       | (Prisma.PaymentGetPayload<Record<string, never>> & Record<string, unknown>),
   ): PaymentResponseDto {
+    const clientSecret =
+      payment.status === PaymentStatus.PENDING
+        ? this.extractClientSecret(payment.gatewayData)
+        : undefined;
+
     return {
       id: payment.id,
       orderId: payment.orderId,
       tenantId: payment.tenantId,
       method: payment.method,
       status: payment.status,
+      clientSecret,
       amount: Number(payment.amount),
       tip: Number(payment.tip),
       reference: payment.reference,
@@ -1505,5 +1511,15 @@ export class PaymentsService {
       createdAt: payment.createdAt,
       updatedAt: payment.updatedAt,
     };
+  }
+
+  private extractClientSecret(
+    gatewayData: Prisma.JsonValue | null | undefined,
+  ): string | undefined {
+    if (!gatewayData || typeof gatewayData !== 'object' || Array.isArray(gatewayData)) {
+      return undefined;
+    }
+    const secret = (gatewayData as { clientSecret?: unknown }).clientSecret;
+    return typeof secret === 'string' && secret.length > 0 ? secret : undefined;
   }
 }

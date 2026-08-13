@@ -156,19 +156,28 @@ export class CostingService {
     });
     if (!item) return 0;
 
-    const avgCost = Number(item.averageCost ?? item.unitCost ?? 0);
-    if (avgCost > 0) return avgCost;
+    const avgCost = new Prisma.Decimal(item.averageCost ?? item.unitCost ?? 0);
+    if (avgCost.gt(0)) return avgCost.toNumber();
 
-    const batches = await this.prisma.inventoryBatch.aggregate({
+    const batches = await this.prisma.inventoryBatch.findMany({
       where: { inventoryItemId, tenantId, isActive: true, quantity: { gt: 0 } },
-      _sum: { quantity: true, unitCost: true },
+      select: { quantity: true, unitCost: true },
     });
 
-    const totalQty = Number(batches._sum.quantity ?? 0);
-    const totalCost = Number(batches._sum.unitCost ?? 0);
+    const totalQty = batches.reduce(
+      (sum, batch) => sum.plus(new Prisma.Decimal(batch.quantity ?? 0)),
+      new Prisma.Decimal(0),
+    );
+    const totalCost = batches.reduce(
+      (sum, batch) =>
+        sum.plus(
+          new Prisma.Decimal(batch.quantity ?? 0).times(new Prisma.Decimal(batch.unitCost ?? 0)),
+        ),
+      new Prisma.Decimal(0),
+    );
 
-    if (totalQty > 0 && totalCost > 0) {
-      return totalCost / totalQty;
+    if (totalQty.gt(0) && totalCost.gt(0)) {
+      return totalCost.div(totalQty).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP).toNumber();
     }
 
     return Number(item.unitCost ?? 0);

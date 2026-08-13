@@ -91,7 +91,7 @@ describe('OrdersService', () => {
         restaurantId: 'restaurant-1',
         tenantId: testTenantId,
       });
-      prisma.product.findMany.mockResolvedValue([{ id: 'product-1' } as never]);
+      prisma.product.findMany.mockResolvedValue([{ id: 'product-1', basePrice: 10.99 } as never]);
     }
 
     it('should create an order successfully', async () => {
@@ -144,15 +144,28 @@ describe('OrdersService', () => {
       expect(result).toBeDefined();
     });
 
-    it('should compute subtotal and item totals with exact decimal math', async () => {
+    it('should compute subtotal and item totals from catalog basePrice with exact decimal math', async () => {
       const fakeOrder = buildOrder({ id: 'order-1' });
-      setupValidateBusinessRules();
+      prisma.restaurant.findFirst.mockResolvedValue({
+        id: 'restaurant-1',
+        isActive: true,
+        tenantId: testTenantId,
+      });
+      prisma.branch.findFirst.mockResolvedValue({
+        id: 'branch-1',
+        restaurantId: 'restaurant-1',
+        tenantId: testTenantId,
+      });
+      prisma.product.findMany.mockResolvedValue([
+        { id: 'product-1', basePrice: 10.99 } as never,
+        { id: 'product-2', basePrice: 0.1 } as never,
+      ]);
       prisma.order.findFirst.mockResolvedValue(null);
 
       const decimalDto = buildCreateOrderDto({
         items: [
-          { productId: 'product-1', quantity: 2, unitPrice: 10.99 },
-          { productId: 'product-1', quantity: 3, unitPrice: 0.1 },
+          { productId: 'product-1', quantity: 2, unitPrice: 0.01 },
+          { productId: 'product-2', quantity: 3, unitPrice: 99 },
         ],
       });
 
@@ -187,6 +200,234 @@ describe('OrdersService', () => {
       expect(capturedCreateData?.total).toBe(22.28);
       expect(capturedItemTotals[0].total).toBe(21.98);
       expect(capturedItemTotals[1].total).toBe(0.3);
+    });
+
+    it('should ignore forged unitPrice and use catalog basePrice for non-variant items', async () => {
+      const fakeOrder = buildOrder({ id: 'order-1' });
+      prisma.restaurant.findFirst.mockResolvedValue({
+        id: 'restaurant-1',
+        isActive: true,
+        tenantId: testTenantId,
+      });
+      prisma.branch.findFirst.mockResolvedValue({
+        id: 'branch-1',
+        restaurantId: 'restaurant-1',
+        tenantId: testTenantId,
+      });
+      prisma.product.findMany.mockResolvedValue([{ id: 'product-1', basePrice: 10.99 } as never]);
+      prisma.order.findFirst.mockResolvedValue(null);
+
+      const forgedDto = buildCreateOrderDto({
+        items: [{ productId: 'product-1', quantity: 2, unitPrice: 0.01 }],
+      });
+
+      const capturedItems: Array<Record<string, unknown>> = [];
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            create: jest.fn().mockResolvedValue(fakeOrder),
+            findUnique: jest.fn().mockResolvedValue(fakeOrder),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          orderItem: {
+            create: jest.fn((args: { data: Record<string, unknown> }) => {
+              capturedItems.push(args.data);
+              return Promise.resolve({});
+            }),
+          },
+        };
+        return cb(tx);
+      });
+
+      await service.create(forgedDto, testTenantId, testUserId);
+
+      expect(capturedItems[0].unitPrice).toBe(10.99);
+      expect(capturedItems[0].priceSnapshot).toBe(10.99);
+      expect(capturedItems[0].total).toBe(21.98);
+    });
+
+    it('should ignore forged unitPrice and use catalog variant price for variant items', async () => {
+      const fakeOrder = buildOrder({ id: 'order-1' });
+      prisma.restaurant.findFirst.mockResolvedValue({
+        id: 'restaurant-1',
+        isActive: true,
+        tenantId: testTenantId,
+      });
+      prisma.branch.findFirst.mockResolvedValue({
+        id: 'branch-1',
+        restaurantId: 'restaurant-1',
+        tenantId: testTenantId,
+      });
+      prisma.product.findMany.mockResolvedValue([{ id: 'product-1', basePrice: 10.99 } as never]);
+      prisma.productVariant.findMany.mockResolvedValue([{ id: 'variant-1', price: 12.5 } as never]);
+      prisma.order.findFirst.mockResolvedValue(null);
+
+      const variantDto = buildCreateOrderDto({
+        items: [{ productId: 'product-1', variantId: 'variant-1', quantity: 2, unitPrice: 0.01 }],
+      });
+
+      const capturedItems: Array<Record<string, unknown>> = [];
+      let capturedCreateData: Record<string, unknown> | undefined;
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            create: jest.fn((args: { data: Record<string, unknown> }) => {
+              capturedCreateData = args.data;
+              return Promise.resolve(fakeOrder);
+            }),
+            findUnique: jest.fn().mockResolvedValue(fakeOrder),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          orderItem: {
+            create: jest.fn((args: { data: Record<string, unknown> }) => {
+              capturedItems.push(args.data);
+              return Promise.resolve({});
+            }),
+          },
+        };
+        return cb(tx);
+      });
+
+      await service.create(variantDto, testTenantId, testUserId);
+
+      expect(capturedItems[0].unitPrice).toBe(12.5);
+      expect(capturedItems[0].priceSnapshot).toBe(12.5);
+      expect(capturedItems[0].total).toBe(25);
+      expect(capturedCreateData?.subtotal).toBe(25);
+    });
+
+    it('should use catalog modifier price when modifierId is present', async () => {
+      const fakeOrder = buildOrder({ id: 'order-1' });
+      prisma.restaurant.findFirst.mockResolvedValue({
+        id: 'restaurant-1',
+        isActive: true,
+        tenantId: testTenantId,
+      });
+      prisma.branch.findFirst.mockResolvedValue({
+        id: 'branch-1',
+        restaurantId: 'restaurant-1',
+        tenantId: testTenantId,
+      });
+      prisma.product.findMany.mockResolvedValue([{ id: 'product-1', basePrice: 5 } as never]);
+      prisma.modifier.findMany.mockResolvedValue([{ id: 'mod-1', price: 1.5 } as never]);
+      prisma.order.findFirst.mockResolvedValue(null);
+
+      const modifierDto = buildCreateOrderDto({
+        items: [
+          {
+            productId: 'product-1',
+            quantity: 1,
+            unitPrice: 0.01,
+            modifiers: [{ modifierId: 'mod-1', name: 'Extra sauce', quantity: 1, price: 0.01 }],
+          },
+        ],
+      });
+
+      const capturedItems: Array<Record<string, unknown>> = [];
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            create: jest.fn().mockResolvedValue(fakeOrder),
+            findUnique: jest.fn().mockResolvedValue(fakeOrder),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          orderItem: {
+            create: jest.fn((args: { data: Record<string, unknown> }) => {
+              capturedItems.push(args.data);
+              return Promise.resolve({});
+            }),
+          },
+        };
+        return cb(tx);
+      });
+
+      await service.create(modifierDto, testTenantId, testUserId);
+
+      const modifiers = capturedItems[0].modifiers as { create: Array<Record<string, unknown>> };
+      expect(modifiers.create[0].price).toBe(1.5);
+      expect(capturedItems[0].unitPrice).toBe(5);
+      expect(capturedItems[0].total).toBe(6.5);
+    });
+
+    it('should keep client price for custom modifiers without modifierId', async () => {
+      const fakeOrder = buildOrder({ id: 'order-1' });
+      prisma.restaurant.findFirst.mockResolvedValue({
+        id: 'restaurant-1',
+        isActive: true,
+        tenantId: testTenantId,
+      });
+      prisma.branch.findFirst.mockResolvedValue({
+        id: 'branch-1',
+        restaurantId: 'restaurant-1',
+        tenantId: testTenantId,
+      });
+      prisma.product.findMany.mockResolvedValue([{ id: 'product-1', basePrice: 5 } as never]);
+      prisma.order.findFirst.mockResolvedValue(null);
+
+      const customDto = buildCreateOrderDto({
+        items: [
+          {
+            productId: 'product-1',
+            quantity: 1,
+            unitPrice: 0.01,
+            modifiers: [{ name: 'Custom extra', quantity: 1, price: 2.25 }],
+          },
+        ],
+      });
+
+      const capturedItems: Array<Record<string, unknown>> = [];
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            create: jest.fn().mockResolvedValue(fakeOrder),
+            findUnique: jest.fn().mockResolvedValue(fakeOrder),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          orderItem: {
+            create: jest.fn((args: { data: Record<string, unknown> }) => {
+              capturedItems.push(args.data);
+              return Promise.resolve({});
+            }),
+          },
+        };
+        return cb(tx);
+      });
+
+      await service.create(customDto, testTenantId, testUserId);
+
+      const modifiers = capturedItems[0].modifiers as { create: Array<Record<string, unknown>> };
+      expect(modifiers.create[0].price).toBe(2.25);
+      expect(capturedItems[0].total).toBe(7.25);
+    });
+
+    it('should reject unknown modifierId with NotFoundException', async () => {
+      prisma.restaurant.findFirst.mockResolvedValue({
+        id: 'restaurant-1',
+        isActive: true,
+        tenantId: testTenantId,
+      });
+      prisma.branch.findFirst.mockResolvedValue({
+        id: 'branch-1',
+        restaurantId: 'restaurant-1',
+        tenantId: testTenantId,
+      });
+      prisma.product.findMany.mockResolvedValue([{ id: 'product-1', basePrice: 5 } as never]);
+      prisma.modifier.findMany.mockResolvedValue([]);
+
+      const unknownDto = buildCreateOrderDto({
+        items: [
+          {
+            productId: 'product-1',
+            quantity: 1,
+            unitPrice: 5,
+            modifiers: [{ modifierId: 'missing-mod', name: 'X', quantity: 1, price: 1 }],
+          },
+        ],
+      });
+
+      await expect(service.create(unknownDto, testTenantId, testUserId)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should retry order number allocation after a unique-constraint conflict', async () => {
@@ -389,7 +630,7 @@ describe('OrdersService', () => {
       );
     });
 
-    it('should recompute item.total on a unit-price-only update using stored quantity', async () => {
+    it('should ignore forged unitPrice on update and use catalog basePrice', async () => {
       const fakeOrder = buildOrder({
         id: 'order-1',
         items: [item({ id: 'item-1', quantity: 2, unitPrice: 10, discount: 0, total: 20 })],
@@ -399,12 +640,13 @@ describe('OrdersService', () => {
       mockTransaction(tx);
       mockRecalculate(tx, fakeOrder);
       tx.order.updateMany.mockResolvedValue({ count: 1 });
+      tx.product.findFirst.mockResolvedValue({ basePrice: 12.5 });
       tx.orderItemModifier.aggregate.mockResolvedValue({ _sum: { price: null } });
       tx.orderItem.updateMany.mockResolvedValue({ count: 1 });
 
       await service.update(
         'order-1',
-        { items: [{ id: 'item-1', unitPrice: 12.5 }] },
+        { items: [{ id: 'item-1', unitPrice: 0.01 }] },
         testTenantId,
         testUserId,
       );
@@ -412,6 +654,90 @@ describe('OrdersService', () => {
       expect(tx.orderItem.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ unitPrice: 12.5, total: 25 }),
+        }),
+      );
+    });
+
+    it('should use catalog variant price when a variant item unitPrice is updated', async () => {
+      const fakeOrder = buildOrder({
+        id: 'order-1',
+        items: [
+          item({
+            id: 'item-1',
+            productId: 'product-1',
+            variantId: 'variant-1',
+            quantity: 2,
+            unitPrice: 10,
+            discount: 0,
+            total: 20,
+          }),
+        ],
+      });
+      stubFindOne(fakeOrder);
+      const tx = makeTx();
+      mockTransaction(tx);
+      mockRecalculate(tx, fakeOrder);
+      tx.order.updateMany.mockResolvedValue({ count: 1 });
+      tx.productVariant.findFirst.mockResolvedValue({ price: 14.75 });
+      tx.orderItemModifier.aggregate.mockResolvedValue({ _sum: { price: null } });
+      tx.orderItem.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.update(
+        'order-1',
+        { items: [{ id: 'item-1', unitPrice: 0.01 }] },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(tx.productVariant.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'variant-1', tenantId: testTenantId }),
+        }),
+      );
+      expect(tx.orderItem.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ unitPrice: 14.75, total: 29.5 }),
+        }),
+      );
+    });
+
+    it('should use catalog modifier price on update when modifierId is present', async () => {
+      const fakeOrder = buildOrder({
+        id: 'order-1',
+        items: [item({ id: 'item-1', quantity: 1, unitPrice: 10, discount: 0, total: 10 })],
+      });
+      stubFindOne(fakeOrder);
+      const tx = makeTx();
+      mockTransaction(tx);
+      mockRecalculate(tx, fakeOrder);
+      tx.order.updateMany.mockResolvedValue({ count: 1 });
+      tx.orderItemModifier.aggregate.mockResolvedValue({ _sum: { price: 0 } });
+      tx.orderItem.updateMany.mockResolvedValue({ count: 1 });
+      tx.orderItemModifier.create.mockResolvedValue({});
+      tx.modifier.findFirst.mockResolvedValue({ price: 1.5 });
+
+      await service.update(
+        'order-1',
+        {
+          items: [
+            {
+              id: 'item-1',
+              modifiers: [{ modifierId: 'mod-1', name: 'Extra sauce', quantity: 1, price: 0.01 }],
+            },
+          ],
+        },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(tx.modifier.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'mod-1', tenantId: testTenantId }),
+        }),
+      );
+      expect(tx.orderItemModifier.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ modifierId: 'mod-1', price: 1.5 }),
         }),
       );
     });
@@ -562,6 +888,9 @@ describe('OrdersService', () => {
       orderItemModifier: { aggregate: jest.fn(), updateMany: jest.fn(), create: jest.fn() },
       orderStatusHistory: { create: jest.fn() },
       kitchenTicket: { updateMany: jest.fn() },
+      product: { findFirst: jest.fn() },
+      productVariant: { findFirst: jest.fn() },
+      modifier: { findFirst: jest.fn() },
       ...overrides,
     };
   }

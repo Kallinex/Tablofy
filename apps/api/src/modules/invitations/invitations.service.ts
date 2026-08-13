@@ -61,12 +61,13 @@ export class InvitationsService {
     }
 
     const token = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
     const expiresAt = addDays(new Date(), this.EXPIRY_DAYS);
 
     const invitation = await this.prisma.invitation.create({
       data: {
         email: dto.email.toLowerCase(),
-        token,
+        token: hashedToken,
         role: targetRole,
         tenantId,
         invitedBy: invitedByUserId,
@@ -75,7 +76,7 @@ export class InvitationsService {
     });
 
     await this.redisService.setTemporaryToken(
-      `invitation:${token}`,
+      `invitation:${hashedToken}`,
       { invitationId: invitation.id },
       this.EXPIRY_DAYS * 24 * 60 * 60,
     );
@@ -90,7 +91,7 @@ export class InvitationsService {
       ...meta,
     });
 
-    return invitation;
+    return { ...invitation, token };
   }
 
   async findAllByTenant(params: {
@@ -124,8 +125,10 @@ export class InvitationsService {
   }
 
   async findByToken(token: string): Promise<Invitation> {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
     const invitation = await this.prisma.invitation.findFirst({
-      where: { token, status: InvitationStatus.PENDING },
+      where: { token: hashedToken, status: InvitationStatus.PENDING },
     });
 
     if (!invitation) {
@@ -152,10 +155,6 @@ export class InvitationsService {
   ): Promise<void> {
     const invitation = await this.findByToken(token);
 
-    if (invitation.status !== InvitationStatus.PENDING) {
-      throw new BadRequestException('Invitation is no longer pending');
-    }
-
     const inviter = await this.prisma.user.findFirst({
       where: { id: invitation.invitedBy, tenantId: invitation.tenantId, deletedAt: null },
       select: { role: true },
@@ -171,29 +170,39 @@ export class InvitationsService {
       throw new ForbiddenException(`Role ${invitation.role} cannot be assigned by ${inviterRole}`);
     }
 
-    await this.usersService.create(
-      {
-        email: invitation.email,
-        password,
-        firstName,
-        lastName,
-        role: invitation.role,
-      },
-      invitation.invitedBy,
-      invitation.tenantId,
-      inviterRole,
-      meta,
-    );
+    await this.prisma.$transaction(async (tx) => {
+      const claim = await tx.invitation.updateMany({
+        where: { id: invitation.id, status: InvitationStatus.PENDING },
+        data: { status: InvitationStatus.ACCEPTED, acceptedAt: new Date() },
+      });
 
-    await this.prisma.invitation.update({
-      where: { id: invitation.id },
-      data: {
-        status: InvitationStatus.ACCEPTED,
-        acceptedAt: new Date(),
-      },
+      if (claim.count !== 1) {
+        throw new ConflictException('Invitation is no longer pending');
+      }
+
+      await this.usersService.create(
+        {
+          email: invitation.email,
+          password,
+          firstName,
+          lastName,
+          role: invitation.role,
+        },
+        invitation.invitedBy,
+        invitation.tenantId,
+        inviterRole,
+        meta,
+        tx,
+      );
     });
 
-    await this.redisService.deleteTemporaryToken(`invitation:${token}`);
+    try {
+      await this.redisService.deleteTemporaryToken(`invitation:${invitation.token}`);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to remove invitation Redis token for ${invitation.id}: ${(error as Error).message}`,
+      );
+    }
 
     await this.auditLogsService.log({
       action: 'INVITATION_ACCEPTED',
@@ -218,7 +227,7 @@ export class InvitationsService {
       data: { status: InvitationStatus.REJECTED },
     });
 
-    await this.redisService.deleteTemporaryToken(`invitation:${token}`);
+    await this.redisService.deleteTemporaryToken(`invitation:${invitation.token}`);
 
     await this.auditLogsService.log({
       action: 'INVITATION_REJECTED',

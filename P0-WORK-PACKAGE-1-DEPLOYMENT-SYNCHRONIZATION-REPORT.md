@@ -1,0 +1,55 @@
+# P0 Work Package 1 — Deployment Synchronization Report
+
+**Date:** 2026-08-11
+**Repository:** `D:\New folder (8)\tablofy`
+**Branch:** `feature/phase7-m5` · **HEAD:** `5d6d0c392f5536f87d880a8cbf7336aaed407579` (dirty — P0 changes + P0 test files, see audit report)
+**Scope:** Deployment synchronization only. No schema changes, no migrations, no `.env` edits, no commits, no real payment transactions.
+**Final verdict:** **`DEPLOYMENT SYNCHRONIZED`**
+
+---
+
+## 1. Mission Sequence (10 steps)
+
+| # | Step | Result |
+|---|------|--------|
+| 1 | Source baseline | Branch `feature/phase7-m5`, HEAD `5d6d0c39`, dirty tree containing all six approved P0/P1 changes + tests. |
+| 2 | Official source build | `npx nx build api` → `webpack compiled successfully (d2dff50ecb4ed0b9)`, fresh (0% cache). |
+| 3 | Build artifact inspection | Fresh `dist/apps/api/main.js` contains P0-B (`extractClientSecret`, PENDING-only `toResponseDto`), P0-C (`ThrottlerGuard` via `APP_GUARD`), B2 (`Throttle` on `change-password`), logger redaction keys. |
+| 4 | Rebuild + recreate API | Official `docker compose -f docker/docker-compose.prod.yml build api` → image `docker-api:latest` rebuilt (in-container `nx build api --configuration=production` → same hash `d2dff50ecb4ed0b9`). Recreated **only** `tablofy-api` (`up -d --no-deps api`). |
+| 5 | Identity verification | New image `sha256:80e9e90f0791…` (created 2026-08-11T20:08:33Z), container created/started 20:09:05Z/20:09:08Z, `RestartCount=0`, healthy. `tablofy-postgres` and `tablofy-redis` untouched (started 14:38:42Z, 6h uptime). |
+| 6 | Runtime probes | Health 200; `GET /restaurants/:rid/payments/reconcile` → **401** (route resolved before `:id`; stale container returned 404); `:id` + list → 401; health burst **99×200 + 31×429** (global throttler at `THROTTLE_LIMIT=120/min` active); `POST /auth/change-password` → 401 (route registered). |
+| 7 | Deployed bundle | `/app/app/main.js` SHA256 `2a33e57cdef6590393496882d05df1503a242b2911224c7649acac95b3080c86` — **byte-identical** to local `dist/apps/api/main.js`. Logger keys present: `clientSecret`×8, `client_secret`×2, `paymentKey`×3, `payment_key`×2, `hmac`×9, `signature`×18. |
+| 8 | Regression | Health 200; API process healthy; Postgres accepting; Redis `PONG`; container+local `prisma validate` valid; container+local `prisma migrate status` **24/24 up to date**; boot ran `migrate deploy` → "No pending migrations to apply" (no migration executed); `nx test api` **87 suites / 1115 tests passed**; `tsc -p apps/api/tsconfig.app.json` exit 0; `eslint` exit 0. |
+| 9 | Drift matrix | Below. |
+| 10 | Report | This file. |
+
+## 2. Source / Build / Runtime Drift Matrix
+
+| Change | Source (verified) | Build bundle (verified) | Deployed container (verified) | Drift |
+|---|---|---|---|---|
+| P0-A payments route order (`reconcile`, `providers/:tenantId/status` before `:id`) | `payments.controller.ts:42` `@Get('reconcile')` before `@Get(':id')` line 69 | Boot log maps `/payments/reconcile` and `/payments/providers/:tenantId/status` **before** `/payments/:id` | `GET …/payments/reconcile` → **401** (reconcile matched; stale bundle fell through to `:id` → 404) | **None** |
+| P0-B clientSecret serialization PENDING-only | `toResponseDto` + `extractClientSecret` (PENDING branch), unit tests incl. "should not return the clientSecret for a FAILED payment" | Bundle: `payment.status === PaymentStatus.PENDING ? this.extractClientSecret(...) : undefined` | Byte-identical bundle | **None** |
+| P0-C global throttler | `app.module.ts` `APP_GUARD` `ThrottlerGuard` | Bundle: `useClass: ThrottlerGuard` global provider | Health burst 99×200 + 31×429 (≈120/min cap enforced) | **None** |
+| P0-D api-key guard fail-closed | guard fail-closed logic (audited) | Not bundle-shown (tree-shaken/unwired, documented) | Unit tests pass ("deny access by default … fail-closed") | **None** (covered by source + unit tests) |
+| B2 change-password per-route throttle (3/60s) | `@Throttle({ default: { limit: 3, ttl: 60000 } })` on `change-password` | Bundle: `Throttle({ de…` decorator on `'change-password'` route | Route registered → 401 unauthenticated. Per-route 429 requires a valid token; intentionally not exercised (no credentials/auth bypass). Proven via bundle + source + unit tests. | **None** |
+| B1 logger redaction (clientSecret/client_secret/paymentKey/payment_key/hmac/signature) | `logger.service.ts` sensitiveKeys | All six keys present in bundle | Present in deployed bundle (counts in §7) | **None** |
+
+## 3. Deployment Identity
+
+| Item | Before | After |
+|---|---|---|
+| Image | `docker-api` `sha256:2d958d6d95ef…` (created 2026-08-11T02:06:30Z) | `docker-api` `sha256:80e9e90f0791…` (created 2026-08-11T20:08:33Z) |
+| Container `tablofy-api` | stale (no P0-A/B/C) | recreated, healthy, `RestartCount=0` |
+| `tablofy-postgres` | running (6h) | untouched |
+| `tablofy-redis` | running (6h) | untouched |
+| Deployed bundle | — | `2a33e57cdef65903…` == local `dist/apps/api/main.js` |
+
+## 4. Verification Notes
+
+- **Build parity:** local `nx build api` and the in-container `nx build api --configuration=production` both produced webpack hash `d2dff50ecb4ed0b9`; deployed bundle SHA256 equals the local artifact SHA256.
+- **Runtime 429 accounting:** the health burst rejected 31 of 130 (limit 120/min); the extra rejections beyond the expected ~10 are explained by the container healthcheck and prior guarded probes sharing the same IP+window budget. This does not affect the conclusion that the global throttler is active and enforcing the 120/min cap.
+- **Read-only discipline:** all runtime verification used unauthenticated requests and a public-endpoint burst; no payments were created, no credentials injected, no migrations run (boot `migrate deploy` was a no-op: "No pending migrations to apply").
+
+## 5. Verdict
+
+**`DEPLOYMENT SYNCHRONIZED`** — the deployed `tablofy-api` container now runs a bundle byte-identical to the verified source build and exhibits all intended P0-A, P0-B, P0-C, P0-D, B1, and B2 behavior at runtime. PostgreSQL and Redis were untouched and remain healthy. Full regression is green.

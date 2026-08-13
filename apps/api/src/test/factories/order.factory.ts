@@ -46,6 +46,7 @@ export interface TestOrderItemDto {
   quantity: number;
   unitPrice: number;
   modifierIds?: string[];
+  modifiers?: { modifierId?: string; name: string; quantity?: number; price: number }[];
   notes?: string;
 }
 

@@ -219,37 +219,39 @@ export class RecipesService {
       if (existing) throw new ConflictException('Recipe with this name already exists');
     }
 
-    await this.prisma.recipe.update({
-      where: { id },
-      data: {
-        name: dto.name,
-        description: dto.description,
-        productId: dto.productId,
-        yield: dto.yield,
-        servingUnit: dto.servingUnit,
-        preparationTime: dto.preparationTime,
-        cookingTime: dto.cookingTime,
-        instructions: dto.instructions,
-        isActive: dto.isActive,
-        version: { increment: 1 },
-      },
-    });
-
-    if (dto.items && dto.items.length > 0) {
-      await this.prisma.recipeItem.deleteMany({ where: { recipeId: id } });
-      await this.prisma.recipeItem.createMany({
-        data: dto.items.map((item, index) => ({
-          recipeId: id,
-          inventoryItemId: item.inventoryItemId,
-          tenantId,
-          quantity: item.quantity,
-          unit: item.unit,
-          wastePercentage: item.wastePercentage,
-          notes: item.notes,
-          sortOrder: item.sortOrder ?? index,
-        })),
+    await this.prisma.$transaction(async (tx) => {
+      await tx.recipe.update({
+        where: { id },
+        data: {
+          name: dto.name,
+          description: dto.description,
+          productId: dto.productId,
+          yield: dto.yield,
+          servingUnit: dto.servingUnit,
+          preparationTime: dto.preparationTime,
+          cookingTime: dto.cookingTime,
+          instructions: dto.instructions,
+          isActive: dto.isActive,
+          version: { increment: 1 },
+        },
       });
-    }
+
+      if (dto.items && dto.items.length > 0) {
+        await tx.recipeItem.deleteMany({ where: { recipeId: id } });
+        await tx.recipeItem.createMany({
+          data: dto.items.map((item, index) => ({
+            recipeId: id,
+            inventoryItemId: item.inventoryItemId,
+            tenantId,
+            quantity: item.quantity,
+            unit: item.unit,
+            wastePercentage: item.wastePercentage,
+            notes: item.notes,
+            sortOrder: item.sortOrder ?? index,
+          })),
+        });
+      }
+    });
 
     await this.recalculateRecipeCost(id, tenantId);
 

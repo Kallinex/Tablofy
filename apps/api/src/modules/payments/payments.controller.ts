@@ -39,6 +39,33 @@ export class PaymentsController {
     return this.paymentsService.findAll(user.tenantId!, query);
   }
 
+  @Get('reconcile')
+  @Roles('OWNER', 'MANAGER')
+  @ApiOperation({ summary: 'Reconciliation report' })
+  async reconcile(
+    @Param('restaurantId') restaurantId: string,
+    @Query() query: ReconcileQueryDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    const fromDate = query.fromDate || new Date(Date.now() - 86400000).toISOString();
+    const toDate = query.toDate || new Date().toISOString();
+    return this.paymentsService.reconcile(user.tenantId!, fromDate, toDate);
+  }
+
+  @Get('providers/:tenantId/status')
+  @Roles('OWNER')
+  @ApiOperation({ summary: 'Payment provider health check' })
+  async providerStatus(
+    @Param('restaurantId') restaurantId: string,
+    @Param('tenantId') tenantId: string,
+  ) {
+    const provider = await this.paymentsService.getProviderForTenant(tenantId);
+    if (!provider) {
+      return { status: 'unavailable', message: 'No payment provider configured' };
+    }
+    return provider.healthCheck();
+  }
+
   @Get(':id')
   @Roles('OWNER', 'MANAGER', 'CASHIER')
   @ApiOperation({ summary: 'Get payment details' })
@@ -99,32 +126,5 @@ export class PaymentsController {
     @CurrentUser() user: CurrentUserData,
   ) {
     return this.paymentsService.splitPayment(dto.orderId, dto, user.tenantId!, user.id);
-  }
-
-  @Get('reconcile')
-  @Roles('OWNER', 'MANAGER')
-  @ApiOperation({ summary: 'Reconciliation report' })
-  async reconcile(
-    @Param('restaurantId') restaurantId: string,
-    @Query() query: ReconcileQueryDto,
-    @CurrentUser() user: CurrentUserData,
-  ) {
-    const fromDate = query.fromDate || new Date(Date.now() - 86400000).toISOString();
-    const toDate = query.toDate || new Date().toISOString();
-    return this.paymentsService.reconcile(user.tenantId!, fromDate, toDate);
-  }
-
-  @Get('providers/:tenantId/status')
-  @Roles('OWNER')
-  @ApiOperation({ summary: 'Payment provider health check' })
-  async providerStatus(
-    @Param('restaurantId') restaurantId: string,
-    @Param('tenantId') tenantId: string,
-  ) {
-    const provider = await this.paymentsService.getProviderForTenant(tenantId);
-    if (!provider) {
-      return { status: 'unavailable', message: 'No payment provider configured' };
-    }
-    return provider.healthCheck();
   }
 }

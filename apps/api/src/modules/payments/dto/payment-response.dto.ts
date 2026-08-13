@@ -6,6 +6,7 @@ export class PaymentResponseDto {
   tenantId!: string;
   method!: PaymentMethod;
   status!: PaymentStatus;
+  clientSecret?: string;
   amount!: number;
   tip!: number;
   reference!: string | null;

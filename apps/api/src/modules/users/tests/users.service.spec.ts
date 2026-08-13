@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ForbiddenException } from '@nestjs/common';
+import { NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { UsersService } from '../users.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
@@ -170,6 +171,70 @@ describe('UsersService', () => {
       await expect(service.create(dto, testUserId, testTenantId, 'MANAGER')).rejects.toThrow(
         ForbiddenException,
       );
+    });
+
+    it('should convert a duplicate-email P2002 into a ConflictException', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+      const conflict = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`tenantId`,`email`)',
+        { code: 'P2002', clientVersion: 'test', meta: { target: ['tenantId', 'email'] } },
+      );
+      prisma.user.create.mockRejectedValue(conflict);
+
+      const dto: CreateUserDto = {
+        email: 'dup@test.com',
+        password: 'StrongPass1',
+        firstName: 'Dup',
+        lastName: 'User',
+      };
+
+      await expect(service.create(dto, testUserId, testTenantId, 'OWNER')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(auditLogs.log).not.toHaveBeenCalled();
+    });
+
+    it('should rethrow an unrelated P2002 as the original error', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+      const unrelated = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`phone`)',
+        { code: 'P2002', clientVersion: 'test', meta: { target: ['phone'] } },
+      );
+      prisma.user.create.mockRejectedValue(unrelated);
+
+      const dto: CreateUserDto = {
+        email: 'other@test.com',
+        password: 'StrongPass1',
+        firstName: 'Other',
+        lastName: 'User',
+      };
+
+      await expect(service.create(dto, testUserId, testTenantId, 'OWNER')).rejects.toMatchObject({
+        code: 'P2002',
+      });
+      expect(auditLogs.log).not.toHaveBeenCalled();
+    });
+
+    it('should use a provided transaction client for reads and writes', async () => {
+      const txUser = {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue(buildUser({ id: 'user-tx' })),
+      };
+      const tx = { user: txUser } as never;
+
+      const dto: CreateUserDto = {
+        email: 'tx@test.com',
+        password: 'StrongPass1',
+        firstName: 'Tx',
+        lastName: 'User',
+      };
+
+      const result = await service.create(dto, testUserId, testTenantId, 'OWNER', undefined, tx);
+
+      expect(txUser.findFirst).toHaveBeenCalled();
+      expect(txUser.create).toHaveBeenCalled();
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(result.id).toBe('user-tx');
     });
   });
 

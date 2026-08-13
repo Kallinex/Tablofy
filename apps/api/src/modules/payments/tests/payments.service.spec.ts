@@ -1073,12 +1073,207 @@ describe('PaymentsService', () => {
   });
 
   describe('reconcile', () => {
+    function stubStatusProvider(behavior: { mode?: string; getPaymentStatus?: unknown }) {
+      (service as unknown as { providerRegistry: Map<string, unknown> }).providerRegistry.set(
+        'stripe',
+        {
+          mode: behavior.mode ?? 'live',
+          initialize: async () => undefined,
+          getPaymentStatus:
+            behavior.getPaymentStatus ??
+            jest.fn().mockResolvedValue({
+              success: true,
+              data: { status: 'succeeded', amount: 5000, currency: 'usd' },
+            }),
+        },
+      );
+    }
+
     it('should return reconciliation report', async () => {
       prisma.payment.findMany.mockResolvedValue([mockPayment]);
 
       const result = await service.reconcile('tenant-1', '2025-01-01', '2025-12-31');
       expect(result.localPayments).toBe(1);
       expect(result.mismatches).toBe(0);
+    });
+
+    it('should be strictly read-only: no database writes during reconciliation', async () => {
+      prisma.payment.findMany.mockResolvedValue([mockPayment]);
+
+      await service.reconcile('tenant-1', '2025-01-01', '2025-12-31');
+      expect(prisma.payment.create).not.toHaveBeenCalled();
+      expect(prisma.payment.update).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should scope the report to the tenant (tenant isolation)', async () => {
+      prisma.payment.findMany.mockResolvedValue([]);
+
+      await service.reconcile('tenant-9', '2025-01-01', '2025-12-31');
+      expect(prisma.payment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ tenantId: 'tenant-9' }),
+        }),
+      );
+    });
+
+    it('should count payments without a gateway reference as matched', async () => {
+      prisma.payment.findMany.mockResolvedValue([
+        { ...mockPayment, method: PaymentMethod.CREDIT_CARD, gatewayRef: null },
+      ]);
+      stubStatusProvider({});
+
+      const result = await service.reconcile('tenant-1', '2025-01-01', '2025-12-31');
+      expect(result.providerMatches).toBe(1);
+      expect(result.mismatches).toBe(0);
+    });
+
+    it('should count gateway payments handled by a mock provider as matched', async () => {
+      prisma.payment.findMany.mockResolvedValue([
+        { ...mockPayment, method: PaymentMethod.CREDIT_CARD, gatewayRef: 'pi_1' },
+      ]);
+      stubStatusProvider({ mode: 'mock' });
+
+      const result = await service.reconcile('tenant-1', '2025-01-01', '2025-12-31');
+      expect(result.providerMatches).toBe(1);
+      expect(result.mismatches).toBe(0);
+    });
+
+    it('should match when provider succeeded and local status is COMPLETED', async () => {
+      prisma.payment.findMany.mockResolvedValue([
+        {
+          ...mockPayment,
+          method: PaymentMethod.CREDIT_CARD,
+          gatewayRef: 'pi_1',
+          status: PaymentStatus.COMPLETED,
+        },
+      ]);
+      stubStatusProvider({});
+
+      const result = await service.reconcile('tenant-1', '2025-01-01', '2025-12-31');
+      expect(result.providerMatches).toBe(1);
+      expect(result.mismatches).toBe(0);
+    });
+
+    it('should flag a mismatch when provider succeeded but local status is PENDING', async () => {
+      prisma.payment.findMany.mockResolvedValue([
+        {
+          ...mockPayment,
+          method: PaymentMethod.CREDIT_CARD,
+          gatewayRef: 'pi_1',
+          status: PaymentStatus.PENDING,
+        },
+      ]);
+      stubStatusProvider({});
+
+      const result = await service.reconcile('tenant-1', '2025-01-01', '2025-12-31');
+      expect(result.mismatches).toBe(1);
+      expect(result.providerMatches).toBe(0);
+    });
+
+    it('should flag a mismatch when provider failed but local status is COMPLETED', async () => {
+      prisma.payment.findMany.mockResolvedValue([
+        {
+          ...mockPayment,
+          method: PaymentMethod.CREDIT_CARD,
+          gatewayRef: 'pi_1',
+          status: PaymentStatus.COMPLETED,
+        },
+      ]);
+      stubStatusProvider({
+        getPaymentStatus: jest.fn().mockResolvedValue({
+          success: true,
+          data: { status: 'failed', amount: 0, currency: 'usd' },
+        }),
+      });
+
+      const result = await service.reconcile('tenant-1', '2025-01-01', '2025-12-31');
+      expect(result.mismatches).toBe(1);
+      expect(result.providerMatches).toBe(0);
+    });
+
+    it('should match when provider failed and local status is FAILED or PENDING', async () => {
+      prisma.payment.findMany.mockResolvedValue([
+        {
+          ...mockPayment,
+          method: PaymentMethod.CREDIT_CARD,
+          gatewayRef: 'pi_1',
+          status: PaymentStatus.FAILED,
+        },
+        {
+          ...mockPayment,
+          id: 'payment-2',
+          method: PaymentMethod.CREDIT_CARD,
+          gatewayRef: 'pi_2',
+          status: PaymentStatus.PENDING,
+        },
+      ]);
+      stubStatusProvider({
+        getPaymentStatus: jest.fn().mockResolvedValue({
+          success: true,
+          data: { status: 'failed', amount: 0, currency: 'usd' },
+        }),
+      });
+
+      const result = await service.reconcile('tenant-1', '2025-01-01', '2025-12-31');
+      expect(result.providerMatches).toBe(2);
+      expect(result.mismatches).toBe(0);
+    });
+
+    it('should flag a mismatch when the provider lookup fails', async () => {
+      prisma.payment.findMany.mockResolvedValue([
+        {
+          ...mockPayment,
+          method: PaymentMethod.CREDIT_CARD,
+          gatewayRef: 'pi_1',
+          status: PaymentStatus.COMPLETED,
+        },
+      ]);
+      stubStatusProvider({
+        getPaymentStatus: jest
+          .fn()
+          .mockResolvedValue({ success: false, error: 'Upstream error', statusCode: 502 }),
+      });
+
+      const result = await service.reconcile('tenant-1', '2025-01-01', '2025-12-31');
+      expect(result.mismatches).toBe(1);
+      expect(result.providerMatches).toBe(0);
+    });
+
+    it('should flag a mismatch when the provider lookup throws', async () => {
+      prisma.payment.findMany.mockResolvedValue([
+        {
+          ...mockPayment,
+          method: PaymentMethod.CREDIT_CARD,
+          gatewayRef: 'pi_1',
+          status: PaymentStatus.COMPLETED,
+        },
+      ]);
+      stubStatusProvider({
+        getPaymentStatus: jest.fn().mockRejectedValue(new Error('network down')),
+      });
+
+      const result = await service.reconcile('tenant-1', '2025-01-01', '2025-12-31');
+      expect(result.mismatches).toBe(1);
+      expect(result.providerMatches).toBe(0);
+    });
+
+    it('should report counts that always sum to the number of local payments', async () => {
+      prisma.payment.findMany.mockResolvedValue([
+        mockPayment,
+        {
+          ...mockPayment,
+          id: 'payment-2',
+          method: PaymentMethod.CREDIT_CARD,
+          gatewayRef: 'pi_2',
+          status: PaymentStatus.PENDING,
+        },
+      ]);
+      stubStatusProvider({});
+
+      const result = await service.reconcile('tenant-1', '2025-01-01', '2025-12-31');
+      expect(result.localPayments).toBe(2);
+      expect(result.providerMatches + result.mismatches).toBe(2);
     });
   });
 
@@ -1709,6 +1904,84 @@ describe('PaymentsService', () => {
       expect(replay.type).toBe('refund.partial');
       expect(webhookPrisma.$transaction).not.toHaveBeenCalled();
       expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('clientSecret exposure', () => {
+    const basePayment = {
+      id: 'payment-1',
+      orderId: 'order-1',
+      tenantId: 'tenant-1',
+      method: PaymentMethod.CREDIT_CARD,
+      amount: 50,
+      tip: 0,
+      reference: null,
+      gatewayRef: 'pi_1',
+      processedAt: null,
+      refundedAt: null,
+      refundReason: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    it('should return the clientSecret for a PENDING provider payment', async () => {
+      prisma.payment.findFirst.mockResolvedValue({
+        ...basePayment,
+        status: PaymentStatus.PENDING,
+        gatewayData: { id: 'pi_1', clientSecret: 'secret_stripe_1', status: 'pending' },
+      });
+
+      const result = await service.findOne('payment-1', 'tenant-1');
+
+      expect(result.clientSecret).toBe('secret_stripe_1');
+    });
+
+    it('should not return the clientSecret for a COMPLETED payment', async () => {
+      prisma.payment.findFirst.mockResolvedValue({
+        ...basePayment,
+        status: PaymentStatus.COMPLETED,
+        gatewayData: { id: 'pi_1', clientSecret: 'secret_stripe_1', status: 'succeeded' },
+      });
+
+      const result = await service.findOne('payment-1', 'tenant-1');
+
+      expect(result.clientSecret).toBeUndefined();
+    });
+
+    it('should not return the clientSecret for a FAILED payment', async () => {
+      prisma.payment.findFirst.mockResolvedValue({
+        ...basePayment,
+        status: PaymentStatus.FAILED,
+        gatewayData: { id: 'pi_1', clientSecret: 'secret_stripe_1', status: 'failed' },
+      });
+
+      const result = await service.findOne('payment-1', 'tenant-1');
+
+      expect(result.clientSecret).toBeUndefined();
+    });
+
+    it('should omit the clientSecret when gatewayData has none', async () => {
+      prisma.payment.findFirst.mockResolvedValue({
+        ...basePayment,
+        status: PaymentStatus.PENDING,
+        gatewayData: { id: 'pi_1', status: 'pending' },
+      });
+
+      const result = await service.findOne('payment-1', 'tenant-1');
+
+      expect(result.clientSecret).toBeUndefined();
+    });
+
+    it('should omit the clientSecret when gatewayData is null', async () => {
+      prisma.payment.findFirst.mockResolvedValue({
+        ...basePayment,
+        status: PaymentStatus.PENDING,
+        gatewayData: null,
+      });
+
+      const result = await service.findOne('payment-1', 'tenant-1');
+
+      expect(result.clientSecret).toBeUndefined();
     });
   });
 });

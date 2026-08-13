@@ -280,4 +280,26 @@ describe('AuthController', () => {
       });
     });
   });
+
+  describe('changePassword throttling', () => {
+    const throttleLimit = (method: object): number | undefined =>
+      Reflect.getMetadata('THROTTLER:LIMITdefault', method) as number | undefined;
+    const throttleTtl = (method: object): number | undefined =>
+      Reflect.getMetadata('THROTTLER:TTLdefault', method) as number | undefined;
+
+    it('applies the password-change throttle limit', () => {
+      expect(throttleLimit(AuthController.prototype.changePassword)).toBe(3);
+      expect(throttleTtl(AuthController.prototype.changePassword)).toBe(60000);
+    });
+
+    it('matches an existing authentication throttle policy', () => {
+      expect(throttleLimit(AuthController.prototype.register)).toBe(20);
+      expect(throttleLimit(AuthController.prototype.login)).toBe(30);
+      expect(throttleLimit(AuthController.prototype.refresh)).toBe(60);
+      expect(throttleLimit(AuthController.prototype.forgotPassword)).toBe(3);
+      expect(throttleLimit(AuthController.prototype.resetPassword)).toBe(3);
+      expect(throttleLimit(AuthController.prototype.verifyEmail)).toBe(5);
+      expect(throttleLimit(AuthController.prototype.changePassword)).toBe(3);
+    });
+  });
 });
