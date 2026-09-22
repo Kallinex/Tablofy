@@ -24,6 +24,7 @@ describe('RecipesProcessor (inventory deduction queue)', () => {
       totalCost: 0,
       timestamp: new Date(),
     }),
+    reverseConsumptionForRefund: jest.fn().mockResolvedValue({ created: 1, skipped: 0 }),
   };
 
   beforeAll(async () => {
@@ -127,5 +128,40 @@ describe('RecipesProcessor (inventory deduction queue)', () => {
       'tenantId is required for inventory deduction',
     );
     expect(recipesServiceMock.deductInventoryForOrder).not.toHaveBeenCalled();
+  });
+
+  it('forwards payments.refunded events to reverseConsumptionForRefund', async () => {
+    const event = {
+      tenantId: 'tenant-1',
+      orderId: 'order-1',
+      paymentId: 'payment-1',
+      amount: 25,
+      amountRefunded: 50,
+    };
+
+    await processor.onPaymentsRefunded(event);
+
+    expect(recipesServiceMock.reverseConsumptionForRefund).toHaveBeenCalledWith(event);
+  });
+
+  it('skips refund events without the required refund payload', async () => {
+    await processor.onPaymentsRefunded({ tenantId: 'tenant-1', orderId: 'order-1' });
+
+    expect(recipesServiceMock.reverseConsumptionForRefund).not.toHaveBeenCalled();
+  });
+
+  it('does not rethrow reversal failures; refund handling stays asynchronous', async () => {
+    recipesServiceMock.reverseConsumptionForRefund.mockRejectedValueOnce(
+      new Error('db unavailable'),
+    );
+
+    await expect(
+      processor.onPaymentsRefunded({
+        tenantId: 'tenant-1',
+        orderId: 'order-1',
+        paymentId: 'payment-1',
+        amount: 25,
+      }),
+    ).resolves.toBeUndefined();
   });
 });

@@ -74,6 +74,8 @@ services:
       AUDIT_LOG_RETENTION_DAYS: ${AUDIT_LOG_RETENTION_DAYS:-365}
       HEALTH_DISK_PATH: ${HEALTH_DISK_PATH:-/}
       HEALTH_DISK_THRESHOLD_MB: ${HEALTH_DISK_THRESHOLD_MB:-200}
+      EXPORT_DIR: ${EXPORT_DIR:-/app/exports}
+      REPORT_EXPORT_RETENTION_DAYS: ${REPORT_EXPORT_RETENTION_DAYS:-30}
       QUEUE_DLQ_ALERT_THRESHOLD: ${QUEUE_DLQ_ALERT_THRESHOLD:-50}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_JSON: ${LOG_JSON:-true}
@@ -121,6 +123,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+    volumes:
+      - exports_data:/app/exports
     depends_on:
       postgres:
         condition: service_healthy
@@ -139,6 +143,8 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  exports_data:
     driver: local
 
 networks:

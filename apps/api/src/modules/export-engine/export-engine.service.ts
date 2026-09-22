@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, StreamableFile } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -7,6 +7,11 @@ import { QueueService, QueueJobData } from '../queues/queue.service';
 import { Prisma, ReportType, ReportExportStatus } from '@prisma/client';
 import { GenerateExportDto, ExportType } from './dto/generate-export.dto';
 import { ExportQueryDto } from './dto/export-query.dto';
+import {
+  ExportStorageService,
+  EXPORT_EXTENSIONS,
+  EXPORT_MIME_TYPES,
+} from './export-storage.service';
 import { Job } from 'bullmq';
 import * as Excel from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -21,6 +26,7 @@ export class ExportEngineService {
     private readonly cacheService: CacheService,
     private readonly queueService: QueueService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly exportStorageService: ExportStorageService,
   ) {}
 
   async generateExport(tenantId: string, userId: string, dto: GenerateExportDto) {
@@ -55,14 +61,16 @@ export class ExportEngineService {
   }
 
   async processExport(job: Job<QueueJobData>) {
-    const { tenantId, payload } = job.data;
+    const { tenantId: jobTenantId, payload } = job.data;
     const exportId = payload?.exportId as string | undefined;
     if (!exportId) throw new Error('exportId is required');
 
     const exportRecord = await this.prisma.reportExport.findFirst({
-      where: { id: exportId, tenantId },
+      where: { id: exportId, tenantId: jobTenantId },
     });
     if (!exportRecord) throw new NotFoundException('Export not found');
+
+    const tenantId = exportRecord.tenantId;
 
     await this.prisma.reportExport.update({
       where: { id: exportId },
@@ -73,37 +81,60 @@ export class ExportEngineService {
       const data = await this.fetchReportData(exportRecord);
       const columns = this.getColumnsForReportType(exportRecord.reportType);
       let buffer: Buffer;
-      let filePath: string;
 
       switch (exportRecord.type as ExportType) {
         case 'CSV':
           buffer = Buffer.from(this.generateCsv(data, columns));
-          filePath = `exports/${tenantId}/${exportId}.csv`;
           break;
         case 'EXCEL':
           buffer = await this.generateExcel(data, columns, exportRecord.reportType);
-          filePath = `exports/${tenantId}/${exportId}.xlsx`;
           break;
         case 'PDF':
           buffer = await this.generatePdf(exportRecord.reportType, data, columns);
-          filePath = `exports/${tenantId}/${exportId}.pdf`;
           break;
         default:
           throw new Error(`Unsupported export type: ${exportRecord.type}`);
       }
 
+      const ext = EXPORT_EXTENSIONS[exportRecord.type];
+      if (!ext) {
+        throw new Error(`Unsupported export type: ${exportRecord.type}`);
+      }
+
+      const result = await this.exportStorageService.writeExport(tenantId, exportId, ext, buffer);
+
       await this.prisma.reportExport.update({
         where: { id: exportId },
         data: {
           status: 'COMPLETED',
-          filePath,
-          fileSize: buffer.length,
+          filePath: result.relativePath,
+          fileSize: result.fileSize,
           completedAt: new Date(),
         },
       });
 
-      this.logger.log(`Export ${exportId} completed for tenant ${tenantId}`);
-      return { processed: true, exportId, filePath, fileSize: buffer.length };
+      const scheduledReportId = job.data.payload?.scheduledReportId as string | undefined;
+      if (scheduledReportId) {
+        this.eventEmitter.emit('report-export.completed', {
+          tenantId,
+          exportId,
+          filePath: result.relativePath,
+          absolutePath: result.absolutePath,
+          fileSize: result.fileSize,
+          type: exportRecord.type,
+          scheduledReportId,
+        });
+      }
+
+      this.logger.log(
+        `Export ${exportId} completed for tenant ${tenantId} (${result.fileSize} bytes)`,
+      );
+      return {
+        processed: true,
+        exportId,
+        filePath: result.relativePath,
+        fileSize: result.fileSize,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Export processing failed';
       await this.prisma.reportExport.update({
@@ -155,20 +186,33 @@ export class ExportEngineService {
     };
   }
 
-  async downloadExport(tenantId: string, exportId: string) {
+  async getExportFile(tenantId: string, exportId: string) {
     const exportRecord = await this.prisma.reportExport.findFirst({
       where: { id: exportId, tenantId, deletedAt: null },
     });
     if (!exportRecord) throw new NotFoundException('Export not found');
     if (exportRecord.status !== 'COMPLETED')
       throw new NotFoundException('Export not yet completed');
+
+    const ext = EXPORT_EXTENSIONS[exportRecord.type];
+    if (!ext) throw new NotFoundException('Export not found');
+
+    const relativePath = exportRecord.filePath ?? `${tenantId}/${exportId}.${ext}`;
+    const data = await this.exportStorageService.readExport(tenantId, relativePath);
+
     return {
-      filePath: exportRecord.filePath,
-      fileSize: exportRecord.fileSize,
-      type: exportRecord.type,
-      reportType: exportRecord.reportType,
-      completedAt: exportRecord.completedAt,
+      data,
+      contentType: EXPORT_MIME_TYPES[exportRecord.type],
+      fileName: `${exportId}.${ext}`,
     };
+  }
+
+  async downloadExport(tenantId: string, exportId: string) {
+    const { data, contentType, fileName } = await this.getExportFile(tenantId, exportId);
+    return new StreamableFile(data, {
+      type: contentType,
+      disposition: `attachment; filename="${fileName}"`,
+    });
   }
 
   generateCsv(data: Record<string, unknown>[], columns: { key: string; header: string }[]): string {

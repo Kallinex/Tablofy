@@ -77,6 +77,34 @@ export class RecipesProcessor {
     }
   }
 
+  @OnEvent('payments.refunded')
+  async onPaymentsRefunded(payload: {
+    orderId: string;
+    tenantId: string;
+    paymentId: string;
+    amount?: number | string;
+    amountRefunded?: number | string;
+  }) {
+    this.logger.log(`Payment refunded event received: ${payload.paymentId}`);
+    if (!payload.orderId || !payload.tenantId || !payload.paymentId) {
+      this.logger.warn('payments.refunded event missing required fields; skipping reversal');
+      return;
+    }
+    try {
+      await this.recipesService.reverseConsumptionForRefund({
+        tenantId: payload.tenantId,
+        orderId: payload.orderId,
+        paymentId: payload.paymentId,
+        amount: payload.amount != null ? Number(payload.amount) : 0,
+        amountRefunded: payload.amountRefunded != null ? Number(payload.amountRefunded) : undefined,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Consumption reversal failed for payment ${payload.paymentId}: ${(error as Error).message}`,
+      );
+    }
+  }
+
   private async handleInventoryDeduction(job: Job<QueueJobData>) {
     const { tenantId, payload } = job.data;
     const orderId = payload.orderId as string;

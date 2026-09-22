@@ -195,6 +195,7 @@ describe('Order CRUD — Integration', () => {
       prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
         const tx = {
           order: {
+            findFirst: jest.fn().mockResolvedValue(draftOrder),
             updateMany: jest.fn().mockResolvedValue({ count: 1 }),
             findUnique: jest.fn().mockResolvedValue({
               ...draftOrder,

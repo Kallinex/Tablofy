@@ -2,6 +2,21 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { RedisService } from '../../redis/redis.service';
 
+export interface UsageItem {
+  productId?: string;
+  quantity: number;
+}
+
+export interface OrderCreatedEvent {
+  tenantId: string;
+  restaurantId: string;
+  items: UsageItem[];
+  orderId?: string;
+  orderNumber?: number;
+  productId?: string;
+  quantity?: number;
+}
+
 @Injectable()
 export class UsageTrackingService implements OnModuleInit {
   private readonly logger = new Logger(UsageTrackingService.name);
@@ -16,32 +31,67 @@ export class UsageTrackingService implements OnModuleInit {
   }
 
   @OnEvent('order.created')
-  async trackOrderCreated(payload: {
-    tenantId: string;
-    restaurantId: string;
-    productId?: string;
-    quantity: number;
-  }) {
-    const { tenantId, restaurantId, productId, quantity } = payload;
+  async trackOrderCreated(payload: OrderCreatedEvent) {
+    const { tenantId, restaurantId } = payload;
+
+    if (!tenantId || !restaurantId) {
+      this.logger.warn('Ignoring order.created event without tenant/restaurant for usage tracking');
+      return;
+    }
+
+    const items = this.resolveUsageItems(payload);
+    if (items.length === 0) {
+      this.logger.warn('Ignoring order.created event without usage items');
+      return;
+    }
+
+    const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+    if (totalQuantity <= 0) {
+      this.logger.warn('Ignoring order.created event with non-positive quantity');
+      return;
+    }
 
     const client = await this.redisService.getClient();
 
     // Track total orders per restaurant
-    await client.incrby(`usage:${tenantId}:${restaurantId}:orders:count`, quantity);
+    await client.incrby(`usage:${tenantId}:${restaurantId}:orders:count`, totalQuantity);
 
     // Track orders per product if productId provided
-    if (productId) {
-      await client.incrby(
-        `usage:${tenantId}:${restaurantId}:products:${productId}:count`,
-        quantity,
-      );
+    for (const item of items) {
+      if (item.productId) {
+        await client.incrby(
+          `usage:${tenantId}:${restaurantId}:products:${item.productId}:count`,
+          item.quantity,
+        );
+      }
     }
 
     // Track daily orders (TTL 45 days)
     const dateKey = new Date().toISOString().split('T')[0];
     const dailyKey = `usage:${tenantId}:${restaurantId}:orders:daily:${dateKey}`;
-    await client.incrby(dailyKey, quantity);
+    await client.incrby(dailyKey, totalQuantity);
     await client.expire(dailyKey, 45 * 24 * 60 * 60);
+  }
+
+  private resolveUsageItems(payload: OrderCreatedEvent): UsageItem[] {
+    if (Array.isArray(payload.items) && payload.items.length > 0) {
+      return payload.items.filter(
+        (item) =>
+          item &&
+          (item.productId === undefined || typeof item.productId === 'string') &&
+          typeof item.quantity === 'number' &&
+          Number.isFinite(item.quantity) &&
+          item.quantity > 0,
+      );
+    }
+    if (
+      typeof payload.quantity === 'number' &&
+      Number.isFinite(payload.quantity) &&
+      payload.quantity > 0
+    ) {
+      return [{ productId: payload.productId, quantity: payload.quantity }];
+    }
+    return [];
   }
 
   async getOrderCount(tenantId: string, restaurantId: string): Promise<number> {

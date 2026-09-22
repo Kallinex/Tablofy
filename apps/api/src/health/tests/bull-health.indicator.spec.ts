@@ -34,7 +34,8 @@ describe('BullHealthIndicator', () => {
 
   it('monitors all configured queues, not a hardcoded subset (D4)', () => {
     const monitored = QUEUE_NAMES;
-    expect(monitored).toHaveLength(21);
+    expect(monitored).toHaveLength(20);
+    expect(monitored).not.toContain('scheduled-reports');
     for (const name of [
       'webhook-delivery',
       'webhook-retry',

@@ -1,6 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { EmailProcessor } from '../email.processor';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 const mockSendMail = jest.fn();
 const mockCreateTransport = jest.fn(() => ({ sendMail: mockSendMail }));
@@ -159,5 +162,127 @@ describe('EmailProcessor', () => {
 
     const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join(' ');
     expect(allLogs).not.toContain('super-secret-pass');
+  });
+
+  describe('attachments', () => {
+    let tempRoot: string;
+
+    beforeEach(async () => {
+      tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'email-attach-'));
+      configMap['EXPORT_DIR'] = tempRoot;
+    });
+
+    afterEach(async () => {
+      await fs.promises.rm(tempRoot, { recursive: true, force: true });
+    });
+
+    it('attaches a real file from disk to the email', async () => {
+      const filePath = path.join(tempRoot, 'report.csv');
+      const content = Buffer.from('id,status\r\n1,PAID\r\n');
+      await fs.promises.writeFile(filePath, content);
+
+      const job = makeJob({
+        payload: {
+          to: 'owner@example.com',
+          subject: 'Scheduled report',
+          body: 'Ready',
+          attachments: [{ filename: 'report.csv', path: filePath, contentType: 'text/csv' }],
+        },
+      });
+
+      await processor.process(job);
+
+      const sendCall = mockSendMail.mock.calls[0][0];
+      expect(sendCall.attachments).toEqual([
+        {
+          filename: 'report.csv',
+          content: Buffer.from('id,status\r\n1,PAID\r\n'),
+          contentType: 'text/csv',
+        },
+      ]);
+    });
+
+    it('supports inline content attachments without touching disk', async () => {
+      const job = makeJob({
+        payload: {
+          to: 'a@b.com',
+          subject: 'S',
+          body: 'B',
+          attachments: [{ filename: 'a.csv', content: Buffer.from('x') }],
+        },
+      });
+
+      await processor.process(job);
+
+      expect(mockSendMail.mock.calls[0][0].attachments).toEqual([
+        { filename: 'a.csv', content: Buffer.from('x'), contentType: undefined },
+      ]);
+    });
+
+    it('fails explicitly when an attachment file is missing (so the job retries)', async () => {
+      const job = makeJob({
+        payload: {
+          to: 'a@b.com',
+          subject: 'S',
+          body: 'B',
+          attachments: [{ filename: 'missing.csv', path: path.join(tempRoot, 'missing.csv') }],
+        },
+      });
+
+      await expect(processor.process(job)).rejects.toThrow(
+        'Email attachment file is missing: ' + path.join(tempRoot, 'missing.csv'),
+      );
+      expect(mockSendMail).not.toHaveBeenCalled();
+    });
+
+    it('fails explicitly when an attachment file is empty', async () => {
+      const filePath = path.join(tempRoot, 'empty.csv');
+      await fs.promises.writeFile(filePath, '');
+
+      const job = makeJob({
+        payload: {
+          to: 'a@b.com',
+          subject: 'S',
+          body: 'B',
+          attachments: [{ filename: 'empty.csv', path: filePath }],
+        },
+      });
+
+      await expect(processor.process(job)).rejects.toThrow('missing or empty');
+      expect(mockSendMail).not.toHaveBeenCalled();
+    });
+
+    it('rejects an attachment path outside the export root', async () => {
+      const outside = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'email-outside-'));
+      try {
+        const job = makeJob({
+          payload: {
+            to: 'a@b.com',
+            subject: 'S',
+            body: 'B',
+            attachments: [{ filename: 'secret.txt', path: path.join(outside, 'secret.txt') }],
+          },
+        });
+
+        await expect(processor.process(job)).rejects.toThrow('Email attachment path is invalid');
+        expect(mockSendMail).not.toHaveBeenCalled();
+      } finally {
+        await fs.promises.rm(outside, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects an empty or non-string attachment path', async () => {
+      const job = makeJob({
+        payload: {
+          to: 'a@b.com',
+          subject: 'S',
+          body: 'B',
+          attachments: [{ filename: 'x.csv', path: '' }],
+        },
+      });
+
+      await expect(processor.process(job)).rejects.toThrow('Email attachment path is invalid');
+      expect(mockSendMail).not.toHaveBeenCalled();
+    });
   });
 });

@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException, BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
 import { AuthService } from '../auth.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { RedisService } from '../../../redis/redis.service';
@@ -301,6 +302,98 @@ describe('AuthService', () => {
 
       await expect(service.refreshTokens('revoked-token')).rejects.toThrow(UnauthorizedException);
     });
+
+    it('should hash the presented token before database lookup', async () => {
+      const fakeUser = buildUser({ status: 'ACTIVE' });
+      const storedToken = {
+        id: 'token-1',
+        token: createHash('sha256').update('valid-refresh-token').digest('hex'),
+        userId: fakeUser.id,
+        user: fakeUser,
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 86400000),
+        userAgent: null,
+        ipAddress: null,
+        createdAt: new Date(),
+      };
+      prisma.refreshToken.findUnique.mockResolvedValue(storedToken);
+      jwtService.sign.mockReturnValue('new-access-token');
+      prisma.refreshToken.create.mockResolvedValue({ token: 'new-refresh-token' } as never);
+
+      await service.refreshTokens('valid-refresh-token');
+
+      expect(prisma.refreshToken.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { token: createHash('sha256').update('valid-refresh-token').digest('hex') },
+        }),
+      );
+    });
+
+    it('should reject an expired refresh token', async () => {
+      const storedToken = {
+        id: 'token-1',
+        token: 'expired-token',
+        userId: 'user-1',
+        user: buildUser({ status: 'ACTIVE' }),
+        revokedAt: null,
+        expiresAt: new Date(Date.now() - 1000),
+        userAgent: null,
+        ipAddress: null,
+        createdAt: new Date(),
+      };
+      prisma.refreshToken.findUnique.mockResolvedValue(storedToken);
+
+      await expect(service.refreshTokens('expired-token')).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('refresh token storage (P1-04)', () => {
+    const loginSetup = () => {
+      const fakeUser = buildUser({
+        email: 'user@test.com',
+        password: 'hashed-password',
+        status: 'ACTIVE',
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      });
+      prisma.user.findFirst.mockResolvedValue(fakeUser);
+      prisma.tenant.findUnique.mockResolvedValue({
+        id: fakeUser.tenantId,
+        status: 'ACTIVE',
+        subscription: { status: 'ACTIVE' },
+      });
+      prisma.user.update.mockResolvedValue(fakeUser);
+      jwtService.sign.mockReturnValue('mock-token');
+      prisma.refreshToken.create.mockResolvedValue({ token: 'mock-refresh' } as never);
+      return fakeUser;
+    };
+
+    it('persists only the SHA-256 digest of the refresh token, never the raw value', async () => {
+      loginSetup();
+
+      const result = await service.login('user@test.com', 'CorrectPass123!');
+
+      const raw = result.tokens.refreshToken;
+      expect(raw).toMatch(/^[0-9a-f]{80}$/);
+
+      const createCall = prisma.refreshToken.create.mock.calls[0][0] as {
+        data: { token: string };
+      };
+      expect(createCall.data.token).toBe(createHash('sha256').update(raw).digest('hex'));
+      expect(createCall.data.token).not.toBe(raw);
+      expect(createCall.data.token).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('does not write the raw refresh token to logs or session metadata', async () => {
+      loginSetup();
+
+      const result = await service.login('user@test.com', 'CorrectPass123!');
+      const raw = result.tokens.refreshToken;
+
+      expect(JSON.stringify(prisma.refreshToken.create.mock.calls)).not.toContain(raw);
+      expect(JSON.stringify(redis.setSession.mock.calls)).not.toContain(raw);
+      expect(JSON.stringify(auditLogs.log.mock.calls)).not.toContain(raw);
+    });
   });
 
   describe('logout', () => {
@@ -314,6 +407,22 @@ describe('AuthService', () => {
       expect(redis.blacklistToken).not.toHaveBeenCalled();
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'USER_LOGOUT' }),
+      );
+    });
+
+    it('should hash the refresh token in the revocation query', async () => {
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 } as never);
+
+      await service.logout('user-1', 'refresh-token');
+
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            token: createHash('sha256').update('refresh-token').digest('hex'),
+            userId: 'user-1',
+            revokedAt: null,
+          },
+        }),
       );
     });
 

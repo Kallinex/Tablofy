@@ -48,7 +48,6 @@ const QUEUE_JOB_OPTIONS: Record<string, QueueJobOptions> = {
   kitchen: { attempts: 3, timeout: 60000 },
   'export-engine': { attempts: 2, timeout: 300000 },
   'forecast-generation': { attempts: 2, timeout: 600000 },
-  'scheduled-reports': { attempts: 2, timeout: 300000 },
   'warehouse-analytics': { attempts: 2, timeout: 300000 },
   'supplier-performance-calculation': { attempts: 2, timeout: 300000 },
   'daily-valuation': { attempts: 2, timeout: 300000 },

@@ -117,7 +117,17 @@ describe('OrdersService', () => {
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'ORDER_CREATED' }),
       );
-      expect(eventEmitter.emit).toHaveBeenCalledWith('order.created', expect.any(Object));
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'order.created',
+        expect.objectContaining({
+          tenantId: testTenantId,
+          orderId: 'order-1',
+          restaurantId: 'restaurant-1',
+          items: expect.arrayContaining([
+            expect.objectContaining({ productId: 'product-1', quantity: 2 }),
+          ]),
+        }),
+      );
       expect(cache.deletePattern).toHaveBeenCalledWith(testTenantId, expect.any(String));
       expect(metrics.incrementOrdersCreated).toHaveBeenCalled();
     });
@@ -782,6 +792,7 @@ describe('OrdersService', () => {
           order: {
             update: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'PENDING' }),
             updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findFirst: jest.fn().mockResolvedValue({ ...fakeOrder, version: 1 }),
             findUnique: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'PENDING' }),
           },
           orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
@@ -811,6 +822,7 @@ describe('OrdersService', () => {
           order: {
             update: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
             updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findFirst: jest.fn().mockResolvedValue({ ...fakeOrder, version: 1 }),
             findUnique: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
           },
           orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
@@ -826,6 +838,225 @@ describe('OrdersService', () => {
       );
 
       expect(metrics.incrementOrdersCompleted).toHaveBeenCalled();
+    });
+
+    it('should allow COMPLETED when fully paid (paidAmount >= total)', async () => {
+      const fakeOrder = buildOrder({
+        id: 'order-1',
+        status: 'SERVED',
+        total: 100,
+        paidAmount: 100,
+      });
+      prisma.order.findFirst.mockResolvedValue(fakeOrder);
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            update: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findFirst: jest.fn().mockResolvedValue({ ...fakeOrder, version: 1 }),
+            findUnique: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
+
+      const result = await service.changeStatus(
+        'order-1',
+        { status: 'COMPLETED', reason: 'Paid' },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(result).toBeDefined();
+      expect(prisma.$transaction).toHaveBeenCalled();
+    });
+
+    it('should allow COMPLETED when total is zero (free order)', async () => {
+      const fakeOrder = buildOrder({ id: 'order-1', status: 'SERVED', total: 0, paidAmount: 0 });
+      prisma.order.findFirst.mockResolvedValue(fakeOrder);
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            update: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findFirst: jest.fn().mockResolvedValue({ ...fakeOrder, version: 1 }),
+            findUnique: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
+
+      const result = await service.changeStatus(
+        'order-1',
+        { status: 'COMPLETED' },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(result).toBeDefined();
+    });
+
+    it.each([
+      ['pending payment', 0],
+      ['failed payment', 0],
+      ['insufficient partial payment', 60],
+    ])('should reject COMPLETED when only a %s is recorded', async (_label, paidAmount) => {
+      const fakeOrder = buildOrder({
+        id: 'order-1',
+        status: 'SERVED',
+        total: 100,
+        paidAmount,
+      });
+      prisma.order.findFirst.mockResolvedValue(fakeOrder);
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            update: jest.fn(),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findFirst: jest.fn().mockResolvedValue({ ...fakeOrder, version: 1 }),
+            findUnique: jest.fn(),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
+
+      await expect(
+        service.changeStatus('order-1', { status: 'COMPLETED' }, testTenantId, testUserId),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(metrics.incrementOrdersCompleted).not.toHaveBeenCalled();
+    });
+
+    it('should allow COMPLETED when split payments total the full amount', async () => {
+      const fakeOrder = buildOrder({
+        id: 'order-1',
+        status: 'SERVED',
+        total: 100,
+        paidAmount: 100,
+      });
+      prisma.order.findFirst.mockResolvedValue(fakeOrder);
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            update: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findFirst: jest.fn().mockResolvedValue({ ...fakeOrder, version: 1 }),
+            findUnique: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
+
+      const result = await service.changeStatus(
+        'order-1',
+        { status: 'COMPLETED' },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(result).toBeDefined();
+    });
+
+    it('should fail safely on concurrent completion (version CAS conflict)', async () => {
+      const fakeOrder = buildOrder({
+        id: 'order-1',
+        status: 'SERVED',
+        total: 100,
+        paidAmount: 100,
+        version: 1,
+      });
+      prisma.order.findFirst.mockResolvedValue(fakeOrder);
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            update: jest.fn(),
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+            findFirst: jest.fn().mockResolvedValue({ ...fakeOrder, version: 1 }),
+            findUnique: jest.fn(),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
+
+      await expect(
+        service.changeStatus('order-1', { status: 'COMPLETED' }, testTenantId, testUserId),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should reject COMPLETED when a concurrent refund left the fresh order underpaid (F-001)', async () => {
+      const fakeOrder = buildOrder({
+        id: 'order-1',
+        status: 'SERVED',
+        total: 100,
+        paidAmount: 100,
+        version: 1,
+      });
+      prisma.order.findFirst.mockResolvedValue(fakeOrder);
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            update: jest.fn(),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findFirst: jest.fn().mockResolvedValue({ ...fakeOrder, paidAmount: 40, version: 2 }),
+            findUnique: jest.fn(),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
+
+      await expect(
+        service.changeStatus('order-1', { status: 'COMPLETED' }, testTenantId, testUserId),
+      ).rejects.toThrow(BadRequestException);
+      expect(metrics.incrementOrdersCompleted).not.toHaveBeenCalled();
+    });
+
+    it('should gate and CAS on the fresh in-transaction order version (F-001)', async () => {
+      const fakeOrder = buildOrder({
+        id: 'order-1',
+        status: 'SERVED',
+        total: 100,
+        paidAmount: 100,
+        version: 1,
+      });
+      prisma.order.findFirst.mockResolvedValue(fakeOrder);
+      let verWhere: Record<string, unknown> | undefined;
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            update: jest.fn(),
+            updateMany: jest.fn().mockImplementation(({ where }: { where: unknown }) => {
+              if (verWhere === undefined) {
+                verWhere = where as Record<string, unknown>;
+              }
+              return { count: 1 };
+            }),
+            findFirst: jest.fn().mockResolvedValue({ ...fakeOrder, version: 7 }),
+            findUnique: jest
+              .fn()
+              .mockResolvedValue({ ...fakeOrder, status: 'COMPLETED', version: 8 }),
+          },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
+
+      await service.changeStatus('order-1', { status: 'COMPLETED' }, testTenantId, testUserId);
+      expect(verWhere).toMatchObject({ id: 'order-1', version: 7 });
+    });
+
+    it('should reject cross-tenant completion (tenant isolation)', async () => {
+      prisma.order.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.changeStatus('order-1', { status: 'COMPLETED' }, 'tenant-other', testUserId),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

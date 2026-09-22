@@ -38,6 +38,13 @@ class PaymentAlreadyFinalizedError extends Error {
   }
 }
 
+class PaymentAmountMismatchError extends Error {
+  constructor(expected: string, reported: string) {
+    super(`Webhook amount mismatch: gateway reported ${reported}, expected ${expected}`);
+    this.name = 'PaymentAmountMismatchError';
+  }
+}
+
 interface SplitProviderOutcome {
   paymentId: string;
   outcome: 'completed' | 'failed' | 'pending';
@@ -579,6 +586,20 @@ export class PaymentsService {
         throw new ConflictException('Payment was already refunded by another operation');
       }
 
+      const freshOrder = await tx.order.findFirst({
+        where: { id: payment.orderId, tenantId, deletedAt: null },
+      });
+      if (!freshOrder) {
+        throw new NotFoundException('Order not found');
+      }
+      const orderVerResult = await tx.order.updateMany({
+        where: { id: payment.orderId, version: freshOrder.version },
+        data: { version: { increment: 1 } },
+      });
+      if (orderVerResult.count === 0) {
+        throw new ConflictException('Order was modified by another user. Please retry.');
+      }
+
       await tx.order.update({
         where: { id: payment.orderId },
         data: {
@@ -609,6 +630,8 @@ export class PaymentsService {
       tenantId,
       orderId: payment.orderId,
       paymentId,
+      amount: payment.amount,
+      amountRefunded: payment.amount,
     });
 
     return this.toResponseDto(result);
@@ -681,6 +704,20 @@ export class PaymentsService {
         );
       }
 
+      const freshOrder = await tx.order.findFirst({
+        where: { id: payment.orderId, tenantId, deletedAt: null },
+      });
+      if (!freshOrder) {
+        throw new NotFoundException('Order not found');
+      }
+      const orderVerResult = await tx.order.updateMany({
+        where: { id: payment.orderId, version: freshOrder.version },
+        data: { version: { increment: 1 } },
+      });
+      if (orderVerResult.count === 0) {
+        throw new ConflictException('Order was modified by another user. Please retry.');
+      }
+
       await tx.order.update({
         where: { id: payment.orderId },
         data: {
@@ -714,6 +751,8 @@ export class PaymentsService {
       tenantId,
       orderId: payment.orderId,
       paymentId,
+      amount: dto.amount,
+      amountRefunded: alreadyRefunded + dto.amount,
     });
 
     return this.toResponseDto(result);
@@ -1219,6 +1258,269 @@ export class PaymentsService {
     };
   }
 
+  /**
+   * P1-02: Automatic reconciliation of payments stuck in PENDING.
+   *
+   * Gateway lookups (network I/O) happen strictly OUTSIDE any database
+   * transaction. Only the outcome decided from the gateway response is written
+   * inside a CAS-guarded transaction (reusing finalizeSucceededPayment), so a
+   * concurrent webhook/charge finalization can never double-credit an order.
+   *
+   * Safe rules:
+   * - gateway 'succeeded' + amount match  -> credit order (CAS on PENDING row)
+   * - gateway 'succeeded' + amount mismatch -> DO NOT credit; leave PENDING and
+   *   record the discrepancy so an operator can investigate
+   * - gateway 'failed'                    -> mark FAILED
+   * - gateway 'pending'/'processing'      -> leave PENDING, record attempt
+   * - network/timeout/unknown             -> DO NOT auto-fail; leave PENDING and
+   *   record attempt (retried on the next scheduled run)
+   */
+  async reconcilePendingPayments(options?: { max?: number; staleAfterMs?: number }): Promise<{
+    scanned: number;
+    completed: number;
+    failed: number;
+    mismatched: number;
+    keptPending: number;
+    errored: number;
+  }> {
+    const staleAfterMs = options?.staleAfterMs ?? 15 * 60 * 1000;
+    const max = options?.max ?? 50;
+    const cutoff = new Date(Date.now() - staleAfterMs);
+
+    const candidates = await this.prisma.payment.findMany({
+      where: {
+        status: PaymentStatus.PENDING,
+        createdAt: { lte: cutoff },
+        gatewayRef: { not: null },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: max,
+    });
+
+    const summary = {
+      scanned: candidates.length,
+      completed: 0,
+      failed: 0,
+      mismatched: 0,
+      keptPending: 0,
+      errored: 0,
+    };
+
+    for (const payment of candidates) {
+      const outcome = await this.resolvePendingPayment(payment);
+      if (outcome === 'completed') summary.completed += 1;
+      else if (outcome === 'failed') summary.failed += 1;
+      else if (outcome === 'mismatched') summary.mismatched += 1;
+      else if (outcome === 'errored') summary.errored += 1;
+      else summary.keptPending += 1;
+    }
+
+    return summary;
+  }
+
+  private async resolvePendingPayment(
+    payment: Prisma.PaymentGetPayload<Record<string, never>>,
+  ): Promise<'completed' | 'failed' | 'mismatched' | 'errored' | 'kept'> {
+    const provider = this.getProviderForMethod(payment.method);
+    if (!provider || provider.mode === 'mock') {
+      return 'kept';
+    }
+
+    let statusResult: Awaited<ReturnType<PaymentProvider['getPaymentStatus']>>;
+    try {
+      statusResult = await provider.getPaymentStatus(payment.gatewayRef as string);
+    } catch (error) {
+      this.logger.warn(
+        `[Reconcile] status lookup error for payment ${payment.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      await this.recordReconcileAttempt(payment.id, 'status-lookup-error');
+      return 'errored';
+    }
+
+    if (!statusResult || !statusResult.success || !statusResult.data) {
+      await this.recordReconcileAttempt(
+        payment.id,
+        statusResult?.error ? String(statusResult.error) : 'unknown-error',
+      );
+      return 'errored';
+    }
+
+    const gatewayStatus = statusResult.data.status;
+
+    if (gatewayStatus === 'succeeded') {
+      const expectedCents = Math.round(Number(payment.amount) * 100);
+      const actualCents = this.gatewayAmountCents(provider, Number(statusResult.data.amount ?? 0));
+      if (Math.abs(actualCents - expectedCents) > 1) {
+        this.logger.warn(
+          `[Reconcile] amount mismatch for payment ${payment.id}: expected ${expectedCents} cents, gateway reports ${actualCents} cents`,
+        );
+        await this.auditLogsService.log({
+          action: 'PAYMENT_RECONCILE_MISMATCH',
+          resource: 'Payment',
+          resourceId: payment.id,
+          userId: 'system',
+          tenantId: payment.tenantId,
+          newValues: {
+            expectedCents,
+            gatewayCents: actualCents,
+            gatewayRef: payment.gatewayRef,
+          },
+        });
+        await this.recordReconcileAttempt(payment.id, 'amount-mismatch');
+        return 'mismatched';
+      }
+      return this.resolveSucceededPayment(payment);
+    }
+
+    if (gatewayStatus === 'failed') {
+      const claimed = await this.prisma.payment.updateMany({
+        where: { id: payment.id, status: PaymentStatus.PENDING },
+        data: { status: PaymentStatus.FAILED },
+      });
+      if (claimed.count === 0) {
+        return 'kept';
+      }
+      await this.auditLogsService.log({
+        action: 'PAYMENT_RECONCILE_FAILED',
+        resource: 'Payment',
+        resourceId: payment.id,
+        userId: 'system',
+        tenantId: payment.tenantId,
+        newValues: {
+          status: PaymentStatus.FAILED,
+          gatewayStatus,
+          gatewayRef: payment.gatewayRef,
+        },
+      });
+      this.metricsService.incrementPaymentsFailed();
+      this.eventEmitter.emit('payments.failed', {
+        tenantId: payment.tenantId,
+        orderId: payment.orderId,
+        paymentId: payment.id,
+      });
+      return 'failed';
+    }
+
+    await this.recordReconcileAttempt(payment.id, `gateway-status:${gatewayStatus}`);
+    return 'kept';
+  }
+
+  private async resolveSucceededPayment(
+    payment: Prisma.PaymentGetPayload<Record<string, never>>,
+  ): Promise<'completed' | 'errored' | 'kept'> {
+    const order = await this.prisma.order.findFirst({
+      where: { id: payment.orderId, tenantId: payment.tenantId, deletedAt: null },
+    });
+    if (!order) {
+      this.logger.warn(
+        `[Reconcile] order ${payment.orderId} not found for payment ${payment.id}; not crediting`,
+      );
+      await this.recordReconcileAttempt(payment.id, 'order-not-found');
+      return 'errored';
+    }
+
+    try {
+      await this.prisma.$transaction((tx) =>
+        this.finalizeSucceededPayment(
+          tx,
+          order.id,
+          order.tenantId,
+          order.status as OrderStatus,
+          payment.id,
+          Number(payment.amount),
+          Number(payment.tip),
+          payment.gatewayRef,
+          payment.gatewayData as Prisma.InputJsonValue,
+          'system',
+        ),
+      );
+    } catch (error) {
+      if (error instanceof PaymentAlreadyFinalizedError) {
+        this.logger.warn(
+          `[Reconcile] payment ${payment.id} already finalized concurrently; skipping`,
+        );
+        return 'kept';
+      }
+      if (error instanceof ConflictException || error instanceof NotFoundException) {
+        this.logger.warn(
+          `[Reconcile] could not finalize payment ${payment.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        await this.recordReconcileAttempt(payment.id, 'finalize-conflict');
+        return 'kept';
+      }
+      throw error;
+    }
+
+    await this.auditLogsService.log({
+      action: 'PAYMENT_RECONCILE_COMPLETED',
+      resource: 'Payment',
+      resourceId: payment.id,
+      userId: 'system',
+      tenantId: payment.tenantId,
+      newValues: { status: PaymentStatus.COMPLETED, gatewayRef: payment.gatewayRef },
+    });
+    this.metricsService.incrementPaymentsCompleted();
+    if (Number(order.paidAmount) + Number(payment.amount) >= Number(order.total)) {
+      this.metricsService.incrementOrdersCompleted();
+    }
+    this.metricsService.addRevenue(Math.round(Number(payment.amount) * 100));
+    this.eventEmitter.emit('payments.completed', {
+      tenantId: payment.tenantId,
+      orderId: payment.orderId,
+      paymentId: payment.id,
+    });
+    return 'completed';
+  }
+
+  /**
+   * Normalizes a gateway-reported amount into cents. Local payment amounts are
+   * always stored in major units (e.g. 10.00), Stripe reports intent.amount in
+   * cents, while Paymob's status endpoint returns major units (amount_cents/100).
+   */
+  private gatewayAmountCents(provider: ProviderLike, amount: number): number {
+    if (provider instanceof PaymobProvider) {
+      return Math.round(amount * 100);
+    }
+    return Math.round(amount);
+  }
+
+  private async recordReconcileAttempt(paymentId: string, note: string): Promise<void> {
+    try {
+      const current = await this.prisma.payment.findUnique({
+        where: { id: paymentId },
+        select: { gatewayData: true },
+      });
+      const base =
+        current?.gatewayData &&
+        typeof current.gatewayData === 'object' &&
+        !Array.isArray(current.gatewayData)
+          ? (current.gatewayData as Record<string, unknown>)
+          : {};
+      const attempts = typeof base.reconcileAttempts === 'number' ? base.reconcileAttempts : 0;
+      await this.prisma.payment.update({
+        where: { id: paymentId },
+        data: {
+          gatewayData: {
+            ...base,
+            reconcileAttempts: attempts + 1,
+            lastReconcileAt: new Date().toISOString(),
+            lastReconcileNote: note,
+          } as Prisma.InputJsonObject,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `[Reconcile] failed to record attempt for payment ${paymentId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   async getProviderForTenant(_tenantId: string): Promise<ProviderLike | null> {
     return this.providerRegistry.get('stripe') || null;
   }
@@ -1326,6 +1628,10 @@ export class PaymentsService {
           throw new ConflictException('Order was modified by another user. Please retry.');
         }
         const credited = amount && amount > 0 ? amount : Number(payment.amount);
+        const expectedAmount = Number(payment.amount);
+        if (Math.abs(credited - expectedAmount) > 0.02) {
+          throw new PaymentAmountMismatchError(expectedAmount.toFixed(2), credited.toFixed(2));
+        }
         const newTotalPaid = Number(fresh.paidAmount) + credited;
         const orderTotal = Number(fresh.total);
 
@@ -1359,6 +1665,11 @@ export class PaymentsService {
         this.logger.warn(
           `Webhook payment.succeeded: payment ${payment.id} already finalized; skipping`,
         );
+        return;
+      }
+      if (error instanceof PaymentAmountMismatchError) {
+        this.logger.error(`Webhook payment.succeeded: ${error.message}; refusing to credit`);
+        await this.recordReconcileAttempt(payment.id, error.message);
         return;
       }
       throw error;
@@ -1446,6 +1757,21 @@ export class PaymentsService {
       if (claimed.count === 0) {
         return;
       }
+      const freshOrder = await tx.order.findFirst({
+        where: { id: payment.orderId, tenantId: payment.tenantId, deletedAt: null },
+      });
+      if (!freshOrder) {
+        throw new NotFoundException(
+          `Webhook refund: order ${payment.orderId} not found for payment ${payment.id}`,
+        );
+      }
+      const orderVerResult = await tx.order.updateMany({
+        where: { id: payment.orderId, version: freshOrder.version },
+        data: { version: { increment: 1 } },
+      });
+      if (orderVerResult.count === 0) {
+        throw new ConflictException('Order was modified by another user. Please retry.');
+      }
       await tx.order.update({
         where: { id: payment.orderId },
         data: {
@@ -1467,6 +1793,8 @@ export class PaymentsService {
       tenantId: payment.tenantId,
       orderId: payment.orderId,
       paymentId: payment.id,
+      amount: delta,
+      amountRefunded: newTotalRefunded,
     });
   }
 

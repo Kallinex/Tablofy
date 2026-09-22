@@ -58,6 +58,10 @@ COPY --from=builder --chown=nestjs:nodejs /app/package.json ./package.json
 RUN mkdir -p /app/logs \
  && chown -R nestjs:nodejs /app/logs
 
+# Writable export storage directory for the non-root runtime user
+RUN mkdir -p /app/exports \
+ && chown -R nestjs:nodejs /app/exports
+
 USER nestjs
 
 EXPOSE 3000

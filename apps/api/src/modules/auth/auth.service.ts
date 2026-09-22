@@ -285,7 +285,7 @@ export class AuthService {
     meta?: { ipAddress?: string; userAgent?: string },
   ): Promise<TokenPair> {
     const storedToken = await this.prisma.refreshToken.findUnique({
-      where: { token: refreshTokenValue },
+      where: { token: this.hashToken(refreshTokenValue) },
       include: {
         user: {
           select: {
@@ -356,7 +356,7 @@ export class AuthService {
   ): Promise<void> {
     if (refreshTokenValue) {
       await this.prisma.refreshToken.updateMany({
-        where: { token: refreshTokenValue, userId, revokedAt: null },
+        where: { token: this.hashToken(refreshTokenValue), userId, revokedAt: null },
         data: { revokedAt: new Date() },
       });
     }
@@ -852,10 +852,12 @@ export class AuthService {
 
     const refreshExpiresAt = this.parseDuration(refreshExpiresIn);
 
-    const refreshTokenRecord = await this.prisma.refreshToken.create({
+    const refreshTokenValue = randomBytes(40).toString('hex');
+
+    await this.prisma.refreshToken.create({
       data: {
         userId: user.id,
-        token: randomBytes(40).toString('hex'),
+        token: this.hashToken(refreshTokenValue),
         userAgent: meta?.userAgent,
         ipAddress: meta?.ipAddress,
         expiresAt: refreshExpiresAt,
@@ -878,7 +880,7 @@ export class AuthService {
 
     return {
       accessToken,
-      refreshToken: refreshTokenRecord.token,
+      refreshToken: refreshTokenValue,
     };
   }
 
@@ -902,6 +904,10 @@ export class AuthService {
 
   private generateSecureToken(): string {
     return randomBytes(32).toString('hex');
+  }
+
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
   }
 
   private parseDuration(duration: string): Date {

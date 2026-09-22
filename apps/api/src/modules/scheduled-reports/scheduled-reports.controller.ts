@@ -61,6 +61,6 @@ export class ScheduledReportsController {
   @Roles('OWNER', 'MANAGER')
   @HttpCode(HttpStatus.ACCEPTED)
   async trigger(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
-    return this.scheduledReportsService.trigger(user.tenantId!, user.id, id);
+    return this.scheduledReportsService.trigger(user.tenantId!, id, user.id);
   }
 }

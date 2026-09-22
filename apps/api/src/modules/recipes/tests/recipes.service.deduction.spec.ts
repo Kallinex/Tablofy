@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { StockMovementType } from '@prisma/client';
+import { StockMovementType, ConsumptionPeriod } from '@prisma/client';
 import { RecipesService } from '../recipes.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
@@ -87,6 +87,9 @@ function makeTx(options: { inTxExisting?: unknown } = {}) {
     inventoryItem: {
       findUnique: jest.fn().mockResolvedValue(inventoryItem),
       update: jest.fn().mockResolvedValue(inventoryItem),
+    },
+    consumptionRecord: {
+      create: jest.fn().mockResolvedValue({ id: 'cr-new' }),
     },
   };
 }
@@ -378,6 +381,124 @@ describe('RecipesService.deductInventoryForOrder (F1 idempotency)', () => {
       BadRequestException,
     );
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  describe('P1-01 consumption records', () => {
+    it('writes one DAILY ORDER consumption record mirroring each deduction, inside the same tx', async () => {
+      const tx = makeTx();
+      prisma.$transaction.mockImplementation((cb: (t: TxShape) => unknown) => cb(tx));
+
+      const report = await service.deductInventoryForOrder('order-1', 'tenant-1');
+
+      expect(tx.stockMovement.create).toHaveBeenCalledTimes(1);
+      expect(tx.consumptionRecord.create).toHaveBeenCalledTimes(1);
+      expect(tx.consumptionRecord.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          inventoryItemId: 'inv-1',
+          tenantId: 'tenant-1',
+          quantity: 2,
+          unitCost: 6,
+          totalCost: 12,
+          period: ConsumptionPeriod.DAILY,
+          source: 'ORDER',
+          referenceId: 'order-1',
+        }),
+      });
+      expect(report.totalDeducted).toBe(2);
+    });
+
+    it('records the actually-deducted quantity (not the needed amount) on partial shortfall', async () => {
+      const tx = makeTx();
+      tx.inventoryItem.findUnique.mockResolvedValue({
+        ...inventoryItem,
+        currentQuantity: 1,
+        availableQuantity: 1,
+      });
+      prisma.$transaction.mockImplementation((cb: (t: TxShape) => unknown) => cb(tx));
+
+      await service.deductInventoryForOrder('order-1', 'tenant-1');
+
+      expect(tx.consumptionRecord.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ quantity: 1, unitCost: 6, totalCost: 6 }),
+      });
+    });
+
+    it('does not duplicate records when a concurrent claim already deducted the order', async () => {
+      const txInstances: TxShape[] = [];
+      let committed = false;
+      let committedMovement: unknown = null;
+      let lock: Promise<void> = Promise.resolve();
+
+      prisma.$transaction.mockImplementation(async (cb: (t: TxShape) => unknown) => {
+        const previous = lock;
+        let release!: () => void;
+        lock = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        await previous;
+        const tx = makeTx({
+          inTxExisting: committed ? committedMovement : null,
+        });
+        tx.stockMovement.create.mockImplementation((args: { data?: Record<string, unknown> }) => {
+          committed = true;
+          committedMovement = { ...movement, ...(args.data ?? {}) };
+          return Promise.resolve({ id: 'sm-new' });
+        });
+        txInstances.push(tx);
+        try {
+          return await cb(tx);
+        } finally {
+          release();
+        }
+      });
+
+      await Promise.all([
+        service.deductInventoryForOrder('order-1', 'tenant-1'),
+        service.deductInventoryForOrder('order-1', 'tenant-1'),
+      ]);
+
+      const recordCalls = txInstances.reduce(
+        (total, t) => total + t.consumptionRecord.create.mock.calls.length,
+        0,
+      );
+      expect(recordCalls).toBe(1);
+    });
+
+    it('writes a record for each tenant independently for the same order id', async () => {
+      prisma.order.findFirst.mockImplementation((args: { where: { tenantId: string } }) =>
+        Promise.resolve({
+          ...order,
+          tenantId: args.where.tenantId,
+          branchId: args.where.tenantId === 'tenant-2' ? 'branch-2' : 'branch-1',
+        }),
+      );
+      const txInstances: TxShape[] = [];
+      prisma.$transaction.mockImplementation(async (cb: (t: TxShape) => unknown) => {
+        const tx = makeTx();
+        txInstances.push(tx);
+        return cb(tx);
+      });
+
+      await Promise.all([
+        service.deductInventoryForOrder('order-1', 'tenant-1'),
+        service.deductInventoryForOrder('order-1', 'tenant-2'),
+      ]);
+
+      const tenants = txInstances
+        .flatMap((t) =>
+          t.consumptionRecord.create.mock.calls.map((c) => c[0].data.tenantId as string),
+        )
+        .sort();
+      expect(tenants).toEqual(['tenant-1', 'tenant-2']);
+    });
+
+    it('does not write consumption records on the idempotent no-op path', async () => {
+      prisma.stockMovement.findMany.mockResolvedValue([movement]);
+
+      await service.deductInventoryForOrder('order-1', 'tenant-1');
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
   });
 
   describe('isOrderCompletedForDeduction', () => {

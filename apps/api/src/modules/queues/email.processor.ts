@@ -4,12 +4,22 @@ import { QueueService, QueueJobData } from './queue.service';
 import { Job } from 'bullmq';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
+import * as fs from 'fs';
+import * as path from 'path';
+
+interface EmailAttachment {
+  filename: string;
+  path?: string;
+  content?: Buffer;
+  contentType?: string;
+}
 
 interface EmailPayload {
   to: string;
   subject: string;
   body: string;
   html?: string;
+  attachments?: EmailAttachment[];
 }
 
 @Injectable()
@@ -60,7 +70,13 @@ export class EmailProcessor implements OnModuleInit {
 
   async process(job: Job<QueueJobData>): Promise<{ sent: boolean; to: string }> {
     const { tenantId, payload } = job.data;
-    const { to, subject, body, html } = payload as unknown as EmailPayload;
+    const {
+      to,
+      subject,
+      body,
+      html,
+      attachments: rawAttachments,
+    } = payload as unknown as EmailPayload;
 
     if (!to || !subject) {
       throw new Error('Email job is missing required payload fields (to, subject)');
@@ -76,12 +92,31 @@ export class EmailProcessor implements OnModuleInit {
       );
     }
 
+    const attachments: nodemailer.SendMailOptions['attachments'] = [];
+    for (const attachment of rawAttachments ?? []) {
+      if (attachment.path !== undefined && attachment.path !== null) {
+        const content = await this.readAttachment(attachment.path);
+        attachments.push({
+          filename: attachment.filename,
+          content,
+          contentType: attachment.contentType,
+        });
+      } else if (attachment.content) {
+        attachments.push({
+          filename: attachment.filename,
+          content: attachment.content,
+          contentType: attachment.contentType,
+        });
+      }
+    }
+
     const info = await transporter.sendMail({
       from,
       to,
       subject,
       text: body,
       html,
+      ...(attachments.length > 0 ? { attachments } : {}),
     });
 
     this.logger.log(
@@ -90,5 +125,31 @@ export class EmailProcessor implements OnModuleInit {
     await job.updateProgress(100);
 
     return { sent: true, to };
+  }
+
+  private async readAttachment(filePath: string): Promise<Buffer> {
+    if (typeof filePath !== 'string' || filePath.length === 0) {
+      throw new Error('Email attachment path is invalid');
+    }
+
+    const root = path.resolve(
+      this.configService.get<string>('EXPORT_DIR', path.join(process.cwd(), 'exports')),
+    );
+    const resolved = path.resolve(filePath);
+    if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+      throw new Error('Email attachment path is invalid');
+    }
+
+    let stat: fs.Stats;
+    try {
+      stat = await fs.promises.stat(resolved);
+    } catch {
+      throw new Error(`Email attachment file is missing: ${filePath}`);
+    }
+    if (!stat.isFile() || stat.size === 0) {
+      throw new Error(`Email attachment file is missing or empty: ${filePath}`);
+    }
+
+    return fs.promises.readFile(resolved);
   }
 }

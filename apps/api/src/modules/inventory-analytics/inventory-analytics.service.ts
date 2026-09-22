@@ -194,6 +194,7 @@ export class InventoryAnalyticsService {
         tenantId,
         inventoryItemId: { in: itemIds },
         date: { gte: startDate, lte: endDate },
+        reversedFromId: null,
       },
       _count: true,
     });
@@ -384,20 +385,25 @@ export class InventoryAnalyticsService {
       GROUP BY DATE(date) ORDER BY date ASC
     `);
 
-    const byPeriod = await this.prisma.consumptionRecord.groupBy({
+    const byPeriodSums = await this.prisma.consumptionRecord.groupBy({
       by: ['period'],
       where,
       _sum: { quantity: true, totalCost: true },
+    });
+    const byPeriodCounts = await this.prisma.consumptionRecord.groupBy({
+      by: ['period'],
+      where: { ...where, reversedFromId: null },
       _count: true,
     });
+    const countByPeriod = new Map(byPeriodCounts.map((c) => [c.period, c._count]));
 
     const result = {
       daily: byDate,
-      byPeriod: byPeriod.map((p) => ({
+      byPeriod: byPeriodSums.map((p) => ({
         period: p.period,
         totalQuantity: Number(p._sum.quantity ?? 0),
         totalCost: Number(p._sum.totalCost ?? 0),
-        count: p._count,
+        count: countByPeriod.get(p.period) ?? 0,
       })),
     };
 

@@ -306,7 +306,7 @@ export class ForecastingDashboardService {
     const dateFilter = this.buildDateFilter(query);
     const periods = query.periods ?? 30;
 
-    const [inventoryItems, forecasts, records] = await Promise.all([
+    const [inventoryItems, forecasts, records, observationRecords] = await Promise.all([
       this.prisma.inventoryItem.findMany({
         where: { tenantId, isActive: true, deletedAt: null },
         select: {
@@ -334,12 +334,30 @@ export class ForecastingDashboardService {
         },
         orderBy: { date: 'asc' },
       }),
+      this.prisma.consumptionRecord.findMany({
+        where: {
+          tenantId,
+          reversedFromId: null,
+          ...(Object.keys(dateFilter).length > 0
+            ? { date: dateFilter }
+            : { date: { gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) } }),
+        },
+        select: { inventoryItemId: true },
+      }),
     ]);
 
     const consumptionByItem = new Map<string, number[]>();
     for (const r of records) {
       if (!consumptionByItem.has(r.inventoryItemId)) consumptionByItem.set(r.inventoryItemId, []);
       consumptionByItem.get(r.inventoryItemId)!.push(Number(r.quantity));
+    }
+
+    const observationCountByItem = new Map<string, number>();
+    for (const o of observationRecords) {
+      observationCountByItem.set(
+        o.inventoryItemId,
+        (observationCountByItem.get(o.inventoryItemId) ?? 0) + 1,
+      );
     }
 
     const forecastByItem = new Map<string, number>();
@@ -354,8 +372,8 @@ export class ForecastingDashboardService {
     const projections = inventoryItems.map((item) => {
       const currentStock = Number(item.currentQuantity);
       const consumption = consumptionByItem.get(item.id) ?? [];
-      const avgConsumption =
-        consumption.length > 0 ? consumption.reduce((a, b) => a + b, 0) / consumption.length : 0;
+      const obsCount = observationCountByItem.get(item.id) ?? 0;
+      const avgConsumption = obsCount > 0 ? consumption.reduce((a, b) => a + b, 0) / obsCount : 0;
       const forecastedConsumption = forecastByItem.get(item.id) ?? avgConsumption * periods;
       const projectedStock = currentStock - forecastedConsumption;
       const daysUntilEmpty = avgConsumption > 0 ? currentStock / avgConsumption : 999;

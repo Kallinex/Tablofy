@@ -11,7 +11,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { QueueService } from '../queues/queue.service';
 import { RecipesGateway } from './recipes.gateway';
-import { Prisma, StockMovementType } from '@prisma/client';
+import { Prisma, StockMovementType, ConsumptionPeriod } from '@prisma/client';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { UpdateRecipeDto } from './dto/update-recipe.dto';
 import { QueryRecipeDto } from './dto/query-recipe.dto';
@@ -700,6 +700,24 @@ export class RecipesService {
           },
         });
 
+        // P1-01: mirror every order deduction with a DAILY consumption record so
+        // the consumption analytics are sourced from actual fulfilling orders.
+        // Written in the same transaction as the movement: the row-lock + in-tx
+        // idempotency check above guarantees exactly one record per deduction.
+        await tx.consumptionRecord.create({
+          data: {
+            inventoryItemId: entry.inventoryItemId,
+            tenantId,
+            date: new Date(),
+            quantity: actualDeduction,
+            unitCost,
+            totalCost: totalCostEntry,
+            period: ConsumptionPeriod.DAILY,
+            source: 'ORDER',
+            referenceId: orderId,
+          },
+        });
+
         reportItems.push({
           inventoryItemId: entry.inventoryItemId,
           inventoryItemName: entry.inventoryItemName,
@@ -753,7 +771,6 @@ export class RecipesService {
         referenceId: orderId,
         tenantId,
         type: StockMovementType.CONSUMPTION,
-        notes: { not: { contains: 'ROLLED_BACK' } },
       },
       include: { inventoryItem: { select: { id: true, name: true, currentQuantity: true } } },
     });
@@ -762,8 +779,35 @@ export class RecipesService {
       throw new NotFoundException('No deduction movements found for this order');
     }
 
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, tenantId, deletedAt: null },
+      select: { id: true, total: true },
+    });
+
     let reversedCount = 0;
+    let alreadyRolledBack = false;
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT "id"
+        FROM "orders"
+        WHERE "id" = ${orderId} AND "tenantId" = ${tenantId}
+        FOR UPDATE
+      `;
+
+      const inTxRollback = await tx.stockMovement.findFirst({
+        where: {
+          referenceType: 'ROLLBACK',
+          referenceId: orderId,
+          tenantId,
+          type: StockMovementType.ADJUSTMENT,
+        },
+        select: { id: true },
+      });
+      if (inTxRollback) {
+        alreadyRolledBack = true;
+        return;
+      }
+
       for (const movement of movements) {
         const absQuantity = Math.abs(Number(movement.quantity));
 
@@ -793,7 +837,40 @@ export class RecipesService {
 
         reversedCount++;
       }
+
+      if (order) {
+        const originals = await tx.consumptionRecord.findMany({
+          where: {
+            tenantId,
+            referenceId: orderId,
+            source: 'ORDER',
+            deletedAt: null,
+            reversedFromId: null,
+          },
+          select: {
+            id: true,
+            inventoryItemId: true,
+            quantity: true,
+            unitCost: true,
+            totalCost: true,
+            period: true,
+          },
+        });
+
+        for (const original of originals) {
+          await this.reverseOriginalRecord(tx, original, {
+            tenantId,
+            orderId,
+            reversalKey: `ROLLBACK:${orderId}`,
+            ratio: new Prisma.Decimal(1),
+          });
+        }
+      }
     });
+
+    if (alreadyRolledBack) {
+      return { rolledBack: false, movementsReversed: 0 };
+    }
 
     await this.auditLogsService.log({
       action: 'DEDUCTION_ROLLED_BACK',
@@ -811,6 +888,161 @@ export class RecipesService {
     });
 
     return { rolledBack: true, movementsReversed: reversedCount };
+  }
+
+  /**
+   * Reverses consumption proportionally to a payment refund (F-002, MODEL C).
+   * Idempotent: the unique reversalKey (payment + cumulative refunded amount +
+   * original record) means a retried refund event never creates a second
+   * compensating record. Partial refunds reverse a proportional share; multiple
+   * refund events accumulate; net consumption never goes below zero.
+   */
+  async reverseConsumptionForRefund(input: {
+    tenantId: string;
+    orderId: string;
+    paymentId: string;
+    amount: Prisma.Decimal | number;
+    amountRefunded?: Prisma.Decimal | number;
+  }): Promise<{ created: number; skipped: number }> {
+    const order = await this.prisma.order.findFirst({
+      where: { id: input.orderId, tenantId: input.tenantId, deletedAt: null },
+      select: { id: true, total: true },
+    });
+    if (!order) {
+      return { created: 0, skipped: 0 };
+    }
+
+    const orderTotal = new Prisma.Decimal(order.total ?? 0);
+    if (orderTotal.lte(0)) {
+      return { created: 0, skipped: 0 };
+    }
+
+    const cumulativeAmount = new Prisma.Decimal(input.amountRefunded ?? input.amount);
+    let ratio = cumulativeAmount.div(orderTotal);
+    if (ratio.gt(1)) {
+      ratio = new Prisma.Decimal(1);
+    }
+    if (ratio.lte(0)) {
+      return { created: 0, skipped: 0 };
+    }
+
+    const eventKey = `REFUND:${input.paymentId}:${input.amountRefunded ?? input.amount}`;
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT "id"
+        FROM "orders"
+        WHERE "id" = ${input.orderId} AND "tenantId" = ${input.tenantId}
+        FOR UPDATE
+      `;
+
+      const originals = await tx.consumptionRecord.findMany({
+        where: {
+          tenantId: input.tenantId,
+          referenceId: input.orderId,
+          source: 'ORDER',
+          deletedAt: null,
+          reversedFromId: null,
+        },
+        select: {
+          id: true,
+          inventoryItemId: true,
+          quantity: true,
+          unitCost: true,
+          totalCost: true,
+          period: true,
+        },
+      });
+
+      let created = 0;
+      let skipped = 0;
+      for (const original of originals) {
+        const ok = await this.reverseOriginalRecord(tx, original, {
+          tenantId: input.tenantId,
+          orderId: input.orderId,
+          reversalKey: eventKey,
+          ratio,
+        });
+        if (ok) {
+          created += 1;
+        } else {
+          skipped += 1;
+        }
+      }
+      return { created, skipped };
+    });
+  }
+
+  private async reverseOriginalRecord(
+    tx: Prisma.TransactionClient,
+    original: {
+      id: string;
+      inventoryItemId: string;
+      quantity: Prisma.Decimal;
+      unitCost: Prisma.Decimal | null;
+      totalCost: Prisma.Decimal | null;
+      period: ConsumptionPeriod;
+    },
+    input: {
+      tenantId: string;
+      orderId: string;
+      reversalKey: string;
+      ratio: Prisma.Decimal;
+    },
+  ): Promise<boolean> {
+    const key = `${input.reversalKey}:${original.id}`;
+    const existing = await tx.consumptionRecord.findUnique({
+      where: { reversalKey: key },
+      select: { id: true },
+    });
+    if (existing) {
+      return false;
+    }
+
+    const reversalRows = await tx.consumptionRecord.findMany({
+      where: { tenantId: input.tenantId, reversedFromId: original.id, deletedAt: null },
+      select: { quantity: true },
+    });
+    const alreadyReversed = reversalRows.reduce(
+      (sum, row) => sum.plus(row.quantity),
+      new Prisma.Decimal(0),
+    );
+    const alreadyMagnitude = alreadyReversed.lt(0)
+      ? alreadyReversed.negated()
+      : new Prisma.Decimal(0);
+    const targetMagnitude = original.quantity.mul(input.ratio).toDecimalPlaces(4);
+    let revQty = targetMagnitude.minus(alreadyMagnitude).toDecimalPlaces(4);
+    const remaining = original.quantity.minus(alreadyMagnitude);
+    if (revQty.gt(remaining)) {
+      revQty = remaining;
+    }
+    if (revQty.lte(0)) {
+      return false;
+    }
+
+    const unitCost =
+      original.unitCost && original.unitCost.gt(0)
+        ? original.unitCost
+        : original.totalCost && original.quantity.gt(0)
+          ? original.totalCost.div(original.quantity).toDecimalPlaces(4)
+          : new Prisma.Decimal(0);
+
+    await tx.consumptionRecord.create({
+      data: {
+        inventoryItemId: original.inventoryItemId,
+        tenantId: input.tenantId,
+        date: new Date(),
+        quantity: revQty.negated(),
+        unitCost,
+        totalCost: unitCost.mul(revQty).negated(),
+        period: original.period,
+        source: 'REVERSAL',
+        referenceId: input.orderId,
+        reversedFromId: original.id,
+        reversalKey: key,
+      },
+    });
+    return true;
   }
 
   async getDeductionReport(

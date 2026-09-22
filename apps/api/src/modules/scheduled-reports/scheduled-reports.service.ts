@@ -1,14 +1,25 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
-import { QueueService, QueueJobData } from '../queues/queue.service';
+import { QueueService } from '../queues/queue.service';
 import { Prisma } from '@prisma/client';
+import { CronTime } from 'cron';
 import { CreateScheduledReportDto } from './dto/create-scheduled-report.dto';
 import { UpdateScheduledReportDto } from './dto/update-scheduled-report.dto';
 import { ScheduledReportQueryDto } from './dto/scheduled-report-query.dto';
-import { Job } from 'bullmq';
+import { EXPORT_EXTENSIONS, EXPORT_MIME_TYPES } from '../export-engine/export-storage.service';
+
+export interface ReportExportCompletedEvent {
+  tenantId: string;
+  exportId: string;
+  filePath: string;
+  absolutePath: string;
+  fileSize: number;
+  type: string;
+  scheduledReportId?: string;
+}
 
 @Injectable()
 export class ScheduledReportsService {
@@ -19,7 +30,6 @@ export class ScheduledReportsService {
     private readonly auditLogsService: AuditLogsService,
     private readonly cacheService: CacheService,
     private readonly queueService: QueueService,
-    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async create(tenantId: string, userId: string, dto: CreateScheduledReportDto) {
@@ -147,7 +157,7 @@ export class ScheduledReportsService {
     await this.cacheService.deletePattern(tenantId, 'scheduled-reports:*');
   }
 
-  async trigger(tenantId: string, userId: string, id: string) {
+  async trigger(tenantId: string, id: string, userId?: string) {
     const report = await this.prisma.scheduledReport.findFirst({
       where: { id, tenantId, deletedAt: null },
     });
@@ -186,68 +196,103 @@ export class ScheduledReportsService {
     return { exportId: exportRecord.id };
   }
 
-  async processScheduledReport(job: Job<QueueJobData>) {
-    const { tenantId: tId, payload } = job.data;
-    const scheduledReportId = payload?.scheduledReportId as string | undefined;
-    if (!scheduledReportId || !tId) throw new Error('scheduledReportId and tenantId are required');
-
-    const report = await this.prisma.scheduledReport.findFirst({
-      where: { id: scheduledReportId, tenantId: tId, deletedAt: null },
+  async runDueReports(): Promise<{ scanned: number; triggered: string[]; skipped: number }> {
+    const reports = await this.prisma.scheduledReport.findMany({
+      where: { isActive: true, deletedAt: null },
+      select: { id: true, tenantId: true, schedule: true, lastRunAt: true },
     });
-    if (!report) throw new NotFoundException('Scheduled report not found');
-    if (!report.isActive) {
-      this.logger.log(`Scheduled report ${scheduledReportId} is inactive, skipping`);
-      return { processed: false, reason: 'inactive' };
+
+    const now = new Date();
+    const triggered: string[] = [];
+    let skipped = 0;
+
+    for (const report of reports) {
+      if (!this.isDue(report.schedule, report.lastRunAt, now)) {
+        skipped++;
+        continue;
+      }
+      try {
+        const result = await this.trigger(report.tenantId, report.id);
+        triggered.push(result.exportId);
+      } catch (error) {
+        this.logger.error(
+          `Scheduled report ${report.id} (tenant ${report.tenantId}) failed to trigger: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
 
-    const exportRecord = await this.prisma.reportExport.create({
-      data: {
-        tenantId: tId,
-        type: report.format,
-        reportType: report.type,
-        config: report.config as Prisma.InputJsonValue,
-        status: 'COMPLETED',
-        completedAt: new Date(),
-      },
-    });
-
-    await this.prisma.scheduledReport.update({
-      where: { id: scheduledReportId },
-      data: { lastRunAt: new Date() },
-    });
-
-    this.logger.log(`Scheduled report ${scheduledReportId} processed for tenant ${tId}`);
-    return { processed: true, exportId: exportRecord.id };
+    this.logger.log(
+      `Scheduled report scan complete: ${reports.length} active, ${triggered.length} triggered, ${skipped} not due`,
+    );
+    return { scanned: reports.length, triggered, skipped };
   }
 
-  private async fetchReportData(
-    tenantId: string,
-    report: { type: string },
-  ): Promise<Record<string, unknown>[]> {
-    switch (report.type) {
-      case 'SALES':
-        return (await this.prisma.order.findMany({
-          where: { tenantId },
-          include: { items: true, payments: true },
-          take: 500,
-        })) as unknown as Record<string, unknown>[];
-      case 'INVENTORY':
-        return (await this.prisma.inventoryItem.findMany({
-          where: { tenantId, deletedAt: null },
-          take: 500,
-        })) as unknown as Record<string, unknown>[];
-      case 'KITCHEN':
-        return (await this.prisma.kitchenTicket.findMany({
-          where: { tenantId },
-          take: 500,
-        })) as unknown as Record<string, unknown>[];
-      case 'FINANCIAL':
-        return (await this.prisma.payment.findMany({
-          where: { tenantId },
-          take: 500,
-        })) as unknown as Record<string, unknown>[];
-      default:
-        return [];
+  @OnEvent('report-export.completed')
+  async handleReportExportCompleted(event: ReportExportCompletedEvent) {
+    if (!event?.scheduledReportId) {
+      return;
+    }
+
+    const report = await this.prisma.scheduledReport.findFirst({
+      where: { id: event.scheduledReportId, tenantId: event.tenantId, deletedAt: null },
+    });
+    if (!report || !report.isActive) {
+      return;
+    }
+
+    const recipients = Array.isArray(report.recipients) ? report.recipients : [];
+    if (recipients.length === 0) {
+      this.logger.warn(`Scheduled report ${report.id} has no recipients; no email queued`);
+      return;
+    }
+
+    try {
+      const ext = EXPORT_EXTENSIONS[event.type];
+      const attachments = ext
+        ? [
+            {
+              filename: `${event.exportId}.${ext}`,
+              path: event.absolutePath,
+              contentType: EXPORT_MIME_TYPES[event.type],
+            },
+          ]
+        : [];
+
+      await this.queueService.addJob('email', 'send-email', {
+        tenantId: event.tenantId,
+        payload: {
+          to: recipients.join(', '),
+          subject: `Scheduled report: ${report.name}`,
+          body: `Your scheduled report "${report.name}" is ready.`,
+          attachments,
+        } as Record<string, unknown>,
+      });
+
+      await this.auditLogsService.log({
+        action: 'SCHEDULED_REPORT_EMAIL_QUEUED',
+        resource: 'ScheduledReport',
+        resourceId: report.id,
+        tenantId: event.tenantId,
+        newValues: { exportId: event.exportId, recipients: recipients.length },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to queue scheduled report email for ${report.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  private isDue(schedule: string, lastRunAt: Date | null, now: Date): boolean {
+    try {
+      const nextRun = new CronTime(schedule).getNextDateFrom(lastRunAt ?? new Date(0)).toJSDate();
+      return nextRun.getTime() <= now.getTime();
+    } catch {
+      this.logger.warn(`Scheduled report has an invalid cron schedule "${schedule}"; skipping`);
+      return false;
     }
   }
 }

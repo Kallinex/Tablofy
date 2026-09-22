@@ -3583,6 +3583,8 @@ model ConsumptionRecord {
   period          ConsumptionPeriod @default(DAILY)
   source          String?
   referenceId     String?
+  reversedFromId  String?
+  reversalKey     String?           @unique
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   deletedAt       DateTime?
@@ -3595,6 +3597,7 @@ model ConsumptionRecord {
   @@index([tenantId, createdAt])
   @@index([tenantId])
   @@index([tenantId, inventoryItemId, date])
+  @@index([reversedFromId])
   @@map("consumption_records")
 }
 

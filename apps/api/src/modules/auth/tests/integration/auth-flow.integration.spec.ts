@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
 import { AuthService } from '../../auth.service';
 import { PrismaService } from '../../../../prisma/prisma.service';
 import { RedisService } from '../../../../redis/redis.service';
@@ -221,7 +222,11 @@ describe('Auth Flow — Integration', () => {
 
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { token: 'refresh-token', userId: 'user-1', revokedAt: null },
+          where: {
+            token: createHash('sha256').update('refresh-token').digest('hex'),
+            userId: 'user-1',
+            revokedAt: null,
+          },
         }),
       );
       expect(redis.deleteUserSessions).toHaveBeenCalledWith('user-1');

@@ -79,6 +79,10 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsNumber()
+  REPORT_EXPORT_RETENTION_DAYS?: number;
+
+  @IsOptional()
+  @IsNumber()
   SHUTDOWN_TIMEOUT_MS?: number;
 
   @IsOptional()
@@ -92,6 +96,10 @@ class EnvironmentVariables {
   @IsOptional()
   @IsNumber()
   QUEUE_DLQ_ALERT_THRESHOLD?: number;
+
+  @IsOptional()
+  @IsString()
+  EXPORT_DIR?: string;
 
   @IsOptional()
   @IsString()

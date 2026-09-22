@@ -108,6 +108,26 @@ export class SchedulerService {
     });
   }
 
+  @Cron('30 4 * * *', { name: 'cleanup_expired_report_exports' })
+  async handleCleanupExpiredReportExports() {
+    await this.runLocked('cleanup_expired_report_exports', async () => {
+      await this.queueService.addJob('cleanup', 'cleanup', {
+        payload: { type: 'expired_report_exports' },
+      });
+      this.logger.log('Scheduled: cleanup_expired_report_exports queued');
+    });
+  }
+
+  @Cron('*/15 * * * *', { name: 'reconcile_pending_payments' })
+  async handleReconcilePendingPayments() {
+    await this.runLocked('reconcile_pending_payments', async () => {
+      await this.queueService.addJob('cleanup', 'cleanup', {
+        payload: { type: 'reconcile_pending_payments' },
+      });
+      this.logger.log('Scheduled: reconcile_pending_payments queued');
+    });
+  }
+
   getRegisteredJobs(): Array<{ name: string; description: string }> {
     return [
       { name: 'cleanup_expired_sessions', description: 'Every 6 hours - remove expired sessions' },
@@ -127,6 +147,14 @@ export class SchedulerService {
       },
       { name: 'cleanup_expired_backups', description: 'Weekly - mark expired backups' },
       { name: 'cleanup_stale_gift_cards', description: 'Daily at 5am - expire stale gift cards' },
+      {
+        name: 'cleanup_expired_report_exports',
+        description: 'Daily at 4:30am - purge report exports older than retention',
+      },
+      {
+        name: 'reconcile_pending_payments',
+        description: 'Every 15 minutes - reconcile payments stuck in PENDING against the gateway',
+      },
     ];
   }
 }

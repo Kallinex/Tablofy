@@ -7,9 +7,12 @@ import { NotificationProcessor } from './notification.processor';
 import { KitchenProcessor } from './kitchen.processor';
 import { PrintProcessor } from './print.processor';
 import { DeadLetterProcessor } from './dead-letter.processor';
+import { ExportEngineModule } from '../export-engine/export-engine.module';
+import { PaymentsModule } from '../payments/payments.module';
 
 @Global()
 @Module({
+  imports: [ExportEngineModule, PaymentsModule],
   controllers: [QueueController],
   providers: [
     QueueService,

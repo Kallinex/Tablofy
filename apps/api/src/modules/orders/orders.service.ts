@@ -10,6 +10,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PaymentsService } from '../payments/payments.service';
+import type { OrderCreatedEvent } from '../usage/usage-tracking.service';
 import {
   Prisma,
   OrderStatus as PrismaOrderStatus,
@@ -201,11 +202,17 @@ export class OrdersService {
       ...meta,
     });
 
-    this.eventEmitter.emit('order.created', {
+    const usageEvent: OrderCreatedEvent = {
       tenantId,
       orderId: result!.id,
       orderNumber: result!.orderNumber,
-    });
+      restaurantId: result!.restaurantId,
+      items: dto.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+      })),
+    };
+    this.eventEmitter.emit('order.created', usageEvent);
     await this.cacheService.deletePattern(tenantId, 'list:*');
     this.metricsService.incrementOrdersCreated();
 
@@ -474,11 +481,27 @@ export class OrdersService {
     meta?: { ipAddress?: string; userAgent?: string },
   ) {
     const existing = await this.findOne(id, tenantId);
-    const currentStatus = existing.status;
-
-    validateTransition(currentStatus as string, dto.status);
 
     const result = await this.prisma.$transaction(async (tx) => {
+      const fresh = await tx.order.findFirst({
+        where: { id, tenantId, deletedAt: null },
+      });
+      if (!fresh) {
+        throw new NotFoundException('Order not found');
+      }
+
+      validateTransition(fresh.status as string, dto.status);
+
+      if (dto.status === OrderStatus.COMPLETED) {
+        const totalPaid = Number(fresh.paidAmount ?? 0);
+        const orderTotal = Number(fresh.total ?? 0);
+        if (totalPaid < orderTotal) {
+          throw new BadRequestException(
+            `Order cannot be completed until fully paid (${totalPaid} of ${orderTotal})`,
+          );
+        }
+      }
+
       const updateData: Prisma.OrderUpdateInput = {
         status: dto.status as PrismaOrderStatus,
         version: { increment: 1 },
@@ -493,7 +516,7 @@ export class OrdersService {
       }
 
       const verResult = await tx.order.updateMany({
-        where: { id, version: existing.version },
+        where: { id, version: fresh.version },
         data: {
           version: { increment: 1 },
           status: dto.status as PrismaOrderStatus,
@@ -509,7 +532,7 @@ export class OrdersService {
         data: {
           orderId: id,
           tenantId,
-          fromStatus: currentStatus as PrismaOrderStatus,
+          fromStatus: fresh.status as PrismaOrderStatus,
           toStatus: dto.status as PrismaOrderStatus,
           changedByUserId: userId,
           reason: dto.reason,

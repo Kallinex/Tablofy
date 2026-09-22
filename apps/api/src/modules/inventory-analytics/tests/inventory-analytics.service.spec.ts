@@ -94,6 +94,65 @@ describe('InventoryAnalyticsService', () => {
     });
   });
 
+  describe('getTurnover', () => {
+    it('should net reversal rows in COGS because SUM includes negative records', async () => {
+      prisma.consumptionRecord.aggregate.mockResolvedValue({ _sum: { totalCost: 450 } });
+      prisma.inventoryItem.findMany.mockResolvedValue([
+        { currentQuantity: 10, averageCost: 6, unitCost: 5 },
+      ]);
+
+      const result = await service.getTurnover(testTenantId, {} as never);
+
+      expect(result.cogs).toBe(450);
+      expect(result.averageInventoryValue).toBe(60);
+      expect(result.turnoverRatio).toBe(7.5);
+    });
+  });
+
+  describe('getClassification', () => {
+    it('excludes reversal records from consumption counts via reversedFromId: null', async () => {
+      prisma.inventoryItem.findMany.mockResolvedValue([fakeItem('item-1'), fakeItem('item-2')]);
+      prisma.consumptionRecord.groupBy.mockResolvedValue([
+        { inventoryItemId: 'item-1', _count: 12 },
+        { inventoryItemId: 'item-2', _count: 3 },
+      ]);
+
+      await service.getClassification(testTenantId, {} as never);
+
+      expect(prisma.consumptionRecord.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          by: ['inventoryItemId'],
+          where: expect.objectContaining({ reversedFromId: null, tenantId: testTenantId }),
+        }),
+      );
+    });
+  });
+
+  describe('getConsumptionTrends', () => {
+    it('nets sums across all rows and counts only original rows (reversedFromId null)', async () => {
+      prisma.$queryRaw.mockResolvedValueOnce([
+        { date: '2026-07-01', quantity: 75, totalCost: 450 },
+      ]);
+      prisma.consumptionRecord.groupBy
+        .mockResolvedValueOnce([{ period: 'DAILY', _sum: { quantity: 75, totalCost: 450 } }])
+        .mockResolvedValueOnce([{ period: 'DAILY', _count: 3 }]);
+
+      const result = await service.getConsumptionTrends(testTenantId, {} as never);
+
+      expect(prisma.consumptionRecord.groupBy).toHaveBeenCalledTimes(2);
+      expect(result.byPeriod[0]).toEqual({
+        period: 'DAILY',
+        totalQuantity: 75,
+        totalCost: 450,
+        count: 3,
+      });
+      const countsCall = prisma.consumptionRecord.groupBy.mock.calls[1][0] as {
+        where: Record<string, unknown>;
+      };
+      expect(countsCall.where.reversedFromId).toBeNull();
+    });
+  });
+
   describe('getForecastAccuracy', () => {
     it('should resolve actual consumption with a single groupBy, not per-forecast aggregates', async () => {
       const forecastDate = new Date('2026-07-01');

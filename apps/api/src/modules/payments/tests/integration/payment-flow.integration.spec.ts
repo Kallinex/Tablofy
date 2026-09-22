@@ -129,7 +129,11 @@ describe('PaymentFlowIntegration', () => {
           updateMany: jest.fn().mockResolvedValue({ count: 1 }),
           findUnique: jest.fn().mockResolvedValue(mockRefundedPayment),
         },
-        order: { update: jest.fn().mockResolvedValue({}) },
+        order: {
+          findFirst: jest.fn().mockResolvedValue(mockOrder),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          update: jest.fn().mockResolvedValue({}),
+        },
       };
       return cb(tx);
     });

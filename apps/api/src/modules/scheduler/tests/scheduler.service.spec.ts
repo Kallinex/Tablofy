@@ -24,6 +24,7 @@ const CRON_HANDLERS: Array<[string, string, string]> = [
   ['handleCleanupExpiredDataExports', 'cleanup_expired_data_exports', 'expired_data_exports'],
   ['handleCleanupExpiredBackups', 'cleanup_expired_backups', 'expired_backups'],
   ['handleCleanupStaleGiftCards', 'cleanup_stale_gift_cards', 'stale_gift_cards'],
+  ['handleCleanupExpiredReportExports', 'cleanup_expired_report_exports', 'expired_report_exports'],
 ];
 
 describe('SchedulerService', () => {
