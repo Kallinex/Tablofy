@@ -471,6 +471,55 @@ export class TransfersService {
       throw new BadRequestException('Only in-transit transfers can be received');
     }
 
+    // Every line must be accounted for. `startTransfer` already decremented the
+    // source stock for *all* lines, and receiving flips the transfer to RECEIVED
+    // in one shot, after which both the 470-472 guard and `cancelTransfer` refuse
+    // any further action. A line missing from the payload therefore left the
+    // stock gone from both branches with no reversal path — a normal shortage
+    // posting would silently destroy inventory. The clerk must now state each
+    // line explicitly, and a shortage is declared with `quantityReceived: 0`.
+    const reportedIds = new Set<string | null>(dto.items.map((item) => item.inventoryItemId));
+    if (reportedIds.size !== dto.items.length) {
+      throw new BadRequestException('Duplicate inventory item in receive payload');
+    }
+    const missing = transfer.items
+      .filter((ti) => ti.inventoryItemId && !reportedIds.has(ti.inventoryItemId))
+      .map((ti) => ti.inventoryItemId as string);
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        `Receive payload must cover every transfer line; missing: ${missing.join(', ')}`,
+      );
+    }
+
+    // Validate the whole payload before claiming the transfer. Claiming first
+    // meant a bad line (negative quantity, item from another transfer) surfaced
+    // only after the status flip, and the caller had to retry the entire receipt
+    // to find out.
+    for (const receiveItem of dto.items) {
+      const transferItem = transfer.items.find(
+        (ti) => ti.inventoryItemId === receiveItem.inventoryItemId,
+      );
+      if (!transferItem) {
+        throw new BadRequestException(
+          `Item ${receiveItem.inventoryItemId} is not part of this transfer`,
+        );
+      }
+      const qtyReceived = Number(receiveItem.quantityReceived);
+      const qtyOrdered = Number(transferItem.quantity);
+      if (!Number.isInteger(qtyReceived) || qtyReceived < 0) {
+        throw new BadRequestException(
+          `Received quantity must be a non-negative whole number for item ${receiveItem.inventoryItemId}`,
+        );
+      }
+      if (qtyReceived > qtyOrdered) {
+        throw new BadRequestException(
+          `Received quantity (${qtyReceived}) exceeds ordered quantity (${qtyOrdered}) for item ${receiveItem.inventoryItemId}`,
+        );
+      }
+    }
+
+    const shortfalls: Array<{ inventoryItemId: string; ordered: number; received: number }> = [];
+
     const updated = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.branchTransfer.updateMany({
         where: { id, tenantId, status: TransferStatus.IN_TRANSIT },
@@ -487,31 +536,35 @@ export class TransfersService {
       for (const receiveItem of dto.items) {
         const transferItem = transfer.items.find(
           (ti) => ti.inventoryItemId === receiveItem.inventoryItemId,
-        );
-        if (!transferItem) {
-          throw new NotFoundException(`Item ${receiveItem.inventoryItemId} not found in transfer`);
-        }
+        )!;
 
         const qtyReceived = Number(receiveItem.quantityReceived);
         const qtyOrdered = Number(transferItem.quantity);
 
-        if (qtyReceived > qtyOrdered) {
-          throw new BadRequestException(
-            `Received quantity (${qtyReceived}) exceeds ordered quantity (${qtyOrdered}) for item ${receiveItem.inventoryItemId}`,
-          );
+        const short = qtyOrdered - qtyReceived;
+        if (short > 0) {
+          shortfalls.push({
+            inventoryItemId: receiveItem.inventoryItemId,
+            ordered: qtyOrdered,
+            received: qtyReceived,
+          });
         }
 
         await tx.branchTransferItem.update({
           where: { id: transferItem.id },
           data: {
             receivedQuantity: qtyReceived,
-            notes: receiveItem.notes
-              ? `${transferItem.notes ?? ''} | ${receiveItem.notes}`
-              : transferItem.notes,
+            notes: [
+              transferItem.notes ?? '',
+              receiveItem.notes ?? '',
+              short > 0 ? `SHORT IN TRANSIT: ordered ${qtyOrdered}, received ${qtyReceived}` : '',
+            ]
+              .filter(Boolean)
+              .join(' | '),
           },
         });
 
-        if (receiveItem.inventoryItemId) {
+        if (receiveItem.inventoryItemId && qtyReceived > 0) {
           const inventoryItem = await tx.inventoryItem.findFirst({
             where: { id: receiveItem.inventoryItemId, tenantId },
           });
@@ -572,8 +625,16 @@ export class TransfersService {
       newValues: {
         status: TransferStatus.RECEIVED,
         itemsReceived: dto.items.length,
+        shortfalls: shortfalls.length > 0 ? shortfalls : undefined,
       },
     });
+
+    if (shortfalls.length > 0) {
+      this.logger.warn(
+        `Transfer ${id} received with ${shortfalls.length} short line(s); stock left in transit: ${JSON.stringify(shortfalls)}`,
+      );
+      this.eventEmitter.emit('transfer.received.short', { tenantId, transferId: id, shortfalls });
+    }
 
     await this.cacheService.delete(tenantId, `transfer:${id}`);
     await this.cacheService.delete(tenantId, 'transfers:list');

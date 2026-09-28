@@ -81,19 +81,36 @@ export class GiftCardsService {
     lang: string,
     performedById?: string,
   ) {
-    const giftCard = await this.findOne(tenantId, id, lang);
-    if (giftCard.status !== 'ACTIVE') {
-      throw new BadRequestException(this.i18n.t('giftCard.deactivated', lang));
-    }
-    if (giftCard.expiresAt && new Date() > giftCard.expiresAt) {
-      throw new BadRequestException(this.i18n.t('giftCard.expired', lang));
-    }
-
     const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.giftCard.update({
-        where: { id },
+      // Mirror `redeem`: the status/expiry gate and the write must live inside
+      // the transaction and be conditional. The previous version validated
+      // outside (on a possibly cached `findOne`) and then wrote with a bare
+      // `update({ where: { id } })`, so an OWNER deactivating the card in between
+      // still got the balance credited onto a card that can never be redeemed
+      // again, and the write carried no tenantId.
+      const giftCard = await tx.giftCard.findFirst({ where: { id, tenantId } });
+      if (!giftCard) {
+        throw new NotFoundException(this.i18n.t('giftCard.notFound', lang));
+      }
+      if (giftCard.status !== 'ACTIVE') {
+        throw new BadRequestException(this.i18n.t('giftCard.deactivated', lang));
+      }
+      if (giftCard.expiresAt && new Date() > giftCard.expiresAt) {
+        throw new BadRequestException(this.i18n.t('giftCard.expired', lang));
+      }
+
+      const credited = await tx.giftCard.updateMany({
+        where: { id, tenantId, status: 'ACTIVE' },
         data: { currentBalance: { increment: dto.amount } },
       });
+      if (credited.count === 0) {
+        throw new BadRequestException(this.i18n.t('giftCard.deactivated', lang));
+      }
+
+      const result = await tx.giftCard.findFirst({ where: { id, tenantId } });
+      if (!result) {
+        throw new NotFoundException(this.i18n.t('giftCard.notFound', lang));
+      }
 
       const balanceAfter = Number(result.currentBalance);
       const balanceBefore = balanceAfter - dto.amount;

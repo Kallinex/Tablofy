@@ -170,15 +170,18 @@ describe('Auth Flow — Integration', () => {
       prisma.refreshToken.findUnique.mockResolvedValueOnce(storedToken);
       jwtService.sign.mockReturnValue('new-access-token');
       prisma.refreshToken.create.mockResolvedValue({ token: 'new-refresh-token' } as never);
+      prisma.refreshToken.updateMany.mockResolvedValueOnce({ count: 1 });
 
       const result = await authService.refreshTokens('valid-refresh-token');
       expect(result.accessToken).toBe('new-access-token');
-      expect(prisma.refreshToken.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'token-1' },
-          data: expect.objectContaining({ revokedAt: expect.any(Date) }),
-        }),
-      );
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'token-1',
+          revokedAt: null,
+          expiresAt: { gt: expect.any(Date) },
+        },
+        data: { revokedAt: expect.any(Date) },
+      });
     });
 
     it('should detect token reuse and revoke all sessions', async () => {

@@ -462,6 +462,16 @@ export class PaymobProvider implements PaymentProvider {
     const amount = (body.amount_cents ?? 0) / 100;
     const orderId = (obj.order as { id?: unknown } | undefined)?.id;
     const reference = String(orderId ?? obj.id ?? obj.transaction_id ?? '');
+    // Paymob has no separate event id, so key the replay barrier on
+    // `type:obj.id`. The type prefix matters: a transaction and a refund
+    // transaction can share a shape, and prefixing keeps a legitimate
+    // `refund.transaction.updated` from being mistaken for a duplicate of a
+    // `transaction.updated` on the same id.
+    const objId = obj.id;
+    const eventId =
+      objId === undefined || objId === null
+        ? undefined
+        : `${String(body.type ?? 'unknown')}:${String(objId)}`;
     switch (body.type) {
       case 'transaction.updated': {
         const pending = Boolean(obj.pending);
@@ -473,6 +483,7 @@ export class PaymobProvider implements PaymentProvider {
           provider: 'paymob',
           type: success ? 'payment.succeeded' : 'payment.failed',
           reference,
+          eventId,
           amount,
           currency: typeof body.currency === 'string' ? body.currency.toUpperCase() : undefined,
           raw: payload,
@@ -486,6 +497,7 @@ export class PaymobProvider implements PaymentProvider {
           provider: 'paymob',
           type: 'refund.succeeded',
           reference,
+          eventId,
           refundedAmount: refundedAmount || undefined,
           refundedAmountIsTotal: false,
           raw: payload,

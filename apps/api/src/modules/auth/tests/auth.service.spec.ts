@@ -268,16 +268,52 @@ describe('AuthService', () => {
       prisma.refreshToken.findUnique.mockResolvedValue(storedToken);
       jwtService.sign.mockReturnValue('new-access-token');
       prisma.refreshToken.create.mockResolvedValue({ token: 'new-refresh-token' } as never);
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
 
       const result = await service.refreshTokens('valid-refresh-token');
 
       expect(result.accessToken).toBe('new-access-token');
-      expect(prisma.refreshToken.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'token-1' },
-          data: expect.objectContaining({ revokedAt: expect.any(Date) }),
-        }),
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'token-1',
+          revokedAt: null,
+          expiresAt: { gt: expect.any(Date) },
+        },
+        data: { revokedAt: expect.any(Date) },
+      });
+    });
+
+    it('should claim the token before minting so a concurrent replay cannot mint a second session', async () => {
+      const storedToken = {
+        id: 'token-1',
+        token: 'valid-refresh-token',
+        userId: 'user-1',
+        user: buildUser({ status: 'ACTIVE' }),
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 86400000),
+        userAgent: null,
+        ipAddress: null,
+        createdAt: new Date(),
+      };
+      prisma.refreshToken.findUnique.mockResolvedValue(storedToken);
+      // The CAS loses the race: another request already revoked this row.
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+      prisma.refreshToken.findUnique.mockResolvedValueOnce(storedToken).mockResolvedValueOnce({
+        revokedAt: new Date(),
+        expiresAt: new Date(Date.now() + 86400000),
+      });
+      prisma.refreshToken.create.mockResolvedValue({ token: 'new-refresh-token' } as never);
+
+      await expect(service.refreshTokens('valid-refresh-token')).rejects.toThrow(
+        'Token reuse detected',
       );
+
+      expect(jwtService.sign).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: storedToken.userId, revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
     });
 
     it('should throw on invalid refresh token', async () => {
@@ -319,6 +355,7 @@ describe('AuthService', () => {
       prisma.refreshToken.findUnique.mockResolvedValue(storedToken);
       jwtService.sign.mockReturnValue('new-access-token');
       prisma.refreshToken.create.mockResolvedValue({ token: 'new-refresh-token' } as never);
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
 
       await service.refreshTokens('valid-refresh-token');
 
@@ -342,8 +379,10 @@ describe('AuthService', () => {
         createdAt: new Date(),
       };
       prisma.refreshToken.findUnique.mockResolvedValue(storedToken);
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(service.refreshTokens('expired-token')).rejects.toThrow(UnauthorizedException);
+      expect(jwtService.sign).not.toHaveBeenCalled();
     });
   });
 

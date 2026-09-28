@@ -35,6 +35,7 @@ const prismaModelNames = [
   'orderNote',
   'kitchenTicket',
   'payment',
+  'paymentWebhookReceipt',
   'ingredient',
   'supplier',
   'productIngredient',

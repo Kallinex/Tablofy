@@ -67,6 +67,11 @@ describe('PaymentsService', () => {
       orderStatusHistory: {
         create: jest.fn(),
       },
+      paymentWebhookReceipt: {
+        create: jest.fn().mockResolvedValue({}),
+        findUnique: jest.fn().mockResolvedValue({ status: 'PROCESSING' }),
+        update: jest.fn().mockResolvedValue({}),
+      },
       $transaction: jest.fn(),
     };
 
@@ -1750,6 +1755,11 @@ describe('PaymentsService', () => {
         orderStatusHistory: {
           create: jest.fn(),
         },
+        paymentWebhookReceipt: {
+          create: jest.fn().mockResolvedValue({}),
+          findUnique: jest.fn().mockResolvedValue({ status: 'PROCESSING' }),
+          update: jest.fn().mockResolvedValue({}),
+        },
         $transaction: jest.fn(),
       };
 
@@ -1758,6 +1768,7 @@ describe('PaymentsService', () => {
           PaymentsService,
           {
             provide: StripeProvider,
+
             useValue: new StripeProvider({
               mode: 'live',
               secretKey: 'sk_live_123',
@@ -1806,7 +1817,7 @@ describe('PaymentsService', () => {
     });
 
     it('should complete a pending payment on payment_intent.succeeded', async () => {
-      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.payment.findMany.mockResolvedValue([pendingGatewayPayment]);
       webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
       webhookPrisma.$transaction.mockImplementation(
         async (cb: (tx: Record<string, unknown>) => unknown) => {
@@ -1838,7 +1849,7 @@ describe('PaymentsService', () => {
     });
 
     it('should refuse to credit when the gateway amount mismatches the local payment amount (F-005)', async () => {
-      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.payment.findMany.mockResolvedValue([pendingGatewayPayment]);
       webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
       webhookPrisma.$transaction.mockImplementation(
         async (cb: (tx: Record<string, unknown>) => unknown) => {
@@ -1882,7 +1893,7 @@ describe('PaymentsService', () => {
     });
 
     it('should credit normally when the gateway amount matches (F-005)', async () => {
-      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.payment.findMany.mockResolvedValue([pendingGatewayPayment]);
       webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
       let orderUpdateData: Record<string, unknown> | undefined;
       webhookPrisma.$transaction.mockImplementation(
@@ -1917,7 +1928,7 @@ describe('PaymentsService', () => {
     });
 
     it('creates OrderStatusHistory with a system actor and null userId (FK-safe)', async () => {
-      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.payment.findMany.mockResolvedValue([pendingGatewayPayment]);
       webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
       const historyCreate = jest.fn().mockResolvedValue({});
       webhookPrisma.$transaction.mockImplementation(
@@ -1951,7 +1962,7 @@ describe('PaymentsService', () => {
     });
 
     it('scopes webhook completion to the tenant owning the payment', async () => {
-      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.payment.findMany.mockResolvedValue([pendingGatewayPayment]);
       webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
       let capturedWhere: unknown;
       webhookPrisma.$transaction.mockImplementation(
@@ -1982,7 +1993,7 @@ describe('PaymentsService', () => {
     });
 
     it('concurrent webhook deliveries only claim and credit the payment once', async () => {
-      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.payment.findMany.mockResolvedValue([pendingGatewayPayment]);
       webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
       let claimCount = 0;
       const historyCreate = jest.fn().mockResolvedValue({});
@@ -2018,9 +2029,9 @@ describe('PaymentsService', () => {
     });
 
     it('does not re-credit on duplicate sequential webhook delivery', async () => {
-      webhookPrisma.payment.findFirst
-        .mockResolvedValueOnce(pendingGatewayPayment)
-        .mockResolvedValueOnce(completedGatewayPayment);
+      webhookPrisma.payment.findMany
+        .mockResolvedValueOnce([pendingGatewayPayment])
+        .mockResolvedValueOnce([completedGatewayPayment]);
       webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
       webhookPrisma.$transaction.mockImplementation(
         async (cb: (tx: Record<string, unknown>) => unknown) => {
@@ -2049,7 +2060,7 @@ describe('PaymentsService', () => {
     });
 
     it('rethrows and records no metrics when the webhook transaction fails (rollback)', async () => {
-      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.payment.findMany.mockResolvedValue([pendingGatewayPayment]);
       webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
       webhookPrisma.$transaction.mockImplementation(
         async (cb: (tx: Record<string, unknown>) => unknown) => {
@@ -2078,7 +2089,7 @@ describe('PaymentsService', () => {
     });
 
     it('should ignore webhook for an already completed payment', async () => {
-      webhookPrisma.payment.findFirst.mockResolvedValue(completedGatewayPayment);
+      webhookPrisma.payment.findMany.mockResolvedValue([completedGatewayPayment]);
 
       const payload = JSON.stringify({
         type: 'payment_intent.succeeded',
@@ -2095,7 +2106,7 @@ describe('PaymentsService', () => {
     });
 
     it('should mark a pending payment FAILED on payment_intent.payment_failed', async () => {
-      webhookPrisma.payment.findFirst.mockResolvedValue(pendingGatewayPayment);
+      webhookPrisma.payment.findMany.mockResolvedValue([pendingGatewayPayment]);
       webhookPrisma.payment.update.mockResolvedValue({
         ...pendingGatewayPayment,
         status: PaymentStatus.FAILED,
@@ -2116,7 +2127,7 @@ describe('PaymentsService', () => {
     });
 
     it('full charge.refunded sets amountRefunded and decrements paidAmount once (D3/D4 fix)', async () => {
-      webhookPrisma.payment.findFirst.mockResolvedValue(completedGatewayPayment);
+      webhookPrisma.payment.findMany.mockResolvedValue([completedGatewayPayment]);
       let paymentUpdateData: Record<string, unknown> | undefined;
       let orderUpdateData: Record<string, unknown> | undefined;
       webhookPrisma.$transaction.mockImplementation(
@@ -2174,13 +2185,16 @@ describe('PaymentsService', () => {
     });
 
     it('partial charge.refunded does not double-decrement on replay (D4 fix)', async () => {
-      webhookPrisma.payment.findFirst
-        .mockResolvedValueOnce(completedGatewayPayment)
-        .mockResolvedValueOnce({
-          ...completedGatewayPayment,
-          status: PaymentStatus.PARTIALLY_REFUNDED,
-          amountRefunded: 20,
-        });
+      webhookPrisma.payment.findMany
+        .mockResolvedValueOnce([completedGatewayPayment])
+        .mockResolvedValueOnce([
+          {
+            ...completedGatewayPayment,
+            status: PaymentStatus.PARTIALLY_REFUNDED,
+            amountRefunded: 20,
+          },
+        ]);
+
       let paymentUpdateData: Record<string, unknown> | undefined;
       let orderUpdateData: Record<string, unknown> | undefined;
       webhookPrisma.$transaction.mockImplementation(
@@ -2241,6 +2255,153 @@ describe('PaymentsService', () => {
       expect(replay.type).toBe('refund.partial');
       expect(webhookPrisma.$transaction).not.toHaveBeenCalled();
       expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops a redelivery whose event id was already processed (replay ledger)', async () => {
+      webhookPrisma.payment.findMany.mockResolvedValue([pendingGatewayPayment]);
+      webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
+      webhookPrisma.paymentWebhookReceipt.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: '5.0.0',
+        }),
+      );
+      webhookPrisma.paymentWebhookReceipt.findUnique.mockResolvedValue({ status: 'PROCESSED' });
+
+      const payload = JSON.stringify({
+        id: 'evt_replayed_1',
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_webhook_1', amount: 5000, currency: 'usd' } },
+      });
+
+      const result = await webhookService.handleGatewayWebhook(
+        'stripe',
+        payload,
+        validStripeSignature(payload),
+      );
+
+      expect(result).toMatchObject({ received: true, type: 'payment.succeeded', duplicate: true });
+      // The replay must not touch a payment at all.
+      expect(webhookPrisma.payment.findMany).not.toHaveBeenCalled();
+      expect(webhookPrisma.$transaction).not.toHaveBeenCalled();
+      expect(metrics.incrementPaymentsCompleted).not.toHaveBeenCalled();
+    });
+
+    it('retries an event whose previous attempt failed (claim is released, not stuck)', async () => {
+      webhookPrisma.payment.findMany.mockResolvedValue([pendingGatewayPayment]);
+      webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
+      webhookPrisma.paymentWebhookReceipt.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: '5.0.0',
+        }),
+      );
+      webhookPrisma.paymentWebhookReceipt.findUnique.mockResolvedValue({ status: 'FAILED' });
+      webhookPrisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            order: {
+              findFirst: jest.fn().mockResolvedValue(mockOrder),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              update: jest.fn().mockResolvedValue({}),
+            },
+            payment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          };
+          return cb(tx);
+        },
+      );
+
+      const payload = JSON.stringify({
+        id: 'evt_retried_1',
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_webhook_1', amount: 5000, currency: 'usd' } },
+      });
+
+      const result = await webhookService.handleGatewayWebhook(
+        'stripe',
+        payload,
+        validStripeSignature(payload),
+      );
+
+      expect(result.duplicate).toBeUndefined();
+      expect(metrics.incrementPaymentsCompleted).toHaveBeenCalled();
+      expect(webhookPrisma.paymentWebhookReceipt.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'PROCESSING' }),
+        }),
+      );
+      expect(webhookPrisma.paymentWebhookReceipt.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'PROCESSED' }),
+        }),
+      );
+    });
+
+    it('marks the receipt FAILED and rethrows when processing throws, so the provider retry works', async () => {
+      webhookPrisma.payment.findMany.mockResolvedValue([pendingGatewayPayment]);
+      webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
+      webhookPrisma.$transaction.mockRejectedValue(new Error('db failure'));
+
+      const payload = JSON.stringify({
+        id: 'evt_failed_1',
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_webhook_1', amount: 5000, currency: 'usd' } },
+      });
+
+      await expect(
+        webhookService.handleGatewayWebhook('stripe', payload, validStripeSignature(payload)),
+      ).rejects.toThrow('db failure');
+
+      expect(webhookPrisma.paymentWebhookReceipt.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'FAILED', error: 'db failure' }),
+        }),
+      );
+    });
+
+    it('refuses to settle when gatewayRef matches payments from two tenants', async () => {
+      webhookPrisma.payment.findMany.mockResolvedValue([
+        { ...pendingGatewayPayment, id: 'payment-tenant-a', tenantId: 'tenant-a' },
+        { ...pendingGatewayPayment, id: 'payment-tenant-b', tenantId: 'tenant-b' },
+      ]);
+      webhookPrisma.order.findUnique.mockResolvedValue(mockOrder);
+
+      const payload = JSON.stringify({
+        id: 'evt_ambiguous_1',
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_webhook_1', amount: 5000, currency: 'usd' } },
+      });
+
+      const result = await webhookService.handleGatewayWebhook(
+        'stripe',
+        payload,
+        validStripeSignature(payload),
+      );
+
+      expect(result.type).toBe('payment.succeeded');
+      // Refusing to guess is the whole point: no order may be credited.
+      expect(webhookPrisma.$transaction).not.toHaveBeenCalled();
+      expect(metrics.incrementPaymentsCompleted).not.toHaveBeenCalled();
+      expect(metrics.incrementOrdersCompleted).not.toHaveBeenCalled();
+      expect(metrics.addRevenue).not.toHaveBeenCalled();
+    });
+
+    it('scopes the gatewayRef lookup to live rows and caps it at two candidates', async () => {
+      webhookPrisma.payment.findMany.mockResolvedValue([]);
+
+      const payload = JSON.stringify({
+        id: 'evt_unknown_1',
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_webhook_unknown', amount: 5000, currency: 'usd' } },
+      });
+
+      await webhookService.handleGatewayWebhook('stripe', payload, validStripeSignature(payload));
+
+      expect(webhookPrisma.payment.findMany).toHaveBeenCalledWith({
+        where: { gatewayRef: 'pi_webhook_unknown', deletedAt: null },
+        take: 2,
+      });
     });
   });
 

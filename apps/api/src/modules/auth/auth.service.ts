@@ -328,6 +328,43 @@ export class AuthService {
       throw new UnauthorizedException('Account is not active');
     }
 
+    // Claim the token atomically BEFORE minting the replacement. A plain
+    // findUnique + later unconditional update leaves a window in which two
+    // parallel refreshes both observe `revokedAt === null`, both mint a session,
+    // and reuse detection never fires. `updateMany` with the `revokedAt: null`
+    // predicate makes the claim a compare-and-set: exactly one caller wins.
+    const now = new Date();
+    const claimed = await this.prisma.refreshToken.updateMany({
+      where: { id: storedToken.id, revokedAt: null, expiresAt: { gt: now } },
+      data: { revokedAt: now },
+    });
+
+    if (claimed.count === 0) {
+      // The snapshot we read still says `revokedAt: null`, so it cannot tell us
+      // whether we lost the race to a concurrent revoke or the token simply
+      // expired. Re-read only on this failure path to classify it correctly and
+      // keep firing the reuse-detection audit event.
+      const current = await this.prisma.refreshToken.findUnique({
+        where: { id: storedToken.id },
+        select: { revokedAt: true, expiresAt: true },
+      });
+      const revoked = current?.revokedAt ?? storedToken.revokedAt;
+      if (revoked) {
+        await this.auditLogsService.log({
+          action: 'TOKEN_REUSE_DETECTED',
+          resource: 'RefreshToken',
+          resourceId: storedToken.id,
+          userId: storedToken.userId,
+          tenantId: storedToken.user.tenantId ?? undefined,
+          newValues: { reason: 'Reuse of revoked token detected' },
+          ...meta,
+        });
+        await this.revokeAllUserTokens(storedToken.userId);
+        throw new UnauthorizedException('Token reuse detected. All sessions revoked.');
+      }
+      throw new UnauthorizedException('Refresh token expired');
+    }
+
     const tokens = await this.generateTokenPair(
       {
         id: storedToken.user.id,
@@ -339,11 +376,6 @@ export class AuthService {
       },
       meta,
     );
-
-    await this.prisma.refreshToken.update({
-      where: { id: storedToken.id },
-      data: { revokedAt: new Date() },
-    });
 
     return tokens;
   }

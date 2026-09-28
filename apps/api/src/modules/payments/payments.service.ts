@@ -33,10 +33,14 @@ import {
 import { canTransition } from '../orders/order-state-machine';
 import { StripeProvider } from './providers/stripe.provider';
 import { PaymobProvider } from './providers/paymob.provider';
-import { PaymentProvider } from '../integrations/interfaces/payment-provider.interface';
+import {
+  GatewayWebhookEvent,
+  PaymentProvider,
+} from '../integrations/interfaces/payment-provider.interface';
 import { IntegrationProviderType } from '@tablofy/shared/types';
 
 type ProviderLike = StripeProvider | PaymobProvider;
+type PaymentModel = Prisma.PaymentGetPayload<Record<string, never>>;
 
 class PaymentAlreadyFinalizedError extends Error {
   constructor() {
@@ -63,6 +67,7 @@ interface SplitProviderOutcome {
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
   private readonly providerRegistry = new Map<IntegrationProviderType, ProviderLike>();
+  private missingEventIdLogged = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1586,7 +1591,7 @@ export class PaymentsService {
     providerType: IntegrationProviderType,
     rawBody: string,
     signature: string,
-  ): Promise<{ received: boolean; type?: string }> {
+  ): Promise<{ received: boolean; type?: string; duplicate?: boolean }> {
     const provider = this.providerRegistry.get(providerType);
     if (!provider) {
       throw new BadRequestException('Unknown payment provider');
@@ -1608,30 +1613,166 @@ export class PaymentsService {
       return { received: true };
     }
 
-    switch (event.type) {
-      case 'payment.succeeded':
-        await this.applyWebhookSucceeded(event.reference, event.amount);
-        break;
-      case 'payment.failed':
-        await this.applyWebhookFailed(event.reference);
-        break;
-      case 'refund.succeeded':
-      case 'refund.partial':
-        await this.applyWebhookRefunded(
-          event.reference,
-          event.refundedAmount,
-          event.refundedAmountIsTotal,
-        );
-        break;
+    const claim = await this.claimInboundEvent(event);
+    if (claim === 'duplicate') {
+      this.logger.warn(
+        `Dropping replayed ${providerType} event ${event.eventId} (${event.type}); already processed`,
+      );
+      return { received: true, type: event.type, duplicate: true };
     }
+
+    try {
+      switch (event.type) {
+        case 'payment.succeeded':
+          await this.applyWebhookSucceeded(event.reference, event.amount);
+          break;
+        case 'payment.failed':
+          await this.applyWebhookFailed(event.reference);
+          break;
+        case 'refund.succeeded':
+        case 'refund.partial':
+          await this.applyWebhookRefunded(
+            event.reference,
+            event.refundedAmount,
+            event.refundedAmountIsTotal,
+          );
+          break;
+      }
+    } catch (error) {
+      // Release the claim so the provider's retry is accepted. Keeping a
+      // PROCESSING row after a failure would make the event look handled and
+      // silently drop the retry.
+      await this.releaseInboundEvent(event, error);
+      throw error;
+    }
+
+    await this.completeInboundEvent(event);
 
     return { received: true, type: event.type };
   }
 
-  private async applyWebhookSucceeded(reference: string, amount?: number): Promise<void> {
-    const payment = await this.prisma.payment.findFirst({
-      where: { gatewayRef: reference },
+  /**
+   * Durable inbound replay barrier. The payment mutations are compare-and-set
+   * protected, so a replay could not double-credit, but every replay still did
+   * the lookup work and a failure was indistinguishable from a success. The
+   * unique (provider, eventId) turns "have we seen this event?" into a single
+   * atomic question.
+   *
+   * - `duplicate`  -> a previous delivery reached PROCESSED; drop this one.
+   * - `processing` -> a previous attempt failed or died mid-flight; take over.
+   */
+  private async claimInboundEvent(
+    event: GatewayWebhookEvent,
+  ): Promise<'claimed' | 'processing' | 'duplicate'> {
+    if (!event.eventId) {
+      if (!this.missingEventIdLogged) {
+        this.missingEventIdLogged = true;
+        this.logger.warn(
+          `${event.provider} webhook parsed without an event id; replay protection degraded to signature freshness only`,
+        );
+      }
+      return 'claimed';
+    }
+
+    try {
+      await this.prisma.paymentWebhookReceipt.create({
+        data: {
+          provider: event.provider,
+          eventId: event.eventId,
+          type: event.type,
+        },
+      });
+      return 'claimed';
+    } catch (error) {
+      if (!this.isUniqueViolation(error)) {
+        throw error;
+      }
+    }
+
+    const existing = await this.prisma.paymentWebhookReceipt.findUnique({
+      where: {
+        provider_eventId: { provider: event.provider, eventId: event.eventId as string },
+      },
+      select: { status: true },
     });
+    if (existing?.status === 'PROCESSED') {
+      return 'duplicate';
+    }
+
+    await this.prisma.paymentWebhookReceipt.update({
+      where: {
+        provider_eventId: { provider: event.provider, eventId: event.eventId as string },
+      },
+      data: { status: 'PROCESSING', error: null, processedAt: null },
+    });
+    return 'processing';
+  }
+
+  private async completeInboundEvent(event: GatewayWebhookEvent): Promise<void> {
+    if (!event.eventId) return;
+    await this.prisma.paymentWebhookReceipt.update({
+      where: { provider_eventId: { provider: event.provider, eventId: event.eventId } },
+      data: { status: 'PROCESSED', processedAt: new Date(), error: null },
+    });
+  }
+
+  private async releaseInboundEvent(event: GatewayWebhookEvent, cause: unknown): Promise<void> {
+    if (!event.eventId) return;
+    const message = cause instanceof Error ? cause.message : String(cause);
+    try {
+      await this.prisma.paymentWebhookReceipt.update({
+        where: { provider_eventId: { provider: event.provider, eventId: event.eventId } },
+        data: { status: 'FAILED', error: message.slice(0, 500) },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to release inbound webhook claim ${event.provider}/${event.eventId}: ${String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Resolve a gateway reference to exactly one local payment.
+   *
+   * `gatewayRef` is the provider's own id, and an inbound webhook carries no
+   * tenant context, so this lookup is not tenant-scoped by construction. Provider
+   * ids are only unique *within one merchant account*: Paymob order ids are
+   * sequential per merchant, so two tenants can genuinely hold the same
+   * `gatewayRef`. A `findFirst` would then settle whichever row came first,
+   * crediting one tenant's order from another tenant's payment.
+   *
+   * Rather than guess, an ambiguous reference is refused and logged for
+   * operators. `Payment` has no provider column and is soft-deleted, so a
+   * unique constraint is not a safe assumption here (see
+   * scripts/audit-gatewayref.js); refusing to guess is the correct default.
+   */
+  private async findPaymentByGatewayRef(
+    reference: string,
+    context: string,
+  ): Promise<PaymentModel | null> {
+    const matches = await this.prisma.payment.findMany({
+      where: { gatewayRef: reference, deletedAt: null },
+      take: 2,
+    });
+
+    if (matches.length > 1) {
+      this.logger.error(
+        `${context}: gatewayRef ${reference} matches ${matches.length} payments ` +
+          `(${matches.map((m) => `${m.id}/tenant=${m.tenantId}`).join(', ')}); ` +
+          'refusing to guess which one this webhook belongs to',
+      );
+      await this.recordReconcileAttempt(
+        matches[0].id,
+        `Ambiguous gatewayRef ${reference}: ${matches.length} candidate payments`,
+      ).catch(() => undefined);
+      return null;
+    }
+
+    return matches[0] ?? null;
+  }
+
+  private async applyWebhookSucceeded(reference: string, amount?: number): Promise<void> {
+    const payment = await this.findPaymentByGatewayRef(reference, 'Webhook payment.succeeded');
     if (!payment) {
       this.logger.warn(`Webhook payment.succeeded: no payment for gatewayRef ${reference}`);
       return;
@@ -1729,9 +1870,7 @@ export class PaymentsService {
   }
 
   private async applyWebhookFailed(reference: string): Promise<void> {
-    const payment = await this.prisma.payment.findFirst({
-      where: { gatewayRef: reference },
-    });
+    const payment = await this.findPaymentByGatewayRef(reference, 'Webhook payment.failed');
     if (!payment || payment.status !== PaymentStatus.PENDING) {
       return;
     }
@@ -1752,9 +1891,7 @@ export class PaymentsService {
     refundedAmount?: number,
     refundedAmountIsTotal = false,
   ): Promise<void> {
-    const payment = await this.prisma.payment.findFirst({
-      where: { gatewayRef: reference },
-    });
+    const payment = await this.findPaymentByGatewayRef(reference, 'Webhook refund');
     if (!payment) {
       this.logger.warn(`Webhook refund: no payment for gatewayRef ${reference}`);
       return;

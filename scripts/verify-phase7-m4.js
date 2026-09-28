@@ -153,19 +153,23 @@ if (delAtCols === 126) {
 } else {
   fail(`deletedAt columns=${delAtCols} (expected 126)`);
 }
-const updAtCols = count(schema, /updatedAt\s+DateTime\s+@updatedAt/g);
-if (updAtCols === 125) {
-  ok('125 models carry updatedAt @updatedAt (CookiePreference excluded)');
-} else {
-  fail(`updatedAt columns=${updAtCols} (expected 125)`);
+  const updAtCols = count(schema, /updatedAt\s+DateTime\s+@updatedAt/g);
+  // 126 = 125 models + PaymentWebhookReceipt (the inbound webhook replay
+  // ledger added in phase 7 M5). CookiePreference stays excluded.
+  if (updAtCols === 126) {
+    ok('126 models carry updatedAt @updatedAt (CookiePreference excluded)');
+  } else {
+    fail(`updatedAt columns=${updAtCols} (expected 126)`);
+
 }
 
-// 5g. 20 new enums (78 total = 58 baseline + 20 new)
-const enumCount = count(schema, /^enum\s+\w+\s*\{/gm);
-if (enumCount === 78) {
-  ok('78 enum declarations (58 baseline + 20 new)');
-} else {
-  fail(`enum declarations=${enumCount} (expected 78)`);
+  // 5g. 20 new enums (79 total = 58 baseline + 20 new + PaymentWebhookReceiptStatus)
+  const enumCount = count(schema, /^enum\s+\w+\s*\{/gm);
+  if (enumCount === 79) {
+    ok('79 enum declarations (58 baseline + 20 new + PaymentWebhookReceiptStatus)');
+  } else {
+    fail(`enum declarations=${enumCount} (expected 79)`);
+
 }
 const NEW_ENUMS = [
   'NotificationType', 'ReportType', 'ReportStatus', 'ApprovalStatus',

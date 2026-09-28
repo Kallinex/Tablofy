@@ -7,6 +7,9 @@ const API_SRC = path.join(BASE, 'apps', 'api', 'src');
 
 let passed = 0;
 let failed = 0;
+// A verifier that prints a failure but exits 0 is worse than no verifier: CI and
+// the release checklist both read the exit code, not the score line.
+let exitCode = 0;
 const errors = [];
 
 function check(description, condition, detail = '') {
@@ -15,7 +18,9 @@ function check(description, condition, detail = '') {
     console.log(`  \u2713 ${description}`);
   } else {
     failed++;
+    exitCode = 1;
     const msg = detail ? `${description}: ${detail}` : description;
+
     errors.push(msg);
     console.log(`  \u2717 ${description}`);
   }
@@ -154,7 +159,11 @@ let jestPassed = false;
 let eslintPassed = false;
 
 try {
-  execSync('npx tsc --noEmit -p tsconfig.json 2>&1', { cwd: path.join(BASE, 'apps', 'api'), stdio: 'pipe', timeout: 120000 });
+  // `tsconfig.json` is a solution file with `"files": []` and `"include": []`,
+  // so it type-checks nothing: the gate used to pass no matter what the code
+  // looked like. `tsconfig.app.json` is the project that actually holds the
+  // source.
+  execSync('npx tsc --noEmit -p tsconfig.app.json 2>&1', { cwd: path.join(BASE, 'apps', 'api'), stdio: 'pipe', timeout: 120000 });
   tscPassed = true;
 } catch {
   // tsc failed
@@ -189,3 +198,5 @@ const total = passed + failed;
 const pct = Math.round((passed / total) * 100);
 console.log(`Score: ${pct}% (${passed}/${total})`);
 console.log(`Status: ${failed === 0 ? '\u2713 ALL CHECKS PASSED' : '\u2717 SOME CHECKS FAILED'}`);
+
+process.exit(exitCode);

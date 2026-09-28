@@ -448,6 +448,225 @@ describe('TransfersService', () => {
       );
       expect(result.status).toBe(TransferStatus.RECEIVED);
     });
+
+    describe('partial receive safety', () => {
+      const twoItems = [
+        transferItem,
+        {
+          id: 'ti-2',
+          inventoryItemId: 'item-2',
+          quantity: 4,
+          unitCost: 1,
+          notes: null,
+          receivedQuantity: null,
+        },
+      ];
+
+      const fullReceipt = {
+        items: [
+          { inventoryItemId: 'item-1', quantityReceived: 10 },
+          { inventoryItemId: 'item-2', quantityReceived: 4 },
+        ],
+      };
+
+      function stubDestination() {
+        prisma.inventoryItem.findFirst.mockResolvedValue({
+          id: 'item-1',
+          name: 'Tomato',
+          currentQuantity: 50,
+          averageCost: 2,
+        });
+        prisma.inventoryItem.update.mockResolvedValue({});
+        prisma.stockMovement.create.mockResolvedValue({});
+        prisma.branchTransferItem.update.mockResolvedValue({});
+        prisma.branchTransfer.updateMany.mockResolvedValue({ count: 1 });
+        prisma.branchTransfer.update.mockResolvedValue(
+          mockTransfer({ status: TransferStatus.RECEIVED }),
+        );
+      }
+
+      it('rejects a payload that silently omits a transferred line', async () => {
+        // Receiving only line 1 used to mark the whole transfer RECEIVED: line 2
+        // was never credited anywhere and its stock had already been decremented
+        // from the source at dispatch, so it vanished from the books.
+        prisma.branchTransfer.findFirst.mockResolvedValue(
+          mockTransfer({ status: TransferStatus.IN_TRANSIT, items: twoItems }),
+        );
+
+        await expect(
+          service.receiveTransfer(
+            'trf-1',
+            { items: [{ inventoryItemId: 'item-1', quantityReceived: 10 }] } as never,
+            testTenantId,
+            testUserId,
+          ),
+        ).rejects.toThrow(/item-2/);
+        expect(prisma.branchTransfer.update).not.toHaveBeenCalled();
+        expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+      });
+
+      it('rejects a payload that names the same line twice', async () => {
+        prisma.branchTransfer.findFirst.mockResolvedValue(
+          mockTransfer({ status: TransferStatus.IN_TRANSIT, items: twoItems }),
+        );
+
+        await expect(
+          service.receiveTransfer(
+            'trf-1',
+            {
+              items: [
+                { inventoryItemId: 'item-1', quantityReceived: 5 },
+                { inventoryItemId: 'item-1', quantityReceived: 5 },
+                { inventoryItemId: 'item-2', quantityReceived: 4 },
+              ],
+            } as never,
+            testTenantId,
+            testUserId,
+          ),
+        ).rejects.toThrow(/[Dd]uplicate/);
+        expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+      });
+
+      it('accepts a full receipt and closes the transfer', async () => {
+        prisma.branchTransfer.findFirst.mockResolvedValue(
+          mockTransfer({ status: TransferStatus.IN_TRANSIT, items: twoItems }),
+        );
+        stubDestination();
+
+        const result = await service.receiveTransfer(
+          'trf-1',
+          fullReceipt as never,
+          testTenantId,
+          testUserId,
+        );
+
+        expect(result.status).toBe(TransferStatus.RECEIVED);
+        expect(prisma.stockMovement.create).toHaveBeenCalledTimes(2);
+      });
+
+      it('books a shortage explicitly instead of completing silently', async () => {
+        prisma.branchTransfer.findFirst.mockResolvedValue(
+          mockTransfer({ status: TransferStatus.IN_TRANSIT, items: twoItems }),
+        );
+        stubDestination();
+
+        const result = await service.receiveTransfer(
+          'trf-1',
+          {
+            items: [
+              { inventoryItemId: 'item-1', quantityReceived: 10 },
+              { inventoryItemId: 'item-2', quantityReceived: 1 },
+            ],
+          } as never,
+          testTenantId,
+          testUserId,
+        );
+
+        // item-2 is only 1 of 4: the transfer still closes, but the loss is
+        // recorded so the gap is auditable instead of invisible.
+        expect(result.status).toBe(TransferStatus.RECEIVED);
+        expect(auditLogs.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: 'TRANSFER_RECEIVED',
+            newValues: expect.objectContaining({
+              shortfalls: [{ inventoryItemId: 'item-2', ordered: 4, received: 1 }],
+            }),
+          }),
+        );
+        expect(eventEmitter.emit).toHaveBeenCalledWith(
+          'transfer.received.short',
+          expect.objectContaining({
+            transferId: 'trf-1',
+            shortfalls: [expect.objectContaining({ inventoryItemId: 'item-2' })],
+          }),
+        );
+        expect(prisma.branchTransferItem.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'ti-2' },
+            data: expect.objectContaining({
+              receivedQuantity: 1,
+              notes: expect.stringContaining('SHORT IN TRANSIT'),
+            }),
+          }),
+        );
+      });
+
+      it('rejects a negative or fractional receipt before touching the transfer', async () => {
+        prisma.branchTransfer.findFirst.mockResolvedValue(
+          mockTransfer({ status: TransferStatus.IN_TRANSIT, items: [transferItem] }),
+        );
+
+        await expect(
+          service.receiveTransfer(
+            'trf-1',
+            { items: [{ inventoryItemId: 'item-1', quantityReceived: -3 }] } as never,
+            testTenantId,
+            testUserId,
+          ),
+        ).rejects.toThrow(BadRequestException);
+        await expect(
+          service.receiveTransfer(
+            'trf-1',
+            { items: [{ inventoryItemId: 'item-1', quantityReceived: 2.5 }] } as never,
+            testTenantId,
+            testUserId,
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.branchTransfer.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('accepts a zero receipt as a declared full shortage and posts no stock movement', async () => {
+        prisma.branchTransfer.findFirst.mockResolvedValue(
+          mockTransfer({ status: TransferStatus.IN_TRANSIT, items: [transferItem] }),
+        );
+        stubDestination();
+
+        const result = await service.receiveTransfer(
+          'trf-1',
+          { items: [{ inventoryItemId: 'item-1', quantityReceived: 0 }] } as never,
+          testTenantId,
+          testUserId,
+        );
+
+        expect(result.status).toBe(TransferStatus.RECEIVED);
+        // Nothing arrived, so nothing may be credited and no zero-quantity
+        // movement may be written; the line is only annotated as short.
+        expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+        expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+        expect(prisma.branchTransferItem.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'ti-1' },
+            data: expect.objectContaining({
+              receivedQuantity: 0,
+              notes: expect.stringContaining('SHORT IN TRANSIT'),
+            }),
+          }),
+        );
+      });
+
+      it('does not credit a line that belongs to another transfer', async () => {
+        prisma.branchTransfer.findFirst.mockResolvedValue(
+          mockTransfer({ status: TransferStatus.IN_TRANSIT, items: twoItems }),
+        );
+        stubDestination();
+
+        await expect(
+          service.receiveTransfer(
+            'trf-1',
+            {
+              items: [
+                { inventoryItemId: 'item-1', quantityReceived: 10 },
+                { inventoryItemId: 'item-2', quantityReceived: 4 },
+                { inventoryItemId: 'item-9', quantityReceived: 3 },
+              ],
+            } as never,
+            testTenantId,
+            testUserId,
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.inventoryItem.update).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('cancelTransfer', () => {

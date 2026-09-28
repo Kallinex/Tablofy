@@ -403,16 +403,21 @@ export class StripeProvider implements PaymentProvider {
       return null;
     }
     const event = payload as {
+      id?: string;
       type?: string;
       data?: { object?: Record<string, unknown> };
     };
     const obj = event.data?.object ?? {};
+    // Stripe's event id is the replay key: stable across provider retries of the
+    // same event, unique per event.
+    const eventId = typeof event.id === 'string' && event.id ? event.id : undefined;
     switch (event.type) {
       case 'payment_intent.succeeded':
         return {
           provider: 'stripe',
           type: 'payment.succeeded',
           reference: String(obj.id ?? ''),
+          eventId,
           amount: typeof obj.amount === 'number' ? obj.amount / 100 : undefined,
           currency: typeof obj.currency === 'string' ? obj.currency.toUpperCase() : undefined,
           raw: payload,
@@ -423,6 +428,7 @@ export class StripeProvider implements PaymentProvider {
           provider: 'stripe',
           type: 'payment.failed',
           reference: String(obj.id ?? ''),
+          eventId,
           raw: payload,
         };
       case 'charge.refunded': {
@@ -432,6 +438,7 @@ export class StripeProvider implements PaymentProvider {
           provider: 'stripe',
           type: amountRefunded < amount ? 'refund.partial' : 'refund.succeeded',
           reference: String(obj.payment_intent ?? obj.id ?? ''),
+          eventId,
           refundedAmount: amountRefunded / 100,
           refundedAmountIsTotal: true,
           raw: payload,
@@ -443,6 +450,7 @@ export class StripeProvider implements PaymentProvider {
           provider: 'stripe',
           type: 'refund.succeeded',
           reference: String(refundObj.payment_intent ?? refundObj.id ?? ''),
+          eventId,
           refundedAmount: typeof refundObj.amount === 'number' ? refundObj.amount / 100 : undefined,
           refundedAmountIsTotal: false,
           raw: payload,

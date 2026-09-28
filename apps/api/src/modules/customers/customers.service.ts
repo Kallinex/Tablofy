@@ -857,6 +857,16 @@ export class CustomersService {
     const amount = roundMoney(dto.amount);
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // `balanceBefore` used to come from the pre-transaction `ensureWallet`
+      // read, so two concurrent recharges both recorded 0 -> 100 and
+      // 0 -> 200: the ledger no longer reconciles with the wallet balance.
+      // Read inside the transaction, exactly like spendWallet.
+      const before = await tx.wallet.findUnique({ where: { id: wallet.id } });
+      if (!before) {
+        throw new NotFoundException('Wallet not found');
+      }
+      const balanceBefore = roundMoney(before.balance);
+
       const updated = await tx.wallet.update({
         where: { id: wallet.id },
         data: {
@@ -872,7 +882,7 @@ export class CustomersService {
           customerId,
           type: WalletTransactionType.RECHARGE,
           amount,
-          balanceBefore: roundMoney(wallet.balance),
+          balanceBefore,
           balanceAfter: roundMoney(updated.balance),
           description: dto.description ?? 'Wallet recharge',
           referenceId: dto.referenceId,

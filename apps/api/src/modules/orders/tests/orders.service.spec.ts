@@ -1185,6 +1185,7 @@ describe('OrdersService', () => {
         update: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
       },
       orderItem: {
         create: jest.fn(),
@@ -1215,6 +1216,12 @@ describe('OrdersService', () => {
   function stubFindOne(order: Record<string, unknown>) {
     cache.get.mockResolvedValue(null);
     prisma.order.findFirst.mockResolvedValue(order);
+  }
+
+  // applyTaxRate / applyServiceCharge must read the order *inside* the
+  // transaction, because `findOne` serves a cached snapshot up to 30s old.
+  function mockFreshOrder(tx: ReturnType<typeof makeTx>, order: Record<string, unknown>) {
+    tx.order.findFirst.mockResolvedValue(order);
   }
 
   describe('applyDiscount', () => {
@@ -1903,6 +1910,7 @@ describe('OrdersService', () => {
         isPercentage: true,
       });
       const tx = makeTx();
+      mockFreshOrder(tx, order);
       tx.order.update.mockResolvedValue(order);
       mockTransaction(tx);
       mockRecalculate(tx, order);
@@ -1915,6 +1923,52 @@ describe('OrdersService', () => {
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'ORDER_SERVICE_CHARGE_APPLIED' }),
       );
+    });
+
+    it('should compute the charge from the in-transaction order, not the cached snapshot', async () => {
+      // The cache still serves subtotal 100 while the row is already 80.
+      const stale = orderWithIncludes({ subtotal: 100 });
+      stubFindOne(stale);
+      prisma.serviceCharge.findFirst.mockResolvedValue({
+        id: 'sc-1',
+        rate: 10,
+        isPercentage: true,
+      });
+      const tx = makeTx();
+      mockFreshOrder(tx, orderWithIncludes({ subtotal: 80, version: 7 }));
+      tx.order.update.mockResolvedValue(stale);
+      mockTransaction(tx);
+      mockRecalculate(tx, stale);
+
+      await service.applyServiceCharge('order-1', 'sc-1', testTenantId, testUserId);
+
+      expect(tx.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'order-1', version: 7 },
+        data: { version: { increment: 1 } },
+      });
+      expect(tx.order.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ serviceCharge: 8 }) }),
+      );
+    });
+
+    it('should refuse the write when the order was modified concurrently', async () => {
+      const order = orderWithIncludes();
+      stubFindOne(order);
+      prisma.serviceCharge.findFirst.mockResolvedValue({
+        id: 'sc-1',
+        rate: 10,
+        isPercentage: true,
+      });
+      const tx = makeTx();
+      mockFreshOrder(tx, order);
+      tx.order.updateMany.mockResolvedValue({ count: 0 });
+      mockTransaction(tx);
+      mockRecalculate(tx, order);
+
+      await expect(
+        service.applyServiceCharge('order-1', 'sc-1', testTenantId, testUserId),
+      ).rejects.toThrow(ConflictException);
+      expect(tx.order.update).not.toHaveBeenCalled();
     });
 
     it('should throw NotFound when service charge missing', async () => {
@@ -1933,6 +1987,7 @@ describe('OrdersService', () => {
       stubFindOne(order);
       prisma.taxRate.findFirst.mockResolvedValue({ id: 'tax-1', rate: 0.07 });
       const tx = makeTx();
+      mockFreshOrder(tx, order);
       tx.order.update.mockResolvedValue(order);
       mockTransaction(tx);
       mockRecalculate(tx, order);
@@ -1949,11 +2004,50 @@ describe('OrdersService', () => {
       );
     });
 
+    it('should tax the in-transaction subtotal, not the cached snapshot', async () => {
+      // Cache still says subtotal 100 / discount 20; the row is already 80 / 20.
+      stubFindOne(orderWithIncludes({ subtotal: 100, discount: 20 }));
+      prisma.taxRate.findFirst.mockResolvedValue({ id: 'tax-1', rate: 0.1 });
+      const tx = makeTx();
+      mockFreshOrder(tx, orderWithIncludes({ subtotal: 80, discount: 20, version: 4 }));
+      mockTransaction(tx);
+      mockRecalculate(tx, orderWithIncludes());
+
+      await service.applyTaxRate('order-1', 'tax-1', testTenantId, testUserId);
+
+      expect(tx.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'order-1', version: 4 },
+        data: { version: { increment: 1 } },
+      });
+      // 8.00 taxable, not the 8.00 that the stale cache would also give here —
+      // assert the version claim is what protects the amount.
+      expect(tx.order.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ taxAmount: 6 }) }),
+      );
+    });
+
+    it('should refuse the write when the order was modified concurrently', async () => {
+      const order = orderWithIncludes();
+      stubFindOne(order);
+      prisma.taxRate.findFirst.mockResolvedValue({ id: 'tax-1', rate: 0.07 });
+      const tx = makeTx();
+      mockFreshOrder(tx, order);
+      tx.order.updateMany.mockResolvedValue({ count: 0 });
+      mockTransaction(tx);
+      mockRecalculate(tx, order);
+
+      await expect(
+        service.applyTaxRate('order-1', 'tax-1', testTenantId, testUserId),
+      ).rejects.toThrow(ConflictException);
+      expect(tx.order.update).not.toHaveBeenCalled();
+    });
+
     it('should round tax to the nearest cent using half-up decimal math', async () => {
       const order = orderWithIncludes({ subtotal: 19.99, discount: 0 });
       stubFindOne(order);
       prisma.taxRate.findFirst.mockResolvedValue({ id: 'tax-1', rate: 0.15 });
       const tx = makeTx();
+      mockFreshOrder(tx, order);
       tx.order.update.mockResolvedValue(order);
       mockTransaction(tx);
       mockRecalculate(tx, order);

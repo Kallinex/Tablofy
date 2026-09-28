@@ -24,6 +24,13 @@ export interface GatewayWebhookEvent {
   provider: 'stripe' | 'paymob';
   type: 'payment.succeeded' | 'payment.failed' | 'refund.succeeded' | 'refund.partial';
   reference: string;
+  /**
+   * The provider's own id for this event (Stripe `event.id`, Paymob
+   * `type:obj.id`). Used as the inbound replay key: a duplicate delivery of the
+   * same event id is dropped before it can touch a payment. Must be stable
+   * across provider retries of the *same* event and different for each new one.
+   */
+  eventId?: string;
   amount?: number;
   currency?: string;
   refundedAmount?: number;

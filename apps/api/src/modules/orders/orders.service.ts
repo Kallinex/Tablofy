@@ -1178,19 +1178,42 @@ export class OrdersService {
     }
 
     const rate = Number(sc.rate);
-    const scAmount = sc.isPercentage ? percentOf(existing.subtotal, rate) : roundMoney(rate);
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.order.update({
+    const { updated, scAmount } = await this.prisma.$transaction(async (tx) => {
+      // The amount used to be derived from `this.findOne`, which is a cached
+      // snapshot (30s TTL) read *outside* the transaction, and the write was a
+      // bare `update({ where: { id } })` with no version claim. A concurrent
+      // voidItem (which does claim the version) could therefore change the
+      // subtotal and still lose the race, leaving a service charge computed on
+      // a stale subtotal baked into the order total. Read fresh, claim the
+      // version, then compute.
+      const fresh = await tx.order.findFirst({ where: { id, tenantId, deletedAt: null } });
+      if (!fresh) {
+        throw new NotFoundException('Order not found');
+      }
+      if (isTerminalStatus(fresh.status as string)) {
+        throw new BadRequestException(`Cannot modify order in ${fresh.status} status`);
+      }
+
+      const verResult = await tx.order.updateMany({
+        where: { id, version: fresh.version },
+        data: { version: { increment: 1 } },
+      });
+      if (verResult.count === 0) {
+        throw new ConflictException('Order was modified by another user. Please retry.');
+      }
+
+      const amount = sc.isPercentage ? percentOf(fresh.subtotal, rate) : roundMoney(rate);
+      const updatedRow = await tx.order.update({
         where: { id },
         data: {
           serviceChargeId,
-          serviceCharge: scAmount,
+          serviceCharge: amount,
           serviceChargeRate: rate,
         },
       });
       await this.recalculateOrder(tx, id);
-      return updated;
+      return { updated: updatedRow, scAmount: amount };
     });
 
     await this.auditLogsService.log({
@@ -1206,7 +1229,7 @@ export class OrdersService {
     await this.cacheService.delete(tenantId, `one:${id}`);
     await this.cacheService.deletePattern(tenantId, 'list:*');
 
-    return result;
+    return updated;
   }
 
   async applyTaxRate(
@@ -1230,20 +1253,39 @@ export class OrdersService {
     }
 
     const rate = Number(tax.rate);
-    const taxableAmount = subMoney(existing.subtotal, existing.discount);
-    const taxAmount = mulMoney(taxableAmount, rate);
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.order.update({
+    const { updated, taxAmount } = await this.prisma.$transaction(async (tx) => {
+      // Same defect as applyServiceCharge: the taxable base came from the
+      // cached snapshot and the write claimed no version, so a concurrent
+      // voidItem or discount could be silently overtaxed.
+      const fresh = await tx.order.findFirst({ where: { id, tenantId, deletedAt: null } });
+      if (!fresh) {
+        throw new NotFoundException('Order not found');
+      }
+      if (isTerminalStatus(fresh.status as string)) {
+        throw new BadRequestException(`Cannot modify order in ${fresh.status} status`);
+      }
+
+      const verResult = await tx.order.updateMany({
+        where: { id, version: fresh.version },
+        data: { version: { increment: 1 } },
+      });
+      if (verResult.count === 0) {
+        throw new ConflictException('Order was modified by another user. Please retry.');
+      }
+
+      const taxableAmount = subMoney(fresh.subtotal, fresh.discount);
+      const amount = mulMoney(taxableAmount, rate);
+      const updatedRow = await tx.order.update({
         where: { id },
         data: {
           taxRateId,
-          taxAmount,
+          taxAmount: amount,
           taxRate: rate,
         },
       });
       await this.recalculateOrder(tx, id);
-      return updated;
+      return { updated: updatedRow, taxAmount: amount };
     });
 
     await this.auditLogsService.log({
@@ -1259,7 +1301,7 @@ export class OrdersService {
     await this.cacheService.delete(tenantId, `one:${id}`);
     await this.cacheService.deletePattern(tenantId, 'list:*');
 
-    return result;
+    return updated;
   }
 
   async voidItem(

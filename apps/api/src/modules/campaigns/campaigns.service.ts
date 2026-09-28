@@ -11,6 +11,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { QueueService } from '../queues/queue.service';
 import { Prisma, CampaignType } from '@prisma/client';
+import { percentOf, roundMoney } from '../../common/money/money.util';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { CampaignQueryDto } from './dto/campaign-query.dto';
@@ -719,10 +720,22 @@ export class CampaignsService {
     customerId?: string,
     orderAmount?: number,
   ) {
-    const where: Prisma.PromotionWhereInput = { code, deletedAt: null };
+    // `code` arrives from `@Body('code')`, a primitive param the global
+    // ValidationPipe never validates. `Promotion.code` is nullable, so an
+    // omitted code would build a where-clause with the filter dropped and
+    // `findFirst` would hand back an arbitrary promotion of the tenant.
+    const normalizedCode = typeof code === 'string' ? code.trim() : '';
+    if (!normalizedCode) {
+      throw new BadRequestException('Promotion code is required');
+    }
+
+    const where: Prisma.PromotionWhereInput = { code: normalizedCode, deletedAt: null };
     if (tenantId) where.tenantId = tenantId;
     const promotion = await this.prisma.promotion.findFirst({ where });
     if (!promotion) throw new NotFoundException('Promotion not found');
+    if (promotion.code !== normalizedCode) {
+      throw new NotFoundException('Promotion not found');
+    }
 
     const errors: string[] = [];
 
@@ -755,6 +768,17 @@ export class CampaignsService {
       }
     }
 
+    // `usagePerTenant` was written on create/update but never read anywhere, so
+    // a tenant-configured cap was silently a no-op.
+    if (promotion.usagePerTenant) {
+      const tenantUsage = await this.prisma.promotionUsage.count({
+        where: { promotionId: promotion.id, tenantId: promotion.tenantId },
+      });
+      if (tenantUsage >= promotion.usagePerTenant) {
+        errors.push('Per-tenant usage limit reached');
+      }
+    }
+
     return {
       valid: errors.length === 0,
       promotion,
@@ -779,30 +803,63 @@ export class CampaignsService {
 
     let discountAmount = 0;
     if (promotion.type === 'PERCENTAGE') {
-      discountAmount = orderAmount * (Number(promotion.value) / 100);
+      discountAmount = percentOf(orderAmount, promotion.value);
       if (promotion.maxDiscount) {
         discountAmount = Math.min(discountAmount, Number(promotion.maxDiscount));
       }
     } else if (promotion.type === 'FIXED') {
-      discountAmount = Number(promotion.value);
+      discountAmount = roundMoney(promotion.value);
     }
+    // A discount can never exceed the order, otherwise `finalAmount` goes
+    // negative and the POS books a negative charge.
+    discountAmount = roundMoney(Math.min(discountAmount, orderAmount));
 
-    await this.prisma.promotionUsage.create({
-      data: {
-        promotionId: promotion.id,
-        customerId,
-        orderId,
-        tenantId,
-        discountAmount,
-      },
-    });
+    const usage = await this.prisma.$transaction(async (tx) => {
+      // Re-check the caps inside the transaction and claim capacity with a
+      // compare-and-set. A plain read-then-increment let two concurrent
+      // redemptions both observe `usedCount = 0` and both consume the last
+      // slot, and it left the usage row behind if the increment failed.
+      if (promotion.usagePerCustomer) {
+        const used = await tx.promotionUsage.count({
+          where: { promotionId: promotion.id, customerId },
+        });
+        if (used >= promotion.usagePerCustomer) {
+          throw new BadRequestException('Per-customer usage limit reached');
+        }
+      }
+      if (promotion.usagePerTenant) {
+        const used = await tx.promotionUsage.count({
+          where: { promotionId: promotion.id, tenantId: promotion.tenantId },
+        });
+        if (used >= promotion.usagePerTenant) {
+          throw new BadRequestException('Per-tenant usage limit reached');
+        }
+      }
 
-    await this.prisma.promotion.update({
-      where: { id: promotion.id },
-      data: {
-        usedCount: { increment: 1 },
-        version: { increment: 1 },
-      },
+      if (promotion.usageLimit) {
+        const claimed = await tx.promotion.updateMany({
+          where: { id: promotion.id, deletedAt: null, usedCount: { lt: promotion.usageLimit } },
+          data: { usedCount: { increment: 1 }, version: { increment: 1 } },
+        });
+        if (claimed.count === 0) {
+          throw new BadRequestException('Promotion usage limit reached');
+        }
+      } else {
+        await tx.promotion.update({
+          where: { id: promotion.id },
+          data: { usedCount: { increment: 1 }, version: { increment: 1 } },
+        });
+      }
+
+      return tx.promotionUsage.create({
+        data: {
+          promotionId: promotion.id,
+          customerId,
+          orderId,
+          tenantId,
+          discountAmount,
+        },
+      });
     });
 
     await this.auditLogsService.log({
@@ -825,7 +882,8 @@ export class CampaignsService {
       promotionId: promotion.id,
       code: promotion.code,
       discountAmount,
-      finalAmount: orderAmount - discountAmount,
+      finalAmount: roundMoney(orderAmount - discountAmount),
+      usageId: usage.id,
     };
   }
 
