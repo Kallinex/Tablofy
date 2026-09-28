@@ -18,10 +18,17 @@ export type StripeMode = 'mock' | 'test' | 'live';
 
 const STRIPE_REFUND_REASONS = ['duplicate', 'fraudulent', 'requested_by_customer'] as const;
 
+/**
+ * Stripe signs the header timestamp, so a captured signature stays valid forever
+ * unless we bound it. 300s matches the tolerance of stripe's own `webhook.constructEvent`.
+ */
+const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
+
 export interface StripeProviderOptions {
   mode?: StripeMode;
   secretKey?: string;
   webhookSecret?: string;
+  webhookToleranceSeconds?: number;
   apiBase?: string;
   http?: AxiosInstance;
 }
@@ -321,7 +328,7 @@ export class StripeProvider implements PaymentProvider {
         success: true,
         data: {
           status: this.mapStripeStatus(intent.status),
-          amount: intent.amount,
+          amount: intent.amount / 100,
           currency: intent.currency.toUpperCase(),
         },
       };
@@ -340,29 +347,55 @@ export class StripeProvider implements PaymentProvider {
       this.logger.error('Stripe webhook secret not configured');
       return false;
     }
-    const parts = new Map<string, string>();
+    // Stripe emits one `v1` per active signing secret, so during a secret rotation
+    // the header legitimately carries several and any one of them may match.
+    const signedPayloads: string[] = [];
+    let timestamp: string | undefined;
     for (const item of signature.split(',')) {
-      const [key, value] = item.split('=');
-      if (key && value) {
-        parts.set(key, value);
+      const separator = item.indexOf('=');
+      if (separator < 0) {
+        continue;
+      }
+      const key = item.slice(0, separator);
+      const value = item.slice(separator + 1);
+      if (!value) {
+        continue;
+      }
+      if (key === 't') {
+        timestamp = value;
+      } else if (key === 'v1') {
+        signedPayloads.push(value);
       }
     }
-    const timestamp = parts.get('t');
-    const expected = parts.get('v1');
-    if (!timestamp || !expected) {
+    if (!timestamp || signedPayloads.length === 0) {
+      return false;
+    }
+    if (!this.isTimestampFresh(timestamp)) {
+      this.logger.warn(`Stripe webhook timestamp ${timestamp} outside tolerance, rejecting`);
       return false;
     }
     const raw = Buffer.isBuffer(payload) ? payload.toString('utf8') : payload;
     const digest = createHmac('sha256', this.options.webhookSecret)
       .update(`${timestamp}.${raw}`)
       .digest('hex');
-    try {
-      const a = Buffer.from(digest, 'hex');
-      const b = Buffer.from(expected, 'hex');
-      return a.length === b.length && timingSafeEqual(a, b);
-    } catch {
+    const expected = Buffer.from(digest, 'hex');
+    for (const candidate of signedPayloads) {
+      const provided = Buffer.from(candidate, 'hex');
+      if (provided.length === expected.length && timingSafeEqual(expected, provided)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private isTimestampFresh(timestamp: string): boolean {
+    const seconds = Number(timestamp);
+    if (!Number.isInteger(seconds) || seconds <= 0) {
       return false;
     }
+    const tolerance = this.options.webhookToleranceSeconds ?? DEFAULT_WEBHOOK_TOLERANCE_SECONDS;
+    // Absolute difference so a minor clock skew is tolerated in both directions.
+    return Math.abs(Math.floor(Date.now() / 1000) - seconds) <= tolerance;
   }
 
   parseWebhookEvent(payload: unknown): GatewayWebhookEvent | null {

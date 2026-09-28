@@ -706,4 +706,115 @@ describe('CustomersService', () => {
       expect(result).toEqual(upserted);
     });
   });
+
+  describe('adjustPoints', () => {
+    beforeEach(() => {
+      prisma.$transaction.mockImplementation(async (fn: (tx: MockPrisma) => Promise<unknown>) =>
+        fn(prisma as unknown as MockPrisma),
+      );
+      prisma.membership.findUnique.mockResolvedValue({
+        customerId: 'cust-1',
+        tenantId: testTenantId,
+        points: 100,
+        tier: 'BRONZE',
+      });
+    });
+
+    it('should apply the adjustment as an atomic increment inside a transaction', async () => {
+      prisma.membership.updateMany.mockResolvedValue({ count: 1 });
+      prisma.loyaltyPointsTransaction.create.mockImplementation(
+        ({ data }: { data: { points: number } }) =>
+          Promise.resolve({ id: 'lp-1', balanceAfter: 100 + data.points }),
+      );
+
+      await service.adjustPoints(
+        'cust-1',
+        { points: 50, reason: 'goodwill' },
+        testTenantId,
+        testUserId,
+      );
+
+      // The regression guard: an absolute `points: 150` computed from a
+      // pre-transaction read loses a concurrent adjustment.
+      expect(prisma.membership.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { customerId: 'cust-1', tenantId: testTenantId },
+          data: expect.objectContaining({ points: { increment: 50 } }),
+        }),
+      );
+      expect(prisma.membership.update).not.toHaveBeenCalled();
+    });
+
+    it('should record balanceAfter from the balance read inside the transaction', async () => {
+      prisma.membership.updateMany.mockResolvedValue({ count: 1 });
+      // The in-transaction re-read is authoritative, so it must reflect the
+      // increment; a pre-transaction read would still return 100 here.
+      prisma.membership.findUnique
+        .mockResolvedValueOnce({
+          customerId: 'cust-1',
+          tenantId: testTenantId,
+          points: 100,
+          tier: 'BRONZE',
+        })
+        .mockResolvedValueOnce({
+          customerId: 'cust-1',
+          tenantId: testTenantId,
+          points: 150,
+          tier: 'BRONZE',
+        });
+      prisma.loyaltyPointsTransaction.create.mockResolvedValue({ id: 'lp-2', balanceAfter: 150 });
+
+      const txn = await service.adjustPoints(
+        'cust-1',
+        { points: 50, reason: 'goodwill' },
+        testTenantId,
+        testUserId,
+      );
+
+      // The in-transaction read is authoritative, not the pre-transaction value.
+      expect(prisma.loyaltyPointsTransaction.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ points: 50, balanceAfter: 150 }),
+        }),
+      );
+      expect(txn.balanceAfter).toBe(150);
+    });
+
+    it('should throw NotFoundException when the membership update affects no row', async () => {
+      prisma.membership.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.adjustPoints('cust-1', { points: 50, reason: 'x' }, testTenantId, testUserId),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.loyaltyPointsTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should not create a ledger entry when the update is rejected', async () => {
+      prisma.membership.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.adjustPoints('cust-1', { points: -50, reason: 'x' }, testTenantId, testUserId),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.loyaltyPointsTransaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should surface a duplicate reference as a ConflictException', async () => {
+      prisma.membership.updateMany.mockResolvedValue({ count: 1 });
+      prisma.loyaltyPointsTransaction.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('unique failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(
+        service.adjustPoints(
+          'cust-1',
+          { points: 50, reason: 'x', referenceId: 'ref-1' },
+          testTenantId,
+          testUserId,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
 });

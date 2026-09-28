@@ -535,23 +535,43 @@ export class CustomersService {
   }
 
   async adjustPoints(customerId: string, dto: AdjustPointsDto, tenantId: string, userId: string) {
-    const membership = await this.ensureMembership(customerId, tenantId);
-
-    const newBalance = membership.points + dto.points;
+    await this.ensureMembership(customerId, tenantId);
 
     let txn;
     try {
-      txn = await this.prisma.loyaltyPointsTransaction.create({
-        data: {
-          customerId,
-          tenantId,
-          points: dto.points,
-          type: LoyaltyTransactionType.ADJUSTED,
-          description: `Adjustment: ${dto.reason}`,
-          referenceId: dto.referenceId,
-          referenceType: dto.referenceType,
-          balanceAfter: newBalance,
-        },
+      txn = await this.prisma.$transaction(async (tx) => {
+        // Match earnPoints/redeemPoints: mutate atomically and read the
+        // authoritative balance back, instead of writing an absolute value
+        // computed from a pre-transaction read. Two concurrent adjustments
+        // would otherwise both compute the same newBalance and one would be
+        // silently lost, and balanceAfter would not match the real balance.
+        const claimed = await tx.membership.updateMany({
+          where: { customerId, tenantId },
+          data: {
+            points: { increment: dto.points },
+            lastActivityAt: new Date(),
+          },
+        });
+        if (claimed.count !== 1) throw new NotFoundException('Membership not found');
+
+        const after = await tx.membership.findUnique({
+          where: { customerId_tenantId: { customerId, tenantId } },
+        });
+        if (!after) throw new NotFoundException('Membership not found');
+        const newBalance = after.points;
+
+        return tx.loyaltyPointsTransaction.create({
+          data: {
+            customerId,
+            tenantId,
+            points: dto.points,
+            type: LoyaltyTransactionType.ADJUSTED,
+            description: `Adjustment: ${dto.reason}`,
+            referenceId: dto.referenceId,
+            referenceType: dto.referenceType,
+            balanceAfter: newBalance,
+          },
+        });
       });
     } catch (error) {
       if (this.isUniqueConflict(error)) {
@@ -560,18 +580,18 @@ export class CustomersService {
       throw error;
     }
 
-    await this.prisma.membership.update({
-      where: { customerId_tenantId: { customerId, tenantId } },
-      data: { points: newBalance, lastActivityAt: new Date() },
-    });
-
     await this.auditLogsService.log({
       action: 'LOYALTY_POINTS_ADJUSTED',
       resource: 'LoyaltyPoints',
       resourceId: txn.id,
       userId,
       tenantId,
-      newValues: { customerId, adjustment: dto.points, reason: dto.reason, balance: newBalance },
+      newValues: {
+        customerId,
+        adjustment: dto.points,
+        reason: dto.reason,
+        balance: txn.balanceAfter,
+      },
     });
 
     await this.cacheService.delete(tenantId, `customer:${customerId}`);

@@ -1199,6 +1199,7 @@ model Payment {
   @@index([method])
   @@index([orderId])
   @@index([status])
+  @@index([gatewayRef])
   @@index([tenantId, createdAt])
   @@index([tenantId])
   @@unique([tenantId, idempotencyKey])

@@ -1777,12 +1777,23 @@ describe('PaymentsService', () => {
     });
 
     function validStripeSignature(payload: string): string {
-      const timestamp = '1700000000';
+      // Must be current: the provider rejects stale timestamps outside its tolerance window.
+      const timestamp = String(Math.floor(Date.now() / 1000));
       const digest = createHmac('sha256', 'whsec_test')
         .update(`${timestamp}.${payload}`)
         .digest('hex');
       return `t=${timestamp},v1=${digest}`;
     }
+
+    it('should reject a replayed webhook whose signature timestamp is stale', async () => {
+      const payload = JSON.stringify({ type: 'payment_intent.succeeded' });
+      const stale = String(Math.floor(Date.now() / 1000) - 7200);
+      const digest = createHmac('sha256', 'whsec_test').update(`${stale}.${payload}`).digest('hex');
+
+      await expect(
+        webhookService.handleGatewayWebhook('stripe', payload, `t=${stale},v1=${digest}`),
+      ).rejects.toThrow(BadRequestException);
+    });
 
     it('should reject an invalid signature', async () => {
       await expect(

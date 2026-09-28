@@ -1,5 +1,6 @@
 import { createHmac } from 'crypto';
 import { StripeProvider } from '../../providers/stripe.provider';
+import { PaymobProvider } from '../../providers/paymob.provider';
 
 describe('StripeProvider', () => {
   describe('mock mode', () => {
@@ -298,32 +299,170 @@ describe('StripeProvider', () => {
   });
 
   describe('verifyWebhookSignature', () => {
+    const buildProvider = (webhookSecret = 'whsec_test') =>
+      new StripeProvider({
+        mode: 'live',
+        secretKey: 'sk_live_123',
+        webhookSecret,
+      });
+
+    const sign = (secret: string, timestamp: string, payload: string) =>
+      createHmac('sha256', secret).update(`${timestamp}.${payload}`).digest('hex');
+
     it('should accept a valid Stripe signature', () => {
       const secret = 'whsec_test';
       const payload = '{"type":"payment_intent.succeeded"}';
-      const timestamp = '1700000000';
+      const timestamp = String(Math.floor(Date.now() / 1000));
 
-      const expected = createHmac('sha256', secret).update(`${timestamp}.${payload}`).digest('hex');
-      const provider = new StripeProvider({
-        mode: 'live',
-        secretKey: 'sk_live_123',
-        webhookSecret: secret,
-      });
-      expect(provider.verifyWebhookSignature(payload, `t=${timestamp},v1=${expected}`)).toBe(true);
+      const expected = sign(secret, timestamp, payload);
+      expect(
+        buildProvider(secret).verifyWebhookSignature(payload, `t=${timestamp},v1=${expected}`),
+      ).toBe(true);
     });
 
     it('should reject an invalid Stripe signature', () => {
-      const provider = new StripeProvider({
-        mode: 'live',
-        secretKey: 'sk_live_123',
-        webhookSecret: 'whsec_test',
-      });
-      expect(provider.verifyWebhookSignature('{"x":1}', 't=1700000000,v1=deadbeef')).toBe(false);
+      const payload = '{"x":1}';
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      expect(buildProvider().verifyWebhookSignature(payload, `t=${timestamp},v1=deadbeef`)).toBe(
+        false,
+      );
     });
 
     it('should reject when webhook secret is not configured', () => {
       const provider = new StripeProvider();
-      expect(provider.verifyWebhookSignature('{}', 't=1,v1=abc')).toBe(false);
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      expect(provider.verifyWebhookSignature('{}', `t=${timestamp},v1=abc`)).toBe(false);
+    });
+
+    it('should reject a correctly signed but stale timestamp (replay window)', () => {
+      const secret = 'whsec_test';
+      const payload = '{"type":"payment_intent.succeeded"}';
+      // Signature is cryptographically valid, but captured 2 hours ago.
+      const stale = String(Math.floor(Date.now() / 1000) - 7200);
+      const expected = sign(secret, stale, payload);
+
+      expect(
+        buildProvider(secret).verifyWebhookSignature(payload, `t=${stale},v1=${expected}`),
+      ).toBe(false);
+    });
+
+    it('should accept a timestamp inside the configured tolerance', () => {
+      const secret = 'whsec_test';
+      const payload = '{"type":"payment_intent.succeeded"}';
+      const recent = String(Math.floor(Date.now() / 1000) - 60);
+      const expected = sign(secret, recent, payload);
+
+      expect(
+        buildProvider(secret).verifyWebhookSignature(payload, `t=${recent},v1=${expected}`),
+      ).toBe(true);
+    });
+
+    it('should honour a custom tolerance window', () => {
+      const secret = 'whsec_test';
+      const payload = '{"type":"payment_intent.succeeded"}';
+      const stale = String(Math.floor(Date.now() / 1000) - 120);
+      const expected = sign(secret, stale, payload);
+      const provider = new StripeProvider({
+        mode: 'live',
+        secretKey: 'sk_live_123',
+        webhookSecret: secret,
+        webhookToleranceSeconds: 600,
+      });
+
+      expect(provider.verifyWebhookSignature(payload, `t=${stale},v1=${expected}`)).toBe(true);
+    });
+
+    it('should accept a signature matching any v1 during secret rotation', () => {
+      const secret = 'whsec_test';
+      const oldSecret = 'whsec_old';
+      const payload = '{"type":"payment_intent.succeeded"}';
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const rotated = `t=${timestamp},v1=${sign(oldSecret, timestamp, payload)},v1=${sign(
+        secret,
+        timestamp,
+        payload,
+      )}`;
+
+      expect(buildProvider(secret).verifyWebhookSignature(payload, rotated)).toBe(true);
+    });
+
+    it('should reject a non-numeric timestamp', () => {
+      const provider = buildProvider();
+      expect(provider.verifyWebhookSignature('{"x":1}', 't=not-a-number,v1=abc')).toBe(false);
+    });
+
+    it('should reject a header with no v1 segment', () => {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      expect(buildProvider().verifyWebhookSignature('{"x":1}', `t=${timestamp}`)).toBe(false);
+    });
+
+    it('should reject a payload that differs from the signed payload', () => {
+      const secret = 'whsec_test';
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const expected = sign(secret, timestamp, '{"amount_cents":100}');
+
+      expect(
+        buildProvider(secret).verifyWebhookSignature(
+          '{"amount_cents":99999}',
+          `t=${timestamp},v1=${expected}`,
+        ),
+      ).toBe(false);
+    });
+  });
+
+  describe('getPaymentStatus amount units', () => {
+    it('should return major units even though Stripe reports cents', async () => {
+      const http = {
+        request: async () => ({
+          data: { id: 'pi_live_1', status: 'succeeded', amount: 5000, currency: 'usd' },
+        }),
+      } as never;
+      const provider = new StripeProvider({ mode: 'live', secretKey: 'sk_live_123', http });
+      await provider.initialize({ tenantId: 'tenant-1', settings: {} });
+
+      const result = await provider.getPaymentStatus('pi_live_1');
+
+      // The PaymentProvider contract is major units, matching Payment.amount
+      // and parseWebhookEvent. A raw 5000 here would make reconciliation
+      // compare 500000 cents against an expected 5000.
+      expect(result.data!.amount).toBe(50);
+    });
+
+    it('should keep a non-round cents value as a fraction in major units', async () => {
+      const http = {
+        request: async () => ({
+          data: { id: 'pi_live_2', status: 'succeeded', amount: 4999, currency: 'usd' },
+        }),
+      } as never;
+      const provider = new StripeProvider({ mode: 'live', secretKey: 'sk_live_123', http });
+      await provider.initialize({ tenantId: 'tenant-1', settings: {} });
+
+      const result = await provider.getPaymentStatus('pi_live_2');
+
+      expect(result.data!.amount).toBe(49.99);
+    });
+
+    it('should agree with the Paymob provider on the same underlying amount', async () => {
+      // Both providers must expose the same major-unit contract so
+      // reconciliation never needs a provider-specific conversion.
+      const http = {
+        request: async () => ({
+          data: { id: 'pi_live_3', status: 'succeeded', amount: 1500, currency: 'usd' },
+        }),
+      } as never;
+      const stripe = new StripeProvider({ mode: 'live', secretKey: 'sk_live_123', http });
+      await stripe.initialize({ tenantId: 'tenant-1', settings: {} });
+
+      const stripeStatus = await stripe.getPaymentStatus('pi_live_3');
+      const paymobEvent = new PaymobProvider().parseWebhookEvent({
+        type: 'transaction.updated',
+        amount_cents: 1500,
+        currency: 'egp',
+        obj: { id: 1, pending: false, success: true, source_data: { type: 'wallet' } },
+      });
+
+      expect(stripeStatus.data!.amount).toBe(15);
+      expect(paymobEvent?.amount).toBe(15);
     });
   });
 

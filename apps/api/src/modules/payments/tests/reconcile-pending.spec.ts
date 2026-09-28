@@ -201,7 +201,7 @@ describe('PaymentsService — reconcilePendingPayments (P1-02)', () => {
       prisma.order.findFirst.mockResolvedValue(freshOrder);
       stripeProvider.getPaymentStatus.mockResolvedValue({
         success: true,
-        data: { status: 'succeeded', amount: 5000, currency: 'USD' },
+        data: { status: 'succeeded', amount: 50, currency: 'USD' },
       });
       prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
         cb(successTx()),
@@ -230,7 +230,7 @@ describe('PaymentsService — reconcilePendingPayments (P1-02)', () => {
       prisma.order.findFirst.mockResolvedValue(freshOrder);
       stripeProvider.getPaymentStatus.mockResolvedValue({
         success: true,
-        data: { status: 'succeeded', amount: 5000, currency: 'USD' },
+        data: { status: 'succeeded', amount: 50, currency: 'USD' },
       });
       prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
         cb(successTx()),
@@ -247,7 +247,7 @@ describe('PaymentsService — reconcilePendingPayments (P1-02)', () => {
       prisma.payment.findMany.mockResolvedValue([pendingPayment()]);
       stripeProvider.getPaymentStatus.mockResolvedValue({
         success: true,
-        data: { status: 'succeeded', amount: 9999, currency: 'USD' },
+        data: { status: 'succeeded', amount: 99.99, currency: 'USD' },
       });
 
       const result = await service.reconcilePendingPayments();
@@ -301,7 +301,7 @@ describe('PaymentsService — reconcilePendingPayments (P1-02)', () => {
       prisma.order.findFirst.mockResolvedValue(freshOrder);
       stripeProvider.getPaymentStatus.mockResolvedValue({
         success: true,
-        data: { status: 'succeeded', amount: 5000, currency: 'USD' },
+        data: { status: 'succeeded', amount: 50, currency: 'USD' },
       });
 
       const concurrentTx = successTx();
@@ -323,7 +323,7 @@ describe('PaymentsService — reconcilePendingPayments (P1-02)', () => {
       prisma.order.findFirst.mockResolvedValue(null);
       stripeProvider.getPaymentStatus.mockResolvedValue({
         success: true,
-        data: { status: 'succeeded', amount: 5000, currency: 'USD' },
+        data: { status: 'succeeded', amount: 50, currency: 'USD' },
       });
 
       const result = await service.reconcilePendingPayments();
@@ -368,7 +368,7 @@ describe('PaymentsService — reconcilePendingPayments (P1-02)', () => {
       prisma.payment.findMany.mockResolvedValue([pendingPayment()]);
       stripeProvider.getPaymentStatus.mockResolvedValue({
         success: true,
-        data: { status: 'processing', amount: 5000, currency: 'USD' },
+        data: { status: 'processing', amount: 50, currency: 'USD' },
       });
 
       const result = await service.reconcilePendingPayments();

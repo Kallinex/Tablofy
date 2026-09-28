@@ -56,6 +56,12 @@ export interface PaymentProvider extends IntegrationProvider {
   getPaymentStatus(
     transactionId: string,
   ): Promise<IntegrationResult<{ status: string; amount: number; currency: string }>>;
+  /**
+   * `amount` is always in MAJOR units (e.g. 50.00), matching the local
+   * `Payment.amount` column. Providers that receive minor units (Stripe cents)
+   * must divide before returning, so callers never need provider-specific
+   * conversions. Same contract as `parseWebhookEvent`.
+   */
   verifyWebhookSignature(payload: string | Buffer, signature: string): boolean;
   parseWebhookEvent(payload: unknown): GatewayWebhookEvent | null;
 }

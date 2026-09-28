@@ -1396,7 +1396,7 @@ export class PaymentsService {
 
     if (gatewayStatus === 'succeeded') {
       const expectedCents = Math.round(Number(payment.amount) * 100);
-      const actualCents = this.gatewayAmountCents(provider, Number(statusResult.data.amount ?? 0));
+      const actualCents = this.gatewayAmountCents(Number(statusResult.data.amount ?? 0));
       if (Math.abs(actualCents - expectedCents) > 1) {
         this.logger.warn(
           `[Reconcile] amount mismatch for payment ${payment.id}: expected ${expectedCents} cents, gateway reports ${actualCents} cents`,
@@ -1522,15 +1522,13 @@ export class PaymentsService {
   }
 
   /**
-   * Normalizes a gateway-reported amount into cents. Local payment amounts are
-   * always stored in major units (e.g. 10.00), Stripe reports intent.amount in
-   * cents, while Paymob's status endpoint returns major units (amount_cents/100).
+   * Every PaymentProvider reports `getPaymentStatus().amount` in major units
+   * (e.g. 50.00) and `parseWebhookEvent()` already normalised both providers
+   * that way. Local payment amounts are major units too, so the only
+   * conversion left is major -> cents for the reconciliation comparison.
    */
-  private gatewayAmountCents(provider: ProviderLike, amount: number): number {
-    if (provider instanceof PaymobProvider) {
-      return Math.round(amount * 100);
-    }
-    return Math.round(amount);
+  private gatewayAmountCents(amount: number): number {
+    return Math.round(amount * 100);
   }
 
   private async recordReconcileAttempt(paymentId: string, note: string): Promise<void> {
