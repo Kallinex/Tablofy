@@ -1,11 +1,13 @@
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
+const VERIFY_PORT = Number(process.env.VERIFY_PORT || 3000);
+const REDIS = { host: process.env.REDIS_HOST || '127.0.0.1', port: Number(process.env.REDIS_PORT || 6379) };
 
 function req(method, path, body, headers) {
   return new Promise((resolve, reject) => {
     const hdrs = Object.assign({ 'Content-Type': 'application/json' }, headers || {});
-    const opts = { hostname: 'localhost', port: 3000, path, method, headers: hdrs };
+    const opts = { hostname: 'localhost', port: VERIFY_PORT, path, method, headers: hdrs };
     const hreq = http.request(opts, (res) => {
       let data = '';
       res.on('data', (c) => (data += c));
@@ -63,7 +65,7 @@ async function cleanDB() {
 
 async function cleanRedis() {
   const Redis = require('ioredis');
-  const r = new Redis({ host:'127.0.0.1', port:6379, lazyConnect:true });
+  const r = new Redis({ ...REDIS, lazyConnect:true });
   try {
     await r.connect();
     for (const pat of ['session:*','blacklist:*','user_sessions:*','cache:*']) {
@@ -86,7 +88,7 @@ async function main() {
   const mainFile = path.join(__dirname, 'dist', 'apps', 'api', 'main.js');
   const proc = spawn('node', [mainFile], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PORT: '3000', NODE_ENV: 'testing' },
+    env: { ...process.env, PORT: String(VERIFY_PORT), NODE_ENV: 'testing' },
   });
   let serverOutput = '';
   proc.stdout.on('data', (d) => { serverOutput += d.toString(); });

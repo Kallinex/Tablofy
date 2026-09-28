@@ -132,7 +132,12 @@ console.log('\n[9] HealthModule (enhanced)');
 check('bull-health.indicator.ts exists', fileExists('health/bull-health.indicator.ts'));
 check('disk-health.indicator.ts exists', fileExists('health/disk-health.indicator.ts'));
 check('BullHealthIndicator uses QueueService', fileContains('health/bull-health.indicator.ts', 'QueueService'));
-check('DiskHealthIndicator checks memory', fileContains('health/disk-health.indicator.ts', 'freemem'));
+// Memory is checked via @nestjs/terminus `MemoryHealthIndicator.checkRSS(...)` in the
+// controller (a battle-tested built-in), not via a hand-rolled `os.freemem()` call inside
+// the disk indicator. Assert against the real implementation.
+check('HealthController checks memory via MemoryHealthIndicator', fileContains('health/health.controller.ts', 'MemoryHealthIndicator'));
+check('HealthController wires the memory check', fileContains('health/health.controller.ts', 'memory.checkRSS'));
+check('DiskHealthIndicator measures free disk space', fileContains('health/disk-health.indicator.ts', 'statfs'));
 check('HealthController has 5 indicators', fileContains('health/health.controller.ts', 'BullHealthIndicator'));
 check('HealthController has BullMQ check', fileContains('health/health.controller.ts', 'bullHealth'));
 check('HealthController has Disk check', fileContains('health/health.controller.ts', 'diskHealth'));

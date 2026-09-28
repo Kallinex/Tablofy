@@ -142,4 +142,58 @@ describe('redisConfig', () => {
       },
     );
   });
+
+  it('derives the connection from REDIS_URL when the discrete vars are absent', () => {
+    withEnv(
+      {
+        REDIS_HOST: undefined,
+        REDIS_PORT: undefined,
+        REDIS_PASSWORD: undefined,
+        REDIS_URL: 'redis://:url-secret@cache.internal:6380/0',
+        REDIS_TLS: undefined,
+      },
+      () => {
+        const config = redisConfig();
+        expect(config.host).toBe('cache.internal');
+        expect(config.port).toBe(6380);
+        expect(config.password).toBe('url-secret');
+      },
+    );
+  });
+
+  it('keeps explicit REDIS_HOST/REDIS_PORT authoritative over REDIS_URL', () => {
+    withEnv(
+      {
+        REDIS_HOST: 'localhost',
+        REDIS_PORT: '6381',
+        REDIS_PASSWORD: 'explicit-pw',
+        REDIS_URL: 'redis://localhost:6379',
+        REDIS_TLS: undefined,
+      },
+      () => {
+        const config = redisConfig();
+        expect(config.host).toBe('localhost');
+        expect(config.port).toBe(6381);
+        expect(config.password).toBe('explicit-pw');
+      },
+    );
+  });
+
+  it('enables TLS for rediss URLs', () => {
+    withEnv(
+      {
+        REDIS_HOST: undefined,
+        REDIS_PORT: undefined,
+        REDIS_PASSWORD: undefined,
+        REDIS_URL: 'rediss://secure.internal:6390',
+        REDIS_TLS: undefined,
+      },
+      () => {
+        const config = redisConfig();
+        expect(config.host).toBe('secure.internal');
+        expect(config.port).toBe(6390);
+        expect(config.tls).toEqual({});
+      },
+    );
+  });
 });

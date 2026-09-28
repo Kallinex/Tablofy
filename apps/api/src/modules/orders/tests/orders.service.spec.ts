@@ -796,6 +796,7 @@ describe('OrdersService', () => {
             findUnique: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'PENDING' }),
           },
           orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amountRefunded: 0 } }) },
         };
         return cb(tx);
       });
@@ -826,6 +827,7 @@ describe('OrdersService', () => {
             findUnique: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
           },
           orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amountRefunded: 0 } }) },
         };
         return cb(tx);
       });
@@ -857,6 +859,7 @@ describe('OrdersService', () => {
             findUnique: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
           },
           orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amountRefunded: 0 } }) },
         };
         return cb(tx);
       });
@@ -884,6 +887,7 @@ describe('OrdersService', () => {
             findUnique: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
           },
           orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amountRefunded: 0 } }) },
         };
         return cb(tx);
       });
@@ -919,6 +923,7 @@ describe('OrdersService', () => {
             findUnique: jest.fn(),
           },
           orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amountRefunded: 0 } }) },
         };
         return cb(tx);
       });
@@ -928,6 +933,73 @@ describe('OrdersService', () => {
       ).rejects.toThrow(BadRequestException);
 
       expect(prisma.$transaction).toHaveBeenCalled();
+      expect(metrics.incrementOrdersCompleted).not.toHaveBeenCalled();
+    });
+
+    it('should allow COMPLETED when the only shortfall is an authorized partial refund', async () => {
+      // paidAmount is decremented on refund, so a partially refunded order would otherwise
+      // never be completable. The refunded shortfall is authorized and must be tolerated.
+      const fakeOrder = buildOrder({
+        id: 'order-1',
+        status: 'SERVED',
+        total: 100,
+        paidAmount: 70,
+      });
+      prisma.order.findFirst.mockResolvedValue(fakeOrder);
+      const aggregate = jest.fn().mockResolvedValue({ _sum: { amountRefunded: 30 } });
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            update: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findFirst: jest.fn().mockResolvedValue({ ...fakeOrder, version: 1 }),
+            findUnique: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
+          },
+          payment: { aggregate },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
+
+      const result = await service.changeStatus(
+        'order-1',
+        { status: 'COMPLETED' },
+        testTenantId,
+        testUserId,
+      );
+
+      expect(aggregate).toHaveBeenCalledWith({
+        where: { orderId: 'order-1', tenantId: testTenantId, deletedAt: null },
+        _sum: { amountRefunded: true },
+      });
+      expect(result).toBeDefined();
+    });
+
+    it('should reject COMPLETED when the shortfall exceeds the authorized refunds', async () => {
+      const fakeOrder = buildOrder({
+        id: 'order-1',
+        status: 'SERVED',
+        total: 100,
+        paidAmount: 50,
+      });
+      prisma.order.findFirst.mockResolvedValue(fakeOrder);
+      prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
+        const tx = {
+          order: {
+            update: jest.fn(),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findFirst: jest.fn().mockResolvedValue({ ...fakeOrder, version: 1 }),
+            findUnique: jest.fn(),
+          },
+          payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amountRefunded: 20 } }) },
+          orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        };
+        return cb(tx);
+      });
+
+      await expect(
+        service.changeStatus('order-1', { status: 'COMPLETED' }, testTenantId, testUserId),
+      ).rejects.toThrow(BadRequestException);
       expect(metrics.incrementOrdersCompleted).not.toHaveBeenCalled();
     });
 
@@ -948,6 +1020,7 @@ describe('OrdersService', () => {
             findUnique: jest.fn().mockResolvedValue({ ...fakeOrder, status: 'COMPLETED' }),
           },
           orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amountRefunded: 0 } }) },
         };
         return cb(tx);
       });
@@ -980,6 +1053,7 @@ describe('OrdersService', () => {
             findUnique: jest.fn(),
           },
           orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amountRefunded: 0 } }) },
         };
         return cb(tx);
       });
@@ -1007,6 +1081,7 @@ describe('OrdersService', () => {
             findUnique: jest.fn(),
           },
           orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amountRefunded: 0 } }) },
         };
         return cb(tx);
       });
@@ -1043,6 +1118,7 @@ describe('OrdersService', () => {
               .mockResolvedValue({ ...fakeOrder, status: 'COMPLETED', version: 8 }),
           },
           orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+          payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amountRefunded: 0 } }) },
         };
         return cb(tx);
       });

@@ -1,11 +1,12 @@
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
+const VERIFY_PORT = Number(process.env.VERIFY_PORT || 3000);
 
 function req(method, path, body, headers) {
   return new Promise((resolve, reject) => {
     const hdrs = Object.assign({ 'Content-Type': 'application/json' }, headers || {});
-    const opts = { hostname: 'localhost', port: 3000, path, method, headers: hdrs };
+    const opts = { hostname: 'localhost', port: VERIFY_PORT, path, method, headers: hdrs };
     const hreq = http.request(opts, (res) => {
       let data = '';
       res.on('data', (c) => (data += c));
@@ -48,6 +49,7 @@ async function cleanDB() {
 
 async function cleanRedis() {
   const Redis = require('ioredis');
+
   const r = new Redis({ host:'127.0.0.1', port:6379, lazyConnect:true });
   try {
     await r.connect();
@@ -80,7 +82,7 @@ let pass=0,fail=0,total=0;
 (async ()=>{
   console.log('========== PHASE 4 MILESTONE 1: CUSTOMERS & LOYALTY ==========\n');
 
-  const srv = spawn('node',['dist/apps/api/main.js'],{cwd:ROOT,env:{...process.env, UNAUTHENTICATED_LIMIT:'100'}, stdio:['pipe','pipe','pipe']});
+  const srv = spawn('node',['dist/apps/api/main.js'],{cwd:ROOT,env:{...process.env, PORT: String(VERIFY_PORT), UNAUTHENTICATED_LIMIT:'100'}, stdio:['pipe','pipe','pipe']});
   srv.stdout.on('data',d=>process.stdout.write(d));
   srv.stderr.on('data',d=>process.stderr.write(d));
 

@@ -496,9 +496,22 @@ export class OrdersService {
         const totalPaid = Number(fresh.paidAmount ?? 0);
         const orderTotal = Number(fresh.total ?? 0);
         if (totalPaid < orderTotal) {
-          throw new BadRequestException(
-            `Order cannot be completed until fully paid (${totalPaid} of ${orderTotal})`,
-          );
+          // paidAmount is decremented on every refund, so a refunded order would otherwise
+          // never become completable. Authorize exactly the refunded shortfall: the order may
+          // complete when the remaining gap is covered by refunds already recorded on its
+          // payments. Any larger gap is still rejected, so the "fully paid before completion"
+          // invariant is preserved rather than weakened.
+          const refundedAggregate = await tx.payment.aggregate({
+            where: { orderId: id, tenantId, deletedAt: null },
+            _sum: { amountRefunded: true },
+          });
+          const authorizedShortfall = Number(refundedAggregate._sum.amountRefunded ?? 0);
+          const requiredSettlement = roundMoney(subMoney(orderTotal, authorizedShortfall));
+          if (totalPaid < requiredSettlement) {
+            throw new BadRequestException(
+              `Order cannot be completed until fully paid (${totalPaid} of ${requiredSettlement})`,
+            );
+          }
         }
       }
 

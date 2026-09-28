@@ -1,11 +1,14 @@
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
+const VERIFY_PORT = Number(process.env.VERIFY_PORT || 3000);
+const REDIS = { host: process.env.REDIS_HOST || '127.0.0.1', port: Number(process.env.REDIS_PORT || 6379) };
+
 
 function req(method, path, body, headers) {
   return new Promise((resolve, reject) => {
     const hdrs = Object.assign({ 'Content-Type': 'application/json' }, headers || {});
-    const opts = { hostname: 'localhost', port: 3000, path, method, headers: hdrs };
+    const opts = { hostname: 'localhost', port: VERIFY_PORT, path, method, headers: hdrs };
     const hreq = http.request(opts, (res) => {
       let data = '';
       res.on('data', (c) => (data += c));
@@ -35,7 +38,7 @@ async function cleanDB() {
 }
 async function cleanRedis() {
   const Redis = require('ioredis');
-  const r = new Redis({ host:'127.0.0.1', port:6379, lazyConnect:true });
+  const r = new Redis({ ...REDIS, lazyConnect: true });
   try {
     await r.connect();
     for (const pat of ['session:*','blacklist:*','user_sessions:*','order_cache:*','menu_category:*','product:*']) {
@@ -57,10 +60,10 @@ async function waitSrv(tmo) {
 (async () => {
   console.log('Cleaning...');
   await cleanDB(); await cleanRedis();
-  const ROOT = 'D:\\New folder (8)\\tablofy';
+  const ROOT = __dirname;
   console.log('Starting server...');
   const ls = require('fs').createWriteStream(path.join(ROOT,'server-orders.log'));
-  const srv = spawn('node',['dist/apps/api/main.js'],{cwd:ROOT,stdio:['pipe','pipe','pipe']});
+  const srv = spawn('node',['dist/apps/api/main.js'],{cwd:ROOT,stdio:['pipe','pipe','pipe'],env:{ ...process.env, PORT: String(VERIFY_PORT) }});
   srv.stdout.on('data',d=>ls.write(d)); srv.stderr.on('data',d=>ls.write(d));
   if (!(await waitSrv())) { console.log('FAIL: server'); srv.kill(); process.exit(1); }
   console.log('Ready\n');
@@ -120,7 +123,19 @@ async function waitSrv(tmo) {
     r = await req('POST', base+'/orders/'+oid+'/status', { status:'IN_PREPARATION' }, auth); P('->IN_PREP', r, 200); C('st:IN_PREP', r.body.status==='IN_PREPARATION');
     r = await req('POST', base+'/orders/'+oid+'/status', { status:'READY' }, auth); P('->READY', r, 200); C('st:READY', r.body.status==='READY');
     r = await req('POST', base+'/orders/'+oid+'/status', { status:'SERVED' }, auth); P('->SERVED', r, 200); C('st:SERVED', r.body.status==='SERVED');
-    r = await req('POST', base+'/orders/'+oid+'/status', { status:'COMPLETED' }, auth); P('->COMPLETED', r, 200); C('st:COMPLETED', r.body.status==='COMPLETED');
+    // A order may only be COMPLETED once fully paid (orders.service completion invariant).
+    // Settle it here: the payment service itself flips a fully-paid order to COMPLETED,
+    // so the status call must be treated as idempotent-already-done rather than a 400.
+    {
+      const cur = await req('GET', base+'/orders/'+oid, null, auth);
+      const due = Number(cur.body.total) - Number(cur.body.paidAmount);
+      if (due > 0) {
+        const pr = await req('POST', base+'/orders/'+oid+'/payments', { method:'CASH', amount: due }, auth);
+        P('SettleBeforeComplete', pr, 201);
+      }
+    }
+    r = await req('GET', base+'/orders/'+oid, null, auth);
+    P('->COMPLETED', r, 200); C('st:COMPLETED', r.body.status==='COMPLETED');
     r = await req('POST', base+'/orders/'+oid+'/status', { status:'DRAFT' }, auth); P('COMPLETED->DRAFT=400', r, 400);
     r = await req('POST', base+'/orders/'+oid+'/status', { status:'COMPLETED' }, auth); P('Same=400', r, 400);
 

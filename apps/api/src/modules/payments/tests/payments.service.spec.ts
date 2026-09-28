@@ -7,7 +7,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
 import { MetricsService } from '../../../common/metrics/metrics.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { PaymentStatus, PaymentMethod, Prisma } from '@prisma/client';
+import { PaymentStatus, PaymentMethod, OrderStatus, Prisma } from '@prisma/client';
 import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
 import { PartialRefundDto } from '../dto/partial-refund.dto';
@@ -304,6 +304,7 @@ describe('PaymentsService', () => {
               updateMany: jest.fn().mockResolvedValue({ count: 1 }),
               update: jest.fn().mockResolvedValue({}),
             },
+            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
           };
           return cb(tx);
         },
@@ -369,6 +370,7 @@ describe('PaymentsService', () => {
               updateMany: jest.fn().mockResolvedValue({ count: 1 }),
               update: jest.fn().mockResolvedValue({}),
             },
+            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
           };
           return cb(tx);
         },
@@ -412,6 +414,7 @@ describe('PaymentsService', () => {
               updateMany: jest.fn().mockResolvedValue({ count: 1 }),
               update: jest.fn().mockResolvedValue({}),
             },
+            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
           };
           return cb(tx);
         },
@@ -451,10 +454,11 @@ describe('PaymentsService', () => {
               }),
             },
             order: {
-              findFirst: jest.fn().mockResolvedValue(mockOrder),
+              findFirst: jest.fn().mockResolvedValue({ ...mockOrder, status: OrderStatus.SERVED }),
               updateMany: orderUpdateMany,
               update: orderUpdate,
             },
+            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
           };
           return cb(tx);
         },
@@ -468,8 +472,52 @@ describe('PaymentsService', () => {
       });
       expect(orderUpdate).toHaveBeenCalledWith({
         where: { id: 'order-1' },
+        data: {
+          paidAmount: { decrement: 50 },
+          tip: { decrement: 5 },
+          status: OrderStatus.REFUNDED,
+        },
+      });
+    });
+
+    it('should not force an illegal order transition when the state machine forbids REFUNDED', async () => {
+      // A payment can be settled before fulfilment, so a refund can arrive while the order is
+      // still CONFIRMED. CONFIRMED -> REFUNDED is not a legal transition, so the financial
+      // refund must be recorded without mutating the order status or emitting order.refunded.
+      prisma.payment.findFirst.mockResolvedValue(mockPayment);
+      const orderUpdate = jest.fn().mockResolvedValue({});
+      const historyCreate = jest.fn().mockResolvedValue({});
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const tx = {
+            payment: {
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              findUnique: jest
+                .fn()
+                .mockResolvedValue({ ...mockPayment, status: PaymentStatus.REFUNDED }),
+            },
+            order: {
+              findFirst: jest
+                .fn()
+                .mockResolvedValue({ ...mockOrder, status: OrderStatus.CONFIRMED }),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              update: orderUpdate,
+            },
+            orderStatusHistory: { create: historyCreate },
+          };
+          return cb(tx);
+        },
+      );
+
+      await service.refund('payment-1', 'tenant-1', 'user-1');
+
+      expect(orderUpdate).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
         data: { paidAmount: { decrement: 50 }, tip: { decrement: 5 } },
       });
+      expect(historyCreate).not.toHaveBeenCalled();
+      const emitter = (service as unknown as { eventEmitter: { emit: jest.Mock } }).eventEmitter;
+      expect(emitter.emit).not.toHaveBeenCalledWith('order.refunded', expect.anything());
     });
 
     it('should throw ConflictException when the order version CAS fails during refund (F-001)', async () => {
@@ -618,6 +666,49 @@ describe('PaymentsService', () => {
         amountRefunded: { lte: 80 },
         status: { in: [PaymentStatus.COMPLETED, PaymentStatus.PARTIALLY_REFUNDED] },
       });
+    });
+
+    it('should emit distinct cumulative refund totals for concurrent partial refunds (P2-04)', async () => {
+      // The COGS reversal dedupe key is REFUND:<paymentId>:<cumulative amountRefunded>.
+      // Deriving it from the pre-transaction snapshot makes two concurrent partial refunds
+      // emit the same key, so one reversal is silently dropped. The emitted value must come
+      // from the row read back inside the claiming transaction.
+      prisma.payment.findFirst.mockResolvedValue(mockPayment);
+      const emitted: number[] = [];
+      let claim = 0;
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => unknown) => {
+          const cumulative = claim++ === 0 ? 20 : 40;
+          const tx = {
+            payment: {
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              findUnique: jest.fn().mockResolvedValue({
+                ...mockPayment,
+                amountRefunded: cumulative,
+                status: PaymentStatus.PARTIALLY_REFUNDED,
+              }),
+            },
+            order: {
+              findFirst: jest.fn().mockResolvedValue(mockOrder),
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              update: jest.fn().mockResolvedValue({}),
+            },
+          };
+          return cb(tx);
+        },
+      );
+      const emitter = (service as unknown as { eventEmitter: { emit: jest.Mock } }).eventEmitter;
+      emitter.emit.mockImplementation((event: string, payload: unknown) => {
+        if (event === 'payments.refunded') {
+          emitted.push((payload as { amountRefunded: number }).amountRefunded);
+        }
+      });
+
+      await service.partialRefund('payment-1', { amount: 20 }, 'tenant-1', 'user-1');
+      await service.partialRefund('payment-1', { amount: 20 }, 'tenant-1', 'user-1');
+
+      expect(emitted).toEqual([20, 40]);
+      expect(new Set(emitted).size).toBe(2);
     });
 
     it('should allow a partial refund equal to the remaining balance after prior partials (D3 fix)', async () => {
@@ -2027,13 +2118,16 @@ describe('PaymentsService', () => {
               }),
             },
             order: {
-              findFirst: jest.fn().mockResolvedValue(mockOrder),
+              findFirst: jest
+                .fn()
+                .mockResolvedValue({ ...mockOrder, status: OrderStatus.COMPLETED }),
               updateMany: jest.fn().mockResolvedValue({ count: 1 }),
               update: jest.fn().mockImplementation(({ data }) => {
                 orderUpdateData = data;
                 return {};
               }),
             },
+            orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
           };
           return cb(tx);
         },
@@ -2063,6 +2157,7 @@ describe('PaymentsService', () => {
       });
       expect(orderUpdateData).toMatchObject({
         paidAmount: { decrement: 50 },
+        status: OrderStatus.REFUNDED,
       });
       expect(metrics.incrementPaymentsRefunded).toHaveBeenCalledTimes(1);
     });

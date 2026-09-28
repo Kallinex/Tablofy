@@ -1,10 +1,11 @@
 const http = require('http');
+const VERIFY_PORT = Number(process.env.VERIFY_PORT || 3000);
 
 function request(method, path, body, headers = {}) {
   return new Promise((resolve, reject) => {
     const opts = {
       hostname: 'localhost',
-      port: 3000,
+      port: VERIFY_PORT,
       path,
       method,
       headers: { 'Content-Type': 'application/json', ...headers },

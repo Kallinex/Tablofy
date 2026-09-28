@@ -12,7 +12,13 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { MetricsService } from '../../common/metrics/metrics.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Prisma, PaymentStatus, PaymentMethod, OrderStatus } from '@prisma/client';
+import {
+  Prisma,
+  PaymentStatus,
+  PaymentMethod,
+  OrderStatus,
+  OrderStatus as PrismaOrderStatus,
+} from '@prisma/client';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PartialRefundDto } from './dto/partial-refund.dto';
 import { VoidPaymentDto } from './dto/void-payment.dto';
@@ -24,6 +30,7 @@ import {
   isVoidableStatus,
   validatePaymentTransition,
 } from './payment-state-machine';
+import { canTransition } from '../orders/order-state-machine';
 import { StripeProvider } from './providers/stripe.provider';
 import { PaymobProvider } from './providers/paymob.provider';
 import { PaymentProvider } from '../integrations/interfaces/payment-provider.interface';
@@ -568,6 +575,7 @@ export class PaymentsService {
       }
     }
 
+    let orderRefunded = false;
     const result = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.payment.updateMany({
         where: {
@@ -600,13 +608,34 @@ export class PaymentsService {
         throw new ConflictException('Order was modified by another user. Please retry.');
       }
 
+      // A full refund retires the order, but only when the documented state machine
+      // actually allows it (SERVED/COMPLETED -> REFUNDED). Refunding a payment that was
+      // collected before fulfilment (DRAFT/PENDING/CONFIRMED/IN_PREPARATION/READY) or on a
+      // terminal order must still record the financial refund without forcing an illegal
+      // order transition. The state machine stays the single source of truth.
+      const shouldRefundOrder = canTransition(String(freshOrder.status), OrderStatus.REFUNDED);
       await tx.order.update({
         where: { id: payment.orderId },
         data: {
           paidAmount: { decrement: payment.amount },
           tip: { decrement: payment.tip || 0 },
+          ...(shouldRefundOrder ? { status: OrderStatus.REFUNDED } : {}),
         },
       });
+
+      if (shouldRefundOrder) {
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: payment.orderId,
+            tenantId,
+            fromStatus: freshOrder.status as PrismaOrderStatus,
+            toStatus: OrderStatus.REFUNDED as PrismaOrderStatus,
+            changedByUserId: userId,
+            reason: reason || 'Payment refunded',
+          },
+        });
+        orderRefunded = true;
+      }
 
       const updated = await tx.payment.findUnique({ where: { id: paymentId } });
       if (!updated) {
@@ -633,6 +662,14 @@ export class PaymentsService {
       amount: payment.amount,
       amountRefunded: payment.amount,
     });
+
+    if (orderRefunded) {
+      this.eventEmitter.emit('order.refunded', {
+        tenantId,
+        orderId: payment.orderId,
+        paymentId,
+      });
+    }
 
     return this.toResponseDto(result);
   }
@@ -684,6 +721,13 @@ export class PaymentsService {
 
     const maxAllowedRefunded = Number(payment.amount) - dto.amount;
 
+    // Authoritative cumulative refunded total, read back inside the same transaction that
+    // claimed the increment. The pre-transaction snapshot (alreadyRefunded + dto.amount) is
+    // not concurrency-safe: two partial refunds that both observe the same alreadyRefunded
+    // would emit the same cumulative value, colliding on the COGS reversal dedupe key
+    // (REFUND:<paymentId>:<cumulative>) and silently dropping one reversal.
+    let committedCumulativeRefunded = 0;
+
     const result = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.payment.updateMany({
         where: {
@@ -729,6 +773,7 @@ export class PaymentsService {
       if (!updated) {
         throw new NotFoundException('Payment not found');
       }
+      committedCumulativeRefunded = Number(updated.amountRefunded);
       return updated;
     });
 
@@ -752,7 +797,7 @@ export class PaymentsService {
       orderId: payment.orderId,
       paymentId,
       amount: dto.amount,
-      amountRefunded: alreadyRefunded + dto.amount,
+      amountRefunded: committedCumulativeRefunded,
     });
 
     return this.toResponseDto(result);
@@ -1739,6 +1784,7 @@ export class PaymentsService {
     const isFull = newTotalRefunded >= paymentAmount;
 
     let claimedCount = 0;
+    let orderRefunded = false;
     await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.payment.updateMany({
         where: {
@@ -1772,13 +1818,33 @@ export class PaymentsService {
       if (orderVerResult.count === 0) {
         throw new ConflictException('Order was modified by another user. Please retry.');
       }
+
+      // Only a cumulative full refund retires the order, and only when the state machine
+      // permits it. A partial gateway refund must leave the order status untouched (same
+      // rule as partialRefund()).
+      const shouldRefundOrder =
+        isFull && canTransition(String(freshOrder.status), OrderStatus.REFUNDED);
       await tx.order.update({
         where: { id: payment.orderId },
         data: {
           paidAmount: { decrement: delta },
           tip: { decrement: isFull ? Number(payment.tip || 0) : 0 },
+          ...(shouldRefundOrder ? { status: OrderStatus.REFUNDED } : {}),
         },
       });
+      if (shouldRefundOrder) {
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: payment.orderId,
+            tenantId: payment.tenantId,
+            fromStatus: freshOrder.status as PrismaOrderStatus,
+            toStatus: OrderStatus.REFUNDED as PrismaOrderStatus,
+            changedByUserId: null,
+            reason: 'Gateway refund (full)',
+          },
+        });
+        orderRefunded = true;
+      }
     });
 
     if (claimedCount === 0) {
@@ -1796,6 +1862,14 @@ export class PaymentsService {
       amount: delta,
       amountRefunded: newTotalRefunded,
     });
+
+    if (orderRefunded) {
+      this.eventEmitter.emit('order.refunded', {
+        tenantId: payment.tenantId,
+        orderId: payment.orderId,
+        paymentId: payment.id,
+      });
+    }
   }
 
   private getProviderForMethod(method: PaymentMethod): ProviderLike | null {

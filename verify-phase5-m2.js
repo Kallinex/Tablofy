@@ -1,6 +1,7 @@
 const http = require('http');
 const { spawn } = require('child_process');
 const path = require('path');
+const VERIFY_PORT = Number(process.env.VERIFY_PORT || 3000);
 let TOKEN = '';
 let REGISTERED_EMAIL = '';
 let RESTAURANT_ID = '';
@@ -21,7 +22,7 @@ let VALUATION_ID = '';
 function request(method, path, body, headers = {}) {
   return new Promise((resolve, reject) => {
     const opts = {
-      hostname: 'localhost', port: 3000,
+      hostname: 'localhost', port: VERIFY_PORT,
       path: path, method,
       headers: { 'Content-Type': 'application/json', ...headers },
     };
@@ -77,7 +78,7 @@ async function main() {
   const server = spawn('node', [mainFile], {
     stdio: ['ignore', 'pipe', 'pipe'],
     cwd: __dirname,
-    env: { ...process.env, PORT: '3000', NODE_ENV: 'testing' },
+    env: { ...process.env, PORT: String(VERIFY_PORT), NODE_ENV: 'testing' },
   });
   let serverOutput = '';
   server.stdout.on('data', (d) => { serverOutput += d.toString(); });

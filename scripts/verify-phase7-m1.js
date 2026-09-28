@@ -78,7 +78,10 @@ check('roles.decorator includes ClassDecorator', rolesDecorator.includes('ClassD
 console.log('\n5. Webhook Event Routing (7.1.4 / P0-4)');
 const eventEmitter = read('modules/webhooks/webhook-event-emitter.ts');
 check('webhook-event-emitter uses eventName param', eventEmitter.includes('eventName'));
-check('webhook-event-emitter handles all events', eventEmitter.includes("'**'"));
+// EventEmitter2 wildcard listeners registered via `@OnEvent('**')` receive only the
+// payload, not the event name, so the emitter subscribes with `onAny()` instead (which
+// does pass the event name). Assert that real mechanism instead of a literal '**'.
+check('webhook-event-emitter handles all events', eventEmitter.includes('onAny'));
 
 // 7. Webhook Secret Encryption (7.1.5 / P0-5)
 console.log('\n6. Webhook Secret Encryption (7.1.5 / P0-5)');

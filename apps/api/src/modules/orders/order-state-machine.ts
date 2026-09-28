@@ -34,6 +34,11 @@ const validTransitions: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.VOIDED]: [],
 };
 
+export function canTransition(from: string, to: string): boolean {
+  const allowed = validTransitions[from as OrderStatus];
+  return Boolean(allowed && allowed.includes(to as OrderStatus));
+}
+
 export function validateTransition(from: string, to: string): void {
   const fromStatus = from as OrderStatus;
   const toStatus = to as OrderStatus;

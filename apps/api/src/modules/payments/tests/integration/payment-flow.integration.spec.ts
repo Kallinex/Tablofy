@@ -134,6 +134,7 @@ describe('PaymentFlowIntegration', () => {
           updateMany: jest.fn().mockResolvedValue({ count: 1 }),
           update: jest.fn().mockResolvedValue({}),
         },
+        orderStatusHistory: { create: jest.fn().mockResolvedValue({}) },
       };
       return cb(tx);
     });

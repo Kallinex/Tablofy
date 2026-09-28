@@ -1,7 +1,10 @@
 const { exec, spawn } = require('child_process');
 const http = require('http');
+const path = require('path');
+const VERIFY_PORT = Number(process.env.VERIFY_PORT || 3000);
+const REDIS = { host: process.env.REDIS_HOST || '127.0.0.1', port: Number(process.env.REDIS_PORT || 6379) };
 
-const BASE = 'http://localhost:3000/api/v1';
+const BASE = 'http://localhost:' + VERIFY_PORT + '/api/v1';
 
 function request(method, path, body, token) {
   return new Promise((resolve, reject) => {
@@ -48,7 +51,8 @@ async function cleanupDatabase() {
 
 async function cleanupRedis() {
   const Redis = require('ioredis');
-  const redis = new Redis({ host: '127.0.0.1', port: 6379, lazyConnect: true });
+
+  const redis = new Redis({ ...REDIS, lazyConnect: true });
   try {
     await redis.connect();
     const keys = await redis.keys('session:*');
@@ -81,11 +85,11 @@ async function main() {
 
   // Start the server
   const fs = require('fs');
-  const logStream = fs.createWriteStream('D:\\New folder (8)\\tablofy\\server-verify.log');
+  const logStream = fs.createWriteStream(path.join(__dirname, 'server-verify.log'));
   const server = spawn('node', ['dist/apps/api/main.js'], {
-    cwd: 'D:\\New folder (8)\\tablofy',
+    cwd: __dirname,
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env },
+    env: { ...process.env, PORT: String(VERIFY_PORT) },
   });
 
   let output = '';
@@ -460,7 +464,7 @@ async function main() {
   if (failed > 0) {
     console.log('\n--- SERVER LOGS (last 50 lines) ---');
     try {
-      const logContent = fs.readFileSync('D:\\New folder (8)\\tablofy\\server-verify.log', 'utf8');
+      const logContent = fs.readFileSync(path.join(__dirname, 'server-verify.log'), 'utf8');
       const lines = logContent
         .split('\n')
         .filter(

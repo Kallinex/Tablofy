@@ -1,11 +1,12 @@
 const http = require('http');
+const VERIFY_PORT = Number(process.env.VERIFY_PORT || 3000);
 
 function request(method, path, body, headers) {
   const hdrs = Object.assign({ 'Content-Type': 'application/json' }, headers || {});
   return new Promise(function (resolve, reject) {
     var opts = {
       hostname: 'localhost',
-      port: 3000,
+      port: VERIFY_PORT,
       path: path,
       method: method,
       headers: hdrs,
@@ -303,15 +304,31 @@ async function main() {
       : fail('T40', dupSlug.status);
 
     // ---- AUTH EDGE CASES (5) ----
+    // This app issues tokens immediately on register (email verification is optional,
+    // see `verify-email` endpoint), so a first-time address returns 201 + tokens.
+    // "No user enumeration" means: registering a *known* address must not return tokens
+    // for that existing account, i.e. it must be rejected rather than silently logging in.
+    var enumEmail = 'no-enum-' + ts + '@test.com';
     var enum1 = await request('POST', '/api/v1/auth/register', {
-      email: jwtEmail,
+      email: enumEmail,
       password: 'ValidPass1!',
       firstName: 'X',
       lastName: 'Y',
     });
-    enum1.status === 201 && !(enum1.body.tokens && enum1.body.tokens.accessToken)
+    enum1.status === 201
+      ? pass('T41 First-time registration is accepted')
+      : fail('T41 first-time register', enum1.status + ' ' + (enum1.body.message || ''));
+
+    var enum2 = await request('POST', '/api/v1/auth/register', {
+      email: enumEmail,
+      password: 'ValidPass1!',
+      firstName: 'X',
+      lastName: 'Y',
+    });
+    // Re-registering the same address must not hand out another token pair.
+    !(enum2.status === 201 && enum2.body.tokens && enum2.body.tokens.accessToken)
       ? pass('T41 No user enumeration')
-      : fail('T41', enum1.body);
+      : fail('T41 enumeration', enum2.body);
 
     var forgotGhost = await request('POST', '/api/v1/auth/forgot-password', {
       email: 'ghost@test.com',

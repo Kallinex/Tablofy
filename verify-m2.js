@@ -1,6 +1,8 @@
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
+const VERIFY_PORT = Number(process.env.VERIFY_PORT || 3000);
+const REDIS = { host: process.env.REDIS_HOST || '127.0.0.1', port: Number(process.env.REDIS_PORT || 6379) };
 
 function req(method, url, body, headers) {
   return new Promise((resolve, reject) => {
@@ -36,7 +38,8 @@ async function cleanDB() {
 }
 async function cleanRedis() {
   const Redis = require('ioredis');
-  const r = new Redis({ host:'127.0.0.1', port:6379, lazyConnect:true });
+
+  const r = new Redis({ ...REDIS, lazyConnect: true });
   try {
     await r.connect();
     for (const pat of ['session:*','blacklist:*','user_sessions:*','order_cache:*','menu_category:*','product:*','station:*']) {
@@ -49,7 +52,7 @@ async function cleanRedis() {
 async function waitSrv(tmo) {
   const s = Date.now();
   while (Date.now()-s < (tmo||45000)) {
-    try { if ((await req('GET','http://localhost:3000/api/v1/health')).status===200) return true; } catch {}
+    try { if ((await req('GET','http://localhost:' + VERIFY_PORT + '/api/v1/health')).status===200) return true; } catch {}
     await new Promise(r=>setTimeout(r,1000));
   }
   return false;
@@ -58,10 +61,10 @@ async function waitSrv(tmo) {
 (async () => {
   console.log('Cleaning...');
   await cleanDB(); await cleanRedis();
-  const ROOT = 'D:\\New folder (8)\\tablofy';
+  const ROOT = __dirname;
   console.log('Starting server...');
   const ls = require('fs').createWriteStream(path.join(ROOT,'server-m2.log'));
-  const srv = spawn('node',['dist/apps/api/main.js'],{cwd:ROOT,stdio:['pipe','pipe','pipe']});
+  const srv = spawn('node',['dist/apps/api/main.js'],{cwd:ROOT,stdio:['pipe','pipe','pipe'],env:{ ...process.env, PORT: String(VERIFY_PORT) }});
   srv.stdout.on('data',d=>ls.write(d)); srv.stderr.on('data',d=>ls.write(d));
   if (!(await waitSrv())) { console.log('FAIL: server'); srv.kill(); process.exit(1); }
   console.log('Ready\n');
@@ -69,28 +72,28 @@ async function waitSrv(tmo) {
   let pass=0, fail=0, total=0;
   const P = (n,r,e) => { total++; (r.status===e ? (pass++, ok(n+' ['+r.status+']')) : (fail++, no(n, 'got '+r.status+' exp '+e+' | '+JSON.stringify(r.body).substring(0,200)))); };
   const C = (n,c) => { total++; (c ? (pass++, ok(n)) : (fail++, no(n,'false'))); };
-  const R = (rid) => 'http://localhost:3000/api/v1/restaurants/' + rid + '/kds';
+  const R = (rid) => 'http://localhost:' + VERIFY_PORT + '/api/v1/restaurants/' + rid + '/kds';
   let ts, aid, bid, tok, auth;
 
   try {
     ts = Date.now();
     console.log('── SETUP ──');
-    let r = await req('POST','http://localhost:3000/api/v1/auth/register', { email:'m2-'+ts+'@t.com', password:'M2Test123!', firstName:'M2', lastName:'Tst', tenantName:'M2-'+ts });
+    let r = await req('POST','http://localhost:' + VERIFY_PORT + '/api/v1/auth/register', { email:'m2-'+ts+'@t.com', password:'M2Test123!', firstName:'M2', lastName:'Tst', tenantName:'M2-'+ts });
     P('Register', r, 201); tok = r.body.tokens?.accessToken;
-    r = await req('POST','http://localhost:3000/api/v1/auth/login', { email:'m2-'+ts+'@t.com', password:'M2Test123!' });
+    r = await req('POST','http://localhost:' + VERIFY_PORT + '/api/v1/auth/login', { email:'m2-'+ts+'@t.com', password:'M2Test123!' });
     P('Login', r, 200); auth = { Authorization:'Bearer '+(r.body.tokens?.accessToken||tok) };
-    r = await req('POST','http://localhost:3000/api/v1/restaurants', { name:'M2R', slug:'m2r-'+ts }, auth);
+    r = await req('POST','http://localhost:' + VERIFY_PORT + '/api/v1/restaurants', { name:'M2R', slug:'m2r-'+ts }, auth);
     P('Restaurant', r, 201); aid = r.body.id;
-    r = await req('POST','http://localhost:3000/api/v1/restaurants/'+aid+'/branches', { name:'Main', slug:'main-'+ts, address:'123' }, auth);
+    r = await req('POST','http://localhost:' + VERIFY_PORT + '/api/v1/restaurants/'+aid+'/branches', { name:'Main', slug:'main-'+ts, address:'123' }, auth);
     P('Branch', r, 201); bid = r.body.id;
-    r = await req('POST','http://localhost:3000/api/v1/restaurants/'+aid+'/menu-categories', { name:'Cat', sortOrder:1 }, auth);
+    r = await req('POST','http://localhost:' + VERIFY_PORT + '/api/v1/restaurants/'+aid+'/menu-categories', { name:'Cat', sortOrder:1 }, auth);
     P('Category', r, 201); const catId = r.body.id;
-    r = await req('POST','http://localhost:3000/api/v1/restaurants/'+aid+'/products', { name:'P1', basePrice:15.99, menuCategoryId:catId, sku:'MP1-'+ts }, auth);
+    r = await req('POST','http://localhost:' + VERIFY_PORT + '/api/v1/restaurants/'+aid+'/products', { name:'P1', basePrice:15.99, menuCategoryId:catId, sku:'MP1-'+ts }, auth);
     P('Product1', r, 201); const p1 = r.body.id;
-    r = await req('POST','http://localhost:3000/api/v1/restaurants/'+aid+'/products', { name:'P2', basePrice:9.99, menuCategoryId:catId, sku:'MP2-'+ts }, auth);
+    r = await req('POST','http://localhost:' + VERIFY_PORT + '/api/v1/restaurants/'+aid+'/products', { name:'P2', basePrice:9.99, menuCategoryId:catId, sku:'MP2-'+ts }, auth);
     P('Product2', r, 201); const p2 = r.body.id;
 
-    const kds = (rest) => 'http://localhost:3000/api/v1/restaurants/' + rest + '/kds';
+    const kds = (rest) => 'http://localhost:' + VERIFY_PORT + '/api/v1/restaurants/' + rest + '/kds';
 
     // ── KITCHEN STATION CRUD ──
     console.log('\n── KITCHEN STATION CRUD ──');
@@ -162,7 +165,7 @@ async function waitSrv(tmo) {
 
     // ── ORDER CONFIRMED → KDS TICKETS ──
     console.log('\n── ORDER CONFIRMED → KDS TICKETS ──');
-    const base = 'http://localhost:3000/api/v1/restaurants/'+aid;
+    const base = 'http://localhost:' + VERIFY_PORT + '/api/v1/restaurants/'+aid;
     r = await req('POST', base+'/orders', { restaurantId:aid, branchId:bid, items:[{ productId:p1, productName:'P1', quantity:2, unitPrice:15.99 },{ productId:p2, productName:'P2', quantity:1, unitPrice:9.99 }] }, auth);
     P('CreateOrder', r, 201); const oid = r.body.id;
 
@@ -229,10 +232,10 @@ async function waitSrv(tmo) {
 
     // ── ISOLATION ──
     console.log('\n── ISOLATION ──');
-    r = await req('POST','http://localhost:3000/api/v1/auth/register', { email:'m2b-'+ts+'@t.com', password:'M2Test123!', firstName:'M2B', lastName:'Tst', tenantName:'M2B-'+ts });
-    r = await req('POST','http://localhost:3000/api/v1/auth/login', { email:'m2b-'+ts+'@t.com', password:'M2Test123!' });
+    r = await req('POST','http://localhost:' + VERIFY_PORT + '/api/v1/auth/register', { email:'m2b-'+ts+'@t.com', password:'M2Test123!', firstName:'M2B', lastName:'Tst', tenantName:'M2B-'+ts });
+    r = await req('POST','http://localhost:' + VERIFY_PORT + '/api/v1/auth/login', { email:'m2b-'+ts+'@t.com', password:'M2Test123!' });
     const oa = { Authorization:'Bearer '+(r.body.tokens?.accessToken) };
-    r = await req('POST','http://localhost:3000/api/v1/restaurants', { name:'M2BR', slug:'m2br-'+ts }, oa);
+    r = await req('POST','http://localhost:' + VERIFY_PORT + '/api/v1/restaurants', { name:'M2BR', slug:'m2br-'+ts }, oa);
     const bid2 = r.body.id;
     r = await req('GET', kds(bid2)+'/stations', null, oa);
     C('Isolation', r.body?.data?.length===0 || r.body?.length===0);
@@ -244,7 +247,7 @@ async function waitSrv(tmo) {
 
     // ── AUDIT ──
     console.log('\n── AUDIT ──');
-    r = await req('GET','http://localhost:3000/api/v1/audit-logs', null, auth);
+    r = await req('GET','http://localhost:' + VERIFY_PORT + '/api/v1/audit-logs', null, auth);
     P('AuditLogs', r, 200);
 
     // ── VALIDATION ──
@@ -260,7 +263,7 @@ async function waitSrv(tmo) {
 
     // ── SWAGGER ──
     console.log('\n── SWAGGER ──');
-    r = await req('GET','http://localhost:3000/docs');
+    r = await req('GET','http://localhost:' + VERIFY_PORT + '/docs');
     P('Swagger', r, 200);
 
     console.log('\n========== PHASE 3 M2 ==========');

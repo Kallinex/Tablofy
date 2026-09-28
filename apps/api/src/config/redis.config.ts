@@ -1,12 +1,51 @@
 import { registerAs, ConfigService } from '@nestjs/config';
 
-export const redisConfig = registerAs('redis', () => ({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379', 10),
-  password: process.env.REDIS_PASSWORD || undefined,
-  url: process.env.REDIS_URL || 'redis://localhost:6379',
-  tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
-}));
+interface RedisUrlParts {
+  host?: string;
+  port?: number;
+  password?: string;
+  secure: boolean;
+}
+
+function parseRedisUrl(url: string): RedisUrlParts {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'redis:' && parsed.protocol !== 'rediss:') {
+      return { secure: false };
+    }
+    return {
+      host: parsed.hostname || undefined,
+      port: parsed.port ? Number.parseInt(parsed.port, 10) : 6379,
+      password: parsed.password ? decodeURIComponent(parsed.password) : undefined,
+      secure: parsed.protocol === 'rediss:',
+    };
+  } catch {
+    return { secure: false };
+  }
+}
+
+export const redisConfig = registerAs('redis', () => {
+  const url = process.env.REDIS_URL?.trim() || 'redis://localhost:6379';
+  const fromUrl = parseRedisUrl(url);
+  const explicitHost = process.env.REDIS_HOST?.trim();
+  const explicitPort = process.env.REDIS_PORT?.trim();
+  const explicitPassword = process.env.REDIS_PASSWORD?.trim();
+
+  // REDIS_URL is a supported connection input, not decoration: it used to be validated as
+  // required and then ignored, so a URL-only deployment silently connected to localhost.
+  // Explicit REDIS_HOST/REDIS_PORT/REDIS_PASSWORD always win (unchanged behaviour for every
+  // existing deployment); the URL only fills in what was not provided explicitly.
+  return {
+    host: explicitHost || fromUrl.host || 'localhost',
+    port: explicitPort ? Number.parseInt(explicitPort, 10) : (fromUrl.port ?? 6379),
+    password: explicitPassword || fromUrl.password || undefined,
+    url,
+    tls:
+      process.env.REDIS_TLS === 'true' || (fromUrl.secure && process.env.REDIS_TLS !== 'false')
+        ? {}
+        : undefined,
+  };
+});
 
 export interface RedisConnectionOptions {
   host: string;

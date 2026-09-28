@@ -4,7 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CacheService } from '../../common/services/cache.service';
 import { QueueService, QueueJobData } from '../queues/queue.service';
-import { Prisma, ReportType, ReportExportStatus } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { GenerateExportDto, ExportType } from './dto/generate-export.dto';
 import { ExportQueryDto } from './dto/export-query.dto';
 import {
@@ -34,7 +34,7 @@ export class ExportEngineService {
       data: {
         tenantId,
         type: dto.type,
-        reportType: dto.reportType as ReportType,
+        reportType: dto.reportType,
         periodStart: dto.periodStart ? new Date(dto.periodStart) : undefined,
         periodEnd: dto.periodEnd ? new Date(dto.periodEnd) : undefined,
         config: (dto.config ?? {}) as Prisma.InputJsonValue,
@@ -160,8 +160,8 @@ export class ExportEngineService {
 
     const where: Prisma.ReportExportWhereInput = { tenantId, deletedAt: null };
     if (query.type) where.type = query.type;
-    if (query.reportType) where.reportType = query.reportType as ReportType;
-    if (query.status) where.status = query.status as ReportExportStatus;
+    if (query.reportType) where.reportType = query.reportType;
+    if (query.status) where.status = query.status;
 
     const [data, total] = await Promise.all([
       this.prisma.reportExport.findMany({
