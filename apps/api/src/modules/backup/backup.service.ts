@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { I18nService } from '../../common/i18n/i18n.service';
+import { CacheService } from '../../common/services/cache.service';
 import { BackupRecordType } from '@prisma/client';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -11,6 +12,7 @@ export class BackupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly i18n: I18nService,
+    private readonly cacheService: CacheService,
   ) {}
 
   async create(tenantId: string, type: BackupRecordType = BackupRecordType.FULL, lang: string) {
@@ -119,15 +121,72 @@ export class BackupService {
       const content = await fs.readFile(record.filePath, 'utf-8');
       const data = JSON.parse(content);
 
-      if (data.menuCategories) {
+      if (data.tenantId && data.tenantId !== tenantId) {
+        throw new Error('Backup file belongs to a different tenant');
+      }
+
+      const restored: Record<string, number> = {
+        menuCategories: 0,
+        products: 0,
+        customers: 0,
+      };
+
+      if (Array.isArray(data.menuCategories)) {
         for (const cat of data.menuCategories) {
           await this.prisma.menuCategory.upsert({
             where: { id: cat.id },
-            create: cat,
-            update: cat,
+            create: { ...cat, tenantId },
+            update: { ...cat, tenantId },
           });
+          restored.menuCategories++;
         }
       }
+
+      if (Array.isArray(data.products)) {
+        for (const product of data.products) {
+          const { id, ...rest } = product;
+          await this.prisma.product.upsert({
+            where: { id },
+            create: { ...rest, tenantId },
+            update: { ...rest, tenantId },
+          });
+          restored.products++;
+        }
+      }
+
+      if (Array.isArray(data.customers)) {
+        for (const customer of data.customers) {
+          const { id, ...rest } = customer;
+          await this.prisma.customer.upsert({
+            where: { id },
+            create: { ...rest, tenantId },
+            update: { ...rest, tenantId },
+          });
+          restored.customers++;
+        }
+      }
+
+      // Order history is captured in the backup file but is NOT restored: orders
+      // cannot be re-inserted safely without their child rows (items, payments,
+      // invoices), so restoring the header alone would create referential garbage.
+      // The response reports this explicitly instead of silently dropping data.
+      const notRestored: Record<string, number> = {
+        orders: Array.isArray(data.orders) ? data.orders.length : 0,
+      };
+
+      // Restored rows would otherwise stay hidden behind the cached menu/customer
+      // lists until their TTL expires.
+      const restaurantIds = new Set<string>();
+      for (const cat of data.menuCategories ?? []) {
+        if (cat.restaurantId) restaurantIds.add(cat.restaurantId);
+      }
+      for (const product of data.products ?? []) {
+        if (product.restaurantId) restaurantIds.add(product.restaurantId);
+      }
+      for (const restaurantId of restaurantIds) {
+        await this.cacheService.deletePattern(tenantId, `menu:${restaurantId}:*`);
+      }
+      await this.cacheService.delete(tenantId, 'customers:list');
 
       await this.prisma.backupRecord.update({
         where: { id },
@@ -136,7 +195,9 @@ export class BackupService {
 
       return {
         message: this.i18n.t('backup.restored', lang),
-        restoredCategories: data.menuCategories?.length ?? 0,
+        restored,
+        notRestored,
+        exportedAt: data.exportedAt ?? null,
       };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';

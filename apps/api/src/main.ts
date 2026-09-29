@@ -31,6 +31,23 @@ async function bootstrap(): Promise<void> {
 
   app.setGlobalPrefix(apiPrefix);
 
+  // Behind a reverse proxy (nginx / ALB / Cloudflare) every request would otherwise
+  // share a single request.ip, collapsing the per-IP rate-limit budget of all users
+  // into one bucket. TRUST_PROXY accepts a hop count (e.g. "1") or Express values
+  // ("loopback", "linklocal", "uniquelocal", true). Unset = proxy headers ignored.
+  const trustProxyRaw = (configService.get<string>('app.trustProxy') ?? '').trim();
+  if (trustProxyRaw !== '' && trustProxyRaw.toLowerCase() !== 'false') {
+    const hops = Number(trustProxyRaw);
+    app.set('trust proxy', Number.isFinite(hops) && hops > 0 ? hops : trustProxyRaw);
+    logger.log(`trust proxy enabled: ${String(trustProxyRaw)}`);
+  } else if (isProduction) {
+    logger.warn(
+      'TRUST_PROXY is not set. If this API runs behind a reverse proxy/load balancer, ' +
+        'all requests share one request.ip and the per-IP rate limit will throttle every user together. ' +
+        'Set TRUST_PROXY to the number of proxy hops (e.g. 1).',
+    );
+  }
+
   app.enableVersioning({
     type: VersioningType.URI,
     prefix: 'v',

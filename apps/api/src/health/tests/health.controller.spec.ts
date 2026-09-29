@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { HealthCheckService, MemoryHealthIndicator } from '@nestjs/terminus';
 import { HealthController } from '../health.controller';
 import { PrismaHealthIndicator } from '../prisma-health.indicator';
@@ -9,6 +10,25 @@ import { DiskHealthIndicator } from '../disk-health.indicator';
 describe('HealthController', () => {
   let controller: HealthController;
   let healthCheckService: jest.Mocked<HealthCheckService>;
+
+  const buildController = (
+    checkRSS: jest.Mock,
+    rssLimitMb: number | undefined,
+  ): HealthController => {
+    const runIndicators = jest.fn(async (indicators: (() => Promise<unknown>)[]) => {
+      for (const indicator of indicators) await indicator();
+      return { status: 'ok' };
+    });
+    return new HealthController(
+      { check: runIndicators } as unknown as HealthCheckService,
+      { isHealthy: jest.fn() } as unknown as PrismaHealthIndicator,
+      { isHealthy: jest.fn() } as unknown as RedisHealthIndicator,
+      { checkRSS } as unknown as MemoryHealthIndicator,
+      { isHealthy: jest.fn() } as unknown as BullHealthIndicator,
+      { isHealthy: jest.fn() } as unknown as DiskHealthIndicator,
+      { get: jest.fn().mockReturnValue(rssLimitMb) } as unknown as ConfigService,
+    );
+  };
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -49,6 +69,10 @@ describe('HealthController', () => {
           provide: DiskHealthIndicator,
           useValue: { isHealthy: jest.fn() },
         },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue(undefined) },
+        },
       ],
     }).compile();
 
@@ -71,5 +95,23 @@ describe('HealthController', () => {
 
     const checkCall = healthCheckService.check.mock.calls[0][0];
     expect(checkCall).toHaveLength(5);
+  });
+
+  it('should fall back to a 300MB RSS limit when the config value is missing', async () => {
+    const checkRSS = jest.fn().mockResolvedValue({ memory_rss: { status: 'up' } });
+    const ctrl = buildController(checkRSS, undefined);
+
+    await ctrl.ready();
+
+    expect(checkRSS).toHaveBeenCalledWith('memory_rss', 300 * 1024 * 1024);
+  });
+
+  it('should size the RSS limit from HEALTH_MEMORY_RSS_LIMIT_MB', async () => {
+    const checkRSS = jest.fn().mockResolvedValue({ memory_rss: { status: 'up' } });
+    const ctrl = buildController(checkRSS, 1024);
+
+    await ctrl.ready();
+
+    expect(checkRSS).toHaveBeenCalledWith('memory_rss', 1024 * 1024 * 1024);
   });
 });

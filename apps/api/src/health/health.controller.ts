@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { HealthCheck, HealthCheckService, MemoryHealthIndicator } from '@nestjs/terminus';
+import { ConfigService } from '@nestjs/config';
 import { PrismaHealthIndicator } from './prisma-health.indicator';
 import { RedisHealthIndicator } from './redis-health.indicator';
 import { BullHealthIndicator } from './bull-health.indicator';
@@ -17,7 +18,16 @@ export class HealthController {
     private memory: MemoryHealthIndicator,
     private bullHealth: BullHealthIndicator,
     private diskHealth: DiskHealthIndicator,
+    private readonly configService: ConfigService,
   ) {}
+
+  // An absolute RSS ceiling hardcoded at 300MB makes a healthy instance report
+  // itself unhealthy during normal traffic peaks, which takes it out of the load
+  // balancer. Size this to the container limit (HEALTH_MEMORY_RSS_LIMIT_MB).
+  private memoryRssLimitBytes(): number {
+    const limitMb = this.configService.get<number>('app.healthMemoryRssLimitMb') ?? 300;
+    return limitMb * 1024 * 1024;
+  }
 
   @Get()
   @Public()
@@ -26,7 +36,7 @@ export class HealthController {
     return this.health.check([
       () => this.prismaHealth.isHealthy('database'),
       () => this.redisHealth.isHealthy('redis'),
-      () => this.memory.checkRSS('memory_rss', 300 * 1024 * 1024),
+      () => this.memory.checkRSS('memory_rss', this.memoryRssLimitBytes()),
       () => this.bullHealth.isHealthy('bullmq'),
       () => this.diskHealth.isHealthy('disk'),
     ]);
@@ -50,7 +60,7 @@ export class HealthController {
       () => this.prismaHealth.isHealthy('database'),
       () => this.redisHealth.isHealthy('redis'),
       () => this.bullHealth.isHealthy('bullmq'),
-      () => this.memory.checkRSS('memory_rss', 300 * 1024 * 1024),
+      () => this.memory.checkRSS('memory_rss', this.memoryRssLimitBytes()),
       () => this.diskHealth.isHealthy('disk'),
     ]);
   }

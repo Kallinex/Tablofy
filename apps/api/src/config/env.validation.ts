@@ -87,6 +87,14 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  TRUST_PROXY?: string;
+
+  @IsOptional()
+  @IsNumber()
+  HEALTH_MEMORY_RSS_LIMIT_MB?: number;
+
+  @IsOptional()
+  @IsString()
   HEALTH_DISK_PATH?: string;
 
   @IsOptional()

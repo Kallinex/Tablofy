@@ -429,6 +429,10 @@ async function main() {
   const passed = results.filter((r) => r.startsWith('✅')).length;
   const failed = results.filter((r) => r.startsWith('❌')).length;
   console.log(`\nPassed: ${passed} | Failed: ${failed} | Total: ${results.length}`);
+  process.exitCode = failed > 0 ? 1 : 0;
 }
 
-main().catch(console.error);
+main().catch((e) => {
+  console.error(e);
+  process.exitCode = 1;
+});
