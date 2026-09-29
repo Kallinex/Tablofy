@@ -63,7 +63,6 @@ describe('AuthService', () => {
     service = module.get<AuthService>(AuthService);
     prisma = module.get(PrismaService) as MockPrisma;
     jwtService = module.get(JwtService) as jest.Mocked<JwtService>;
-    configService = module.get(ConfigService) as jest.Mocked<ConfigService>;
     redis = module.get(RedisService) as MockRedis;
     auditLogs = module.get(AuditLogsService) as MockAuditLogs;
   });

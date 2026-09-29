@@ -16,17 +16,17 @@ Phase 2B delivered the restaurant core domain across 9 milestones (M1–M9), add
 
 ## Milestone Completion
 
-| Milestone | Domain | Endpoints | Tests | Status |
-|-----------|--------|-----------|-------|--------|
-| M1 | Foundation (schema, services, restaurants, branches) | 12 | Included in Phase 2A | ✅ |
-| M2 | Physical Space (floors, dining areas, tables) | 20 | Included in Phase 2A | ✅ |
-| M3 | Menu Core (categories, products, images, availability) | 22 | 21/21 | ✅ |
-| M4 | Variants & Modifiers | 24 | 41/41 | ✅ |
-| M5 | Catalog Features (tags, allergens, nutrition) | 13 | 38/38 | ✅ |
-| M6 | Business Hours & Settings | 14 | 32/32 | ✅ |
-| M7 | Financial & Jobs (tax, service charges, units, queues) | 18 | 41/41 | ✅ |
-| M8 | Supply Chain (ingredients, suppliers, product ingredients, usage) | 15 | 38/38 | ✅ |
-| M9 | Security & Testing (lockout, JWT claims, rate limiting) | 1 | 55/55 | ✅ |
+| Milestone | Domain                                                            | Endpoints | Tests                | Status |
+| --------- | ----------------------------------------------------------------- | --------- | -------------------- | ------ |
+| M1        | Foundation (schema, services, restaurants, branches)              | 12        | Included in Phase 2A | ✅     |
+| M2        | Physical Space (floors, dining areas, tables)                     | 20        | Included in Phase 2A | ✅     |
+| M3        | Menu Core (categories, products, images, availability)            | 22        | 21/21                | ✅     |
+| M4        | Variants & Modifiers                                              | 24        | 41/41                | ✅     |
+| M5        | Catalog Features (tags, allergens, nutrition)                     | 13        | 38/38                | ✅     |
+| M6        | Business Hours & Settings                                         | 14        | 32/32                | ✅     |
+| M7        | Financial & Jobs (tax, service charges, units, queues)            | 18        | 41/41                | ✅     |
+| M8        | Supply Chain (ingredients, suppliers, product ingredients, usage) | 15        | 38/38                | ✅     |
+| M9        | Security & Testing (lockout, JWT claims, rate limiting)           | 1         | 55/55                | ✅     |
 
 ---
 
@@ -42,6 +42,7 @@ Phase 2B delivered the restaurant core domain across 9 milestones (M1–M9), add
 ## API Endpoints Summary (~187 total)
 
 ### Phase 2A (Identity Platform) — ~20 endpoints
+
 - Auth (11): register, login, refresh, logout, logout-all, forgot-password, reset-password, change-password, verify-email, resend-verification
 - Tenants (3): CRUD
 - Users (6): CRUD + soft-delete + restore
@@ -50,27 +51,32 @@ Phase 2B delivered the restaurant core domain across 9 milestones (M1–M9), add
 - Health (1): liveness check
 
 ### M1 — Foundation (12 endpoints)
+
 - Restaurants (6): CRUD + soft-delete + restore
 - Branches (6): CRUD + soft-delete + restore (plan-limit enforced)
 
 ### M2 — Physical Space (20 endpoints)
+
 - Floors (6): CRUD + soft-delete + restore
 - DiningAreas (6): CRUD + soft-delete + restore
 - Tables (8): CRUD + soft-delete + restore + status management
 
 ### M3 — Menu Core (22 endpoints)
+
 - MenuCategories (6): CRUD + soft-delete + restore
 - Products (6): CRUD + soft-delete + restore (plan-limit enforced)
 - ProductImages (5): CRUD (hard delete)
 - ProductAvailability (5): CRUD (hard delete, DayOfWeek schedule)
 
 ### M4 — Variants & Modifiers (24 endpoints)
+
 - VariantGroups (6): CRUD + soft-delete + restore
 - ProductVariants (6): CRUD + soft-delete + restore
 - ModifierGroups (6): CRUD + soft-delete + restore
 - Modifiers (6): CRUD + soft-delete + restore
 
 ### M5 — Catalog Features (13 endpoints)
+
 - ProductTags (6): Restaurant-level CRUD + soft-delete + restore
 - ProductTagAssignments (3): Assign/remove/list tags per product
 - Allergens (6): Restaurant-level CRUD + soft-delete + restore
@@ -78,12 +84,14 @@ Phase 2B delivered the restaurant core domain across 9 milestones (M1–M9), add
 - Nutrition (4): Per-product upsert (create/update/delete)
 
 ### M6 — Business Hours & Settings (14 endpoints)
+
 - BusinessHours (5): CRUD (upsert pattern)
 - BusinessExceptions (5): CRUD (date-range filtering)
 - RestaurantSettings (2): Get/Update (JSON merge)
 - BranchSettings (2): Get/Update (JSON merge)
 
 ### M7 — Financial & Jobs (18 endpoints)
+
 - TaxRates (6): CRUD + soft-delete + restore
 - ServiceCharges (6): CRUD + soft-delete + restore
 - Units (6): CRUD + soft-delete + restore (filterable by type)
@@ -91,28 +99,30 @@ Phase 2B delivered the restaurant core domain across 9 milestones (M1–M9), add
 - Scheduled Jobs: cleanup_expired_sessions (6h), cleanup_expired_tokens (12h), archive_old_audit_logs (daily)
 
 ### M8 — Supply Chain & Usage (15 endpoints)
+
 - Ingredients (6): CRUD + soft-delete + restore + search
 - Suppliers (6): CRUD + soft-delete + restore
 - ProductIngredients (6): Link/unlink/list + cost calculation
 - Usage (4): Order count, product count, top products, daily orders
 
 ### M9 — Security & Testing (1 endpoint)
+
 - AuditLogs (1): Query with action/resource/pagination filters
 
 ---
 
 ## Security Hardening (M9)
 
-| Control | Implementation |
-|---------|---------------|
-| Account Lockout | 5 failed attempts → 15-minute lock; `failedLoginAttempts` + `lockedUntil` on User; reset on success; audit logged |
-| JWT Claims | `iss: 'tablofy'`, `aud: 'tablofy-api'` enforced at signing + validation |
-| Per-Tenant Rate Limiting | Redis-based `PlanThrottleGuard` as APP_GUARD; tiered by plan (FREE:30/min → ENTERPRISE:1000/min) |
-| Rate Limit Headers | `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` on every response |
-| Cross-Tenant Isolation | TenantGuard + TenantMiddleware + service-level `tenantId` scoping on all queries |
-| RBAC | `@Roles()` decorator-based; OWNER/MANAGER/STAFF roles; 6 RBAC tests verified |
-| Input Validation | class-validator on every DTO; whitelist + forbidNonWhitelisted |
-| Audit Logging | Every mutation logged via AuditLogsService; 3 audit tests verified |
+| Control                  | Implementation                                                                                                    |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| Account Lockout          | 5 failed attempts → 15-minute lock; `failedLoginAttempts` + `lockedUntil` on User; reset on success; audit logged |
+| JWT Claims               | `iss: 'tablofy'`, `aud: 'tablofy-api'` enforced at signing + validation                                           |
+| Per-Tenant Rate Limiting | Redis-based `PlanThrottleGuard` as APP_GUARD; tiered by plan (FREE:30/min → ENTERPRISE:1000/min)                  |
+| Rate Limit Headers       | `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` on every response                               |
+| Cross-Tenant Isolation   | TenantGuard + TenantMiddleware + service-level `tenantId` scoping on all queries                                  |
+| RBAC                     | `@Roles()` decorator-based; OWNER/MANAGER/STAFF roles; 6 RBAC tests verified                                      |
+| Input Validation         | class-validator on every DTO; whitelist + forbidNonWhitelisted                                                    |
+| Audit Logging            | Every mutation logged via AuditLogsService; 3 audit tests verified                                                |
 
 ---
 
@@ -133,37 +143,38 @@ Phase 2B delivered the restaurant core domain across 9 milestones (M1–M9), add
 
 ## Infrastructure
 
-| Component | Stack |
-|-----------|-------|
-| Runtime | Node.js 22 |
-| Framework | NestJS 11 |
-| ORM | Prisma 6.16 |
-| Database | PostgreSQL 16 |
-| Cache | Redis 7 |
-| Build | Nx 23 + Webpack |
-| Language | TypeScript 6.0 |
-| Queue | BullMQ (Redis) |
+| Component | Stack           |
+| --------- | --------------- |
+| Runtime   | Node.js 22      |
+| Framework | NestJS 11       |
+| ORM       | Prisma 6.16     |
+| Database  | PostgreSQL 16   |
+| Cache     | Redis 7         |
+| Build     | Nx 23 + Webpack |
+| Language  | TypeScript 6.0  |
+| Queue     | BullMQ (Redis)  |
 
 ---
 
 ## Test Results Summary
 
-| Suite | Passed | Failed | Total |
-|-------|--------|--------|-------|
-| Phase 2A (Identity) | 37 | 0 | 37 |
-| M4 (Variants/Modifiers) | 41 | 0 | 41 |
-| M5 (Catalog) | 38 | 0 | 38 |
-| M6 (Business Hours/Settings) | 32 | 0 | 32 |
-| M7 (Financial/Jobs) | 41 | 0 | 41 |
-| M8 (Supply Chain) | 38 | 0 | 38 |
-| M9 (Security) | 55 | 0 | 55 |
-| **TOTAL** | **282** | **0** | **282** |
+| Suite                        | Passed  | Failed | Total   |
+| ---------------------------- | ------- | ------ | ------- |
+| Phase 2A (Identity)          | 37      | 0      | 37      |
+| M4 (Variants/Modifiers)      | 41      | 0      | 41      |
+| M5 (Catalog)                 | 38      | 0      | 38      |
+| M6 (Business Hours/Settings) | 32      | 0      | 32      |
+| M7 (Financial/Jobs)          | 41      | 0      | 41      |
+| M8 (Supply Chain)            | 38      | 0      | 38      |
+| M9 (Security)                | 55      | 0      | 55      |
+| **TOTAL**                    | **282** | **0**  | **282** |
 
 ---
 
 ## Files Created/Modified (Phase 2B)
 
 ### New Modules (M1–M9)
+
 - `apps/api/src/modules/restaurants/` — Restaurant CRUD
 - `apps/api/src/modules/branches/` — Branch CRUD + plan limits
 - `apps/api/src/modules/floors/` — Floor management
@@ -195,6 +206,7 @@ Phase 2B delivered the restaurant core domain across 9 milestones (M1–M9), add
 - `apps/api/src/modules/audit-logs/` — Audit log query (M9: controller added)
 
 ### New Common Services
+
 - `apps/api/src/common/services/domain-event.service.ts`
 - `apps/api/src/common/services/plan-limits.service.ts`
 - `apps/api/src/common/services/feature-flag.service.ts`
@@ -204,6 +216,7 @@ Phase 2B delivered the restaurant core domain across 9 milestones (M1–M9), add
 - `apps/api/src/common/guards/plan-throttle.guard.ts` (M9)
 
 ### Modified Files
+
 - `prisma/schema.prisma` — 44 models, 15 enums
 - `apps/api/src/app/app.module.ts` — All modules imported, PlanThrottleGuard registered
 - `apps/api/src/main.ts` — Swagger config, all tags
@@ -218,6 +231,7 @@ Phase 2B delivered the restaurant core domain across 9 milestones (M1–M9), add
 ## Next Phase (Phase 3)
 
 Phase 3 will cover:
+
 - Order Management (real-time order flow, kitchen display)
 - Payment Processing (payment gateway integration)
 - Reporting & Analytics (sales, inventory, performance)

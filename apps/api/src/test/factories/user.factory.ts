@@ -9,6 +9,9 @@ export interface TestUser {
   status: string;
   emailVerified: boolean;
   phone: string | null;
+  failedLoginAttempts: number;
+  lockedUntil: Date | null;
+  deletedAt: Date | null;
   dataRetentionUntil: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -40,6 +43,9 @@ export function buildUser(overrides: Partial<TestUser> = {}): TestUser {
     status: 'ACTIVE',
     emailVerified: true,
     phone: null,
+    failedLoginAttempts: 0,
+    lockedUntil: null,
+    deletedAt: null,
     dataRetentionUntil: null,
     createdAt: new Date('2025-01-01'),
     updatedAt: new Date('2025-01-01'),

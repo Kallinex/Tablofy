@@ -123,7 +123,11 @@ for (const [mod, file] of dtoTests) {
 
 const extendedTests = [
   ['prisma', 'prisma.service.spec.ts', 'src/prisma/tests/prisma.service.spec.ts'],
-  ['common/filters', 'http-exception.filter.spec.ts', 'src/common/filters/tests/http-exception.filter.spec.ts'],
+  [
+    'common/filters',
+    'http-exception.filter.spec.ts',
+    'src/common/filters/tests/http-exception.filter.spec.ts',
+  ],
 ];
 
 console.log('\n--- Extended Existing Tests ---\n');
@@ -151,10 +155,10 @@ if (!jestConfig.includes('!<rootDir>/src/**/*.dto.ts')) {
 }
 
 const thresholdChecks = [
-  ['auth.service.ts', "**/src/modules/auth/auth.service.ts"],
-  ['orders.service.ts', "**/src/modules/orders/orders.service.ts"],
-  ['tenants.service.ts', "**/src/modules/tenants/tenants.service.ts"],
-  ['prisma.service.ts', "**/src/prisma/prisma.service.ts"],
+  ['auth.service.ts', '**/src/modules/auth/auth.service.ts'],
+  ['orders.service.ts', '**/src/modules/orders/orders.service.ts'],
+  ['tenants.service.ts', '**/src/modules/tenants/tenants.service.ts'],
+  ['prisma.service.ts', '**/src/prisma/prisma.service.ts'],
 ];
 
 for (const [label, glob] of thresholdChecks) {
@@ -178,10 +182,12 @@ try {
   });
   const lines = result.split('\n');
 
-  const suiteMatch = lines.find(l => l.includes('Test Suites:'));
-  const testMatch = lines.find(l => l.includes('Tests:'));
+  const suiteMatch = lines.find((l) => l.includes('Test Suites:'));
+  const testMatch = lines.find((l) => l.includes('Tests:'));
 
-  const suiteCount = suiteMatch ? parseInt((suiteMatch.match(/(\d+) passed/) || [])[1] || '0', 10) : 0;
+  const suiteCount = suiteMatch
+    ? parseInt((suiteMatch.match(/(\d+) passed/) || [])[1] || '0', 10)
+    : 0;
   const testCount = testMatch ? parseInt((testMatch.match(/(\d+) passed/) || [])[1] || '0', 10) : 0;
 
   if (suiteCount >= 36) {

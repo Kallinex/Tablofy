@@ -20,12 +20,12 @@ function classMetadata(cls: unknown, key: string): unknown {
 
 function handlerMetadata(cls: unknown, methodName: string, key: string): unknown {
   const proto = (cls as { prototype: Record<string, unknown> }).prototype;
-  return Reflect.getMetadata(key, proto[methodName]);
+  return Reflect.getMetadata(key, proto[methodName] as object);
 }
 
 function isRouteHandler(cls: unknown, methodName: string): boolean {
   const proto = (cls as { prototype: Record<string, unknown> }).prototype;
-  return Reflect.getMetadata(PATH_METADATA, proto[methodName]) !== undefined;
+  return Reflect.getMetadata(PATH_METADATA, proto[methodName] as object) !== undefined;
 }
 
 function collectUngatedHandlers(): { file: string; handler: string }[] {

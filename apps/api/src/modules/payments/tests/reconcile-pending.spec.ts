@@ -23,8 +23,8 @@ describe('PaymentsService — reconcilePendingPayments (P1-02)', () => {
   let metrics: { [k: string]: jest.Mock };
   let auditLogs: { log: jest.Mock };
   let emitter: { emit: jest.Mock };
-  let stripeProvider: StripeProvider;
-  let paymobProvider: PaymobProvider;
+  let stripeProvider: StripeProvider & { getPaymentStatus: jest.Mock };
+  let paymobProvider: PaymobProvider & { getPaymentStatus: jest.Mock };
 
   const pendingPayment = (overrides: Record<string, unknown> = {}) => ({
     id: 'payment-1',
@@ -94,14 +94,14 @@ describe('PaymentsService — reconcilePendingPayments (P1-02)', () => {
       secretKey: 'sk_test',
       webhookSecret: 'whsec_test',
       apiBase: 'https://api.stripe.example',
-    });
+    }) as StripeProvider & { getPaymentStatus: jest.Mock };
     paymobProvider = new PaymobProvider({
       mode: 'live' as const,
       apiKey: 'api_key',
       integrationId: 1,
       webhookSecret: 'whsec_test',
       apiBase: 'https://accept.paymob.example',
-    });
+    }) as PaymobProvider & { getPaymentStatus: jest.Mock };
 
     stripeProvider.getPaymentStatus = jest.fn();
     paymobProvider.getPaymentStatus = jest.fn();

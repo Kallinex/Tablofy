@@ -48,6 +48,9 @@ Thumbs.db
 .nx/workspace-data
 .nx/migrate-runs
 
+# Runtime export storage
+/exports
+
 # Claude
 .claude/worktrees
 .claude/settings.local.json

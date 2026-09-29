@@ -343,11 +343,21 @@ async function main() {
       : fail('T43', badRefresh.status);
 
     var logoutU = await regAndLogin('logout-' + ts + '@test.com', 'Logout123!', 'LogoutT-' + ts);
-    var refreshToken = logoutU.login.body && logoutU.login.body.tokens && logoutU.login.body.tokens.refreshToken;
+    var refreshToken =
+      logoutU.login.body && logoutU.login.body.tokens && logoutU.login.body.tokens.refreshToken;
     if (!refreshToken) {
-      fail('T44', 'Login failed for logout user: ' + (logoutU.login.body ? JSON.stringify(logoutU.login.body) : 'no body'));
+      fail(
+        'T44',
+        'Login failed for logout user: ' +
+          (logoutU.login.body ? JSON.stringify(logoutU.login.body) : 'no body'),
+      );
     } else {
-      var logoutRes = await request('POST', '/api/v1/auth/logout', { refreshToken: refreshToken }, logoutU.auth);
+      var logoutRes = await request(
+        'POST',
+        '/api/v1/auth/logout',
+        { refreshToken: refreshToken },
+        logoutU.auth,
+      );
       logoutRes.status === 200 ? pass('T44 Logout succeeds') : fail('T44', logoutRes.status);
     }
 

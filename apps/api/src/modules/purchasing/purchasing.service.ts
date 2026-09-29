@@ -1138,6 +1138,10 @@ export class PurchasingService {
     await this.cacheService.delete(tenantId, 'po:stats');
     await this.cacheService.delete(tenantId, `po:${dto.purchaseOrderId}`);
     await this.cacheService.delete(tenantId, 'grn:list');
+    await this.invalidateItemCache(
+      tenantId,
+      dto.items.map((i) => i.inventoryItemId),
+    );
     this.gateway.broadcastPurchaseUpdate(tenantId, 'purchase.received', result);
     this.gateway.broadcastGoodsReceived(tenantId, 'goods.received', result);
 
@@ -1395,9 +1399,24 @@ export class PurchasingService {
     await this.cacheService.delete(tenantId, 'po:list');
     await this.cacheService.delete(tenantId, 'po:stats');
     await this.cacheService.delete(tenantId, `po:${grn.purchaseOrderId}`);
+    await this.invalidateItemCache(
+      tenantId,
+      grn.items.map((i) => i.inventoryItemId),
+    );
     this.gateway.broadcastGoodsReceived(tenantId, 'goods.cancelled', { id });
 
     return { id, status: GoodsReceiptStatus.CANCELLED };
+  }
+
+  private async invalidateItemCache(tenantId: string, itemIds: (string | undefined | null)[]) {
+    const ids = new Set(itemIds.filter((v): v is string => Boolean(v)));
+    for (const id of ids) {
+      await this.cacheService.delete(tenantId, `item:${id}`);
+    }
+    await this.cacheService.deletePattern(tenantId, 'items:*');
+    await this.cacheService.deletePattern(tenantId, 'low-stock:*');
+    await this.cacheService.deletePattern(tenantId, 'critical-stock:*');
+    await this.cacheService.deletePattern(tenantId, 'out-of-stock:*');
   }
 
   private async generateGRNNumber(

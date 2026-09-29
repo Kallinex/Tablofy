@@ -27,15 +27,15 @@ re-verified against current source and the live deployment before being accepted
 
 ## 3. P0 Finding Registry (status after this audit)
 
-| ID | Area | Status |
-|----|------|--------|
-| P0-A | Reconcile must be read-only (12 contract tests) | CLOSED (re-verified in full suite) |
-| P0-B/E | Payment/refund amount integrity, idempotency, CAS | CLOSED (re-derived from source, tests pass) |
-| P0-D/D2-D4 | Refund balance accounting (full/partial/replay) | CLOSED (tests in suite) |
-| P0-F | GRN `averageCost` weighted-average race | CLOSED (re-verified via suite + GRN lock check) |
-| P0-H | Recipe update transactionality | CLOSED (re-verified via suite) |
-| P0-I | Dead role strings / RBAC policy | **CLOSED this audit** (see §8) |
-| P0-J | Order pricing: client prices must not be authoritative | **CLOSED this audit** (see §4-6) |
+| ID         | Area                                                   | Status                                          |
+| ---------- | ------------------------------------------------------ | ----------------------------------------------- |
+| P0-A       | Reconcile must be read-only (12 contract tests)        | CLOSED (re-verified in full suite)              |
+| P0-B/E     | Payment/refund amount integrity, idempotency, CAS      | CLOSED (re-derived from source, tests pass)     |
+| P0-D/D2-D4 | Refund balance accounting (full/partial/replay)        | CLOSED (tests in suite)                         |
+| P0-F       | GRN `averageCost` weighted-average race                | CLOSED (re-verified via suite + GRN lock check) |
+| P0-H       | Recipe update transactionality                         | CLOSED (re-verified via suite)                  |
+| P0-I       | Dead role strings / RBAC policy                        | **CLOSED this audit** (see §8)                  |
+| P0-J       | Order pricing: client prices must not be authoritative | **CLOSED this audit** (see §4-6)                |
 
 ## 4. P0-J Forensic Determination (canonical pricing rule)
 

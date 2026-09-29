@@ -56,7 +56,9 @@ describe('SalesAnalyticsService', () => {
         { createdAt: new Date('2025-01-02T10:00:00Z'), total: 75, id: '3' },
       ]);
 
-      const result = await service.getOverview(testTenantId, { groupBy: 'DAILY' } as never);
+      const result = (await service.getOverview(testTenantId, {
+        groupBy: 'DAILY',
+      } as never)) as Array<{ period: string; revenue: number; orderCount: number }>;
 
       expect(result).toHaveLength(2);
       expect(result[0].revenue).toBe(150);
@@ -72,7 +74,9 @@ describe('SalesAnalyticsService', () => {
         { createdAt: new Date('2025-02-10T10:00:00Z'), total: 300, id: '2' },
       ]);
 
-      const result = await service.getOverview(testTenantId, { groupBy: 'MONTHLY' } as never);
+      const result = (await service.getOverview(testTenantId, {
+        groupBy: 'MONTHLY',
+      } as never)) as Array<{ period: string; revenue: number; orderCount: number }>;
 
       expect(result).toHaveLength(2);
       expect(result[0].revenue).toBe(200);
@@ -123,12 +127,15 @@ describe('SalesAnalyticsService', () => {
         .mockResolvedValueOnce([{ total: 200 }, { total: 300 }])
         .mockResolvedValueOnce([{ total: 400 }, { total: 500 }]);
 
-      const result = await service.getRevenueComparison(testTenantId, {
+      const result = (await service.getRevenueComparison(testTenantId, {
         period1Start: '2025-01-01',
         period1End: '2025-01-31',
         period2Start: '2025-02-01',
         period2End: '2025-02-28',
-      } as never);
+      } as never)) as {
+        period1: { revenue: number; orderCount: number };
+        period2: { revenue: number; orderCount: number };
+      };
 
       expect(result).toHaveProperty('period1');
       expect(result).toHaveProperty('period2');

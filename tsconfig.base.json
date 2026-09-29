@@ -1,8 +1,8 @@
 {
-    "compileOnSave": false,
-    "compilerOptions": {
-      "ignoreDeprecations": "6.0",
-      "rootDir": ".",
+  "compileOnSave": false,
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0",
+    "rootDir": ".",
     "sourceMap": true,
     "declaration": false,
     "moduleResolution": "bundler",

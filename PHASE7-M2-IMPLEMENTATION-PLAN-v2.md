@@ -5,7 +5,7 @@
 **Version:** 2.0 — Corrected per PHASE7-M2-PLAN-VALIDATION.md  
 **Status:** Ready for final internal consistency check  
 **Based on:** PHASE7-VERIFIED-ROADMAP.md, FORENSIC-VALIDATION.md, FINAL-PRODUCTION-READINESS-AUDIT.md  
-**Branch:** feature/phase7-m2 (clean, on v7.1.0)  
+**Branch:** feature/phase7-m2 (clean, on v7.1.0)
 
 ---
 
@@ -19,27 +19,28 @@ Establish a regression safety net enabling confident production deployments by r
 
 **In scope — 11 actionable tasks (7.2.1–7.2.9, 7.2.11–7.2.12):**
 
-| ID | Task | Finding | Effort |
-|----|------|---------|--------|
-| 7.2.1 | Integration tests: auth flow (login, register, refresh, logout, token revocation) | P0-11, P0-12 | 2 days |
-| 7.2.2 | Integration tests: tenant isolation (cross-tenant data access prevented) | P0-11, P0-12 | 2 days |
-| 7.2.3 | Integration tests: order CRUD + status transitions | P0-11, P0-12 | 2 days |
-| 7.2.4 | Integration tests: RBAC enforcement on backup, privacy, gift-cards (post-7.1) | P0-11, P0-12 | 1 day |
-| 7.2.5 | Unit tests: analytics/service DTO validation rules | P0-11 | 0.5 day |
-| 7.2.6 | Unit tests: PrismaService (connection lifecycle, retry, shutdown) | P0-11 | 1 day |
-| 7.2.7 | Tests: global exception filter (all HTTP error cases, validation errors) | P0-11 | 1 day |
-| 7.2.8 | Test factories: Product, Menu, Branch, InventoryItem, Customer, Payment, Order, User, Tenant | P0-11 | 2.5 days |
-| 7.2.9 | Raise coverage thresholds to 40% min / 60% critical modules | P0-11 | 0.5 day |
-| 7.2.11 | Global test setup (env vars, DB config via `setupFiles`) | P0-11 | 0.25 day |
-| 7.2.12 | Remove DTO exclusion from coverage in jest.config.ts | P0-11 | 0.08 day |
+| ID     | Task                                                                                         | Finding      | Effort   |
+| ------ | -------------------------------------------------------------------------------------------- | ------------ | -------- |
+| 7.2.1  | Integration tests: auth flow (login, register, refresh, logout, token revocation)            | P0-11, P0-12 | 2 days   |
+| 7.2.2  | Integration tests: tenant isolation (cross-tenant data access prevented)                     | P0-11, P0-12 | 2 days   |
+| 7.2.3  | Integration tests: order CRUD + status transitions                                           | P0-11, P0-12 | 2 days   |
+| 7.2.4  | Integration tests: RBAC enforcement on backup, privacy, gift-cards (post-7.1)                | P0-11, P0-12 | 1 day    |
+| 7.2.5  | Unit tests: analytics/service DTO validation rules                                           | P0-11        | 0.5 day  |
+| 7.2.6  | Unit tests: PrismaService (connection lifecycle, retry, shutdown)                            | P0-11        | 1 day    |
+| 7.2.7  | Tests: global exception filter (all HTTP error cases, validation errors)                     | P0-11        | 1 day    |
+| 7.2.8  | Test factories: Product, Menu, Branch, InventoryItem, Customer, Payment, Order, User, Tenant | P0-11        | 2.5 days |
+| 7.2.9  | Raise coverage thresholds to 40% min / 60% critical modules                                  | P0-11        | 0.5 day  |
+| 7.2.11 | Global test setup (env vars, DB config via `setupFiles`)                                     | P0-11        | 0.25 day |
+| 7.2.12 | Remove DTO exclusion from coverage in jest.config.ts                                         | P0-11        | 0.08 day |
 
 **Deferred — 1 task (7.2.10):**
 
-| ID | Task | Reason | Finding |
-|----|------|--------|---------|
-| 7.2.10 | E2E: auth → tenant → order → payment | Blocked on 7.3 Payments Module (ROADMAP §7.2.10) | P0-12 |
+| ID     | Task                                 | Reason                                           | Finding |
+| ------ | ------------------------------------ | ------------------------------------------------ | ------- |
+| 7.2.10 | E2E: auth → tenant → order → payment | Blocked on 7.3 Payments Module (ROADMAP §7.2.10) | P0-12   |
 
 **Explicitly out of scope:**
+
 - No production code changes (all changes are test files + jest config)
 - No database schema changes
 - No new environment variables
@@ -52,17 +53,17 @@ Establish a regression safety net enabling confident production deployments by r
 
 ## 3. Success Criteria
 
-| Criterion | Target | Measurement |
-|-----------|--------|-------------|
-| Total spec files | ≥41 (from 26) | `find src -name '*.spec.ts' \| wc -l` |
-| Integration spec files | ≥6 (from 0) | `find src -name '*.integration.spec.ts' \| wc -l` |
-| Line coverage | ≥40% overall | `npx jest --coverage` |
-| Critical module coverage (auth, orders, tenants) | ≥60% | Per-module threshold in jest.config.ts |
-| DTO coverage | Included (removed from exclusion) | Coverage report includes DTO files |
-| Global test setup | Present and wired via `setupFiles` | jest.config.ts references valid setup file |
-| Test factories | ≥10 entity factories | `src/test/factories/` populated |
-| Pass rate | 100% | `npx jest` exit 0 |
-| ESLint | 0 errors, 0 warnings | `npx eslint` on test files |
+| Criterion                                        | Target                             | Measurement                                       |
+| ------------------------------------------------ | ---------------------------------- | ------------------------------------------------- |
+| Total spec files                                 | ≥41 (from 26)                      | `find src -name '*.spec.ts' \| wc -l`             |
+| Integration spec files                           | ≥6 (from 0)                        | `find src -name '*.integration.spec.ts' \| wc -l` |
+| Line coverage                                    | ≥40% overall                       | `npx jest --coverage`                             |
+| Critical module coverage (auth, orders, tenants) | ≥60%                               | Per-module threshold in jest.config.ts            |
+| DTO coverage                                     | Included (removed from exclusion)  | Coverage report includes DTO files                |
+| Global test setup                                | Present and wired via `setupFiles` | jest.config.ts references valid setup file        |
+| Test factories                                   | ≥10 entity factories               | `src/test/factories/` populated                   |
+| Pass rate                                        | 100%                               | `npx jest` exit 0                                 |
+| ESLint                                           | 0 errors, 0 warnings               | `npx eslint` on test files                        |
 
 ---
 
@@ -91,15 +92,15 @@ Factories         → src/test/factories/    — builder pattern for creating en
 
 No new NestJS modules. All work is in the test layer.
 
-| Module | Test Type | Tasks |
-|--------|-----------|-------|
-| auth | Integration | 7.2.1 |
-| tenants (cross-module) | Integration (tenant isolation) | 7.2.2 |
-| orders | Integration | 7.2.3 |
-| backup, privacy, gift-cards | Integration (RBAC) | 7.2.4 |
-| sales-analytics, inventory-analytics, customer-analytics, crm | Unit (DTOs) | 7.2.5 |
-| prisma | Unit | 7.2.6 |
-| common/filters | Unit | 7.2.7 |
+| Module                                                        | Test Type                      | Tasks |
+| ------------------------------------------------------------- | ------------------------------ | ----- |
+| auth                                                          | Integration                    | 7.2.1 |
+| tenants (cross-module)                                        | Integration (tenant isolation) | 7.2.2 |
+| orders                                                        | Integration                    | 7.2.3 |
+| backup, privacy, gift-cards                                   | Integration (RBAC)             | 7.2.4 |
+| sales-analytics, inventory-analytics, customer-analytics, crm | Unit (DTOs)                    | 7.2.5 |
+| prisma                                                        | Unit                           | 7.2.6 |
+| common/filters                                                | Unit                           | 7.2.7 |
 
 ---
 
@@ -118,6 +119,7 @@ No changes to any of these layers. Tests mock all service dependencies. RBAC int
 ## 11. API Endpoints
 
 No new endpoints. Integration tests (7.2.1–7.2.4) invoke existing endpoints via controller methods with mocked guards and services. All test targets verified to exist:
+
 - `auth.controller.ts`, `tenants.controller.ts`, `orders.controller.ts`
 - `backup.controller.ts`, `privacy.controller.ts`, `gift-cards.controller.ts`
 - `prisma.service.ts`, `http-exception.filter.ts`
@@ -127,6 +129,7 @@ No new endpoints. Integration tests (7.2.1–7.2.4) invoke existing endpoints vi
 ## 12. DTOs
 
 No changes to DTO definitions. DTO coverage exclusion removed from jest.config.ts (7.2.12). DTO validation tests (7.2.5) validate existing analytics DTOs:
+
 - sales-analytics DTOs
 - inventory-analytics DTOs
 - customer-analytics DTOs
@@ -139,6 +142,7 @@ No changes to DTO definitions. DTO coverage exclusion removed from jest.config.t
 **File to modify:** `apps/api/jest.config.ts`
 
 Changes:
+
 1. **Remove** `'!<rootDir>/src/**/*.dto.ts'` from `collectCoverageFrom` (7.2.12)
 2. **Replace** `setupFilesAfterSetup: [...]` with `setupFiles: ['<rootDir>/src/test/setup/global-test-setup.ts']` — NOTE: `setupFilesAfterSetup` is NOT a valid Jest property; the existing line on line 157 is dead code. The correct property is `setupFiles`. (7.2.11)
 3. **Raise coverage thresholds** per §17 below — only for files mandated by ROADMAP (auth, orders, tenants, prisma). No new threshold entries for M1 files. (7.2.9)
@@ -150,6 +154,7 @@ Changes:
 **No new environment variables.**
 
 The global test setup (7.2.11) sets defaults via `process.env` assignment using Jest's `setupFiles` array:
+
 - `NODE_ENV=test`
 - `DATABASE_URL` (mock, not connected)
 - `REDIS_HOST=localhost`, `REDIS_PORT=6379` (mock, not connected)
@@ -162,6 +167,7 @@ The global test setup (7.2.11) sets defaults via `process.env` assignment using 
 ## 15. Security Considerations
 
 All tests operate in the test environment only. No real credentials, database connections, or external services are used. Integration tests verify:
+
 - Cross-tenant data isolation (7.2.2)
 - RBAC enforcement (7.2.4)
 - Auth token lifecycle (7.2.1)
@@ -172,12 +178,12 @@ All tests operate in the test environment only. No real credentials, database co
 
 ### Test Categories
 
-| Category | Pattern | Dependencies | Tasks |
-|----------|---------|-------------|-------|
-| Unit (service/DTO) | `*.spec.ts` | Mocked deps | 7.2.5, 7.2.6, 7.2.7 |
-| Integration | `*.integration.spec.ts` | Mocked Prisma, real module imports | 7.2.1, 7.2.2, 7.2.3, 7.2.4 |
-| Factories | `src/test/factories/*.factory.ts` | None (static builders) | 7.2.8 |
-| Config | `jest.config.ts` | N/A | 7.2.9, 7.2.11, 7.2.12 |
+| Category           | Pattern                           | Dependencies                       | Tasks                      |
+| ------------------ | --------------------------------- | ---------------------------------- | -------------------------- |
+| Unit (service/DTO) | `*.spec.ts`                       | Mocked deps                        | 7.2.5, 7.2.6, 7.2.7        |
+| Integration        | `*.integration.spec.ts`           | Mocked Prisma, real module imports | 7.2.1, 7.2.2, 7.2.3, 7.2.4 |
+| Factories          | `src/test/factories/*.factory.ts` | None (static builders)             | 7.2.8                      |
+| Config             | `jest.config.ts`                  | N/A                                | 7.2.9, 7.2.11, 7.2.12      |
 
 ### Test Execution Flow
 
@@ -192,15 +198,15 @@ jest --config jest.config.ts
 
 ### Categorization
 
-| Task | Method | Rationale |
-|------|--------|-----------|
+| Task  | Method      | Rationale                                                                                |
+| ----- | ----------- | ---------------------------------------------------------------------------------------- |
 | 7.2.1 | Integration | Multi-step auth flow (login→register→refresh→logout→revoke), exercises multiple services |
-| 7.2.2 | Integration | Cross-tenant data access scenario, exercises guards + services |
-| 7.2.3 | Integration | Order state machine transitions (draft→confirmed→completed→cancelled) |
-| 7.2.4 | Integration | Full guard+controller wiring for RBAC enforcement |
-| 7.2.5 | Unit | DTO validation is pure logic (class-validator), no DI needed |
-| 7.2.6 | Unit | PrismaService lifecycle methods are self-contained |
-| 7.2.7 | Unit | Exception filter takes (exception, host) and returns response |
+| 7.2.2 | Integration | Cross-tenant data access scenario, exercises guards + services                           |
+| 7.2.3 | Integration | Order state machine transitions (draft→confirmed→completed→cancelled)                    |
+| 7.2.4 | Integration | Full guard+controller wiring for RBAC enforcement                                        |
+| 7.2.5 | Unit        | DTO validation is pure logic (class-validator), no DI needed                             |
+| 7.2.6 | Unit        | PrismaService lifecycle methods are self-contained                                       |
+| 7.2.7 | Unit        | Exception filter takes (exception, host) and returns response                            |
 
 ---
 
@@ -210,12 +216,12 @@ jest --config jest.config.ts
 
 Only the following three critical-module files receive threshold bumps. All other existing thresholds remain unchanged. No new threshold entries are added for M1 files.
 
-| Scope | Current (lines) | Target (lines) | Functions | Change |
-|-------|----------------|----------------|-----------|--------|
-| auth.service.ts | 75 | **80** | 85 | +5 |
-| orders.service.ts | 25 | **60** | 50 | +35 |
-| tenants.service.ts | 35 | **60** | 50 | +25 |
-| prisma.service.ts | 30 | **80** | 70 | +50 |
+| Scope              | Current (lines) | Target (lines) | Functions | Change |
+| ------------------ | --------------- | -------------- | --------- | ------ |
+| auth.service.ts    | 75              | **80**         | 85        | +5     |
+| orders.service.ts  | 25              | **60**         | 50        | +35    |
+| tenants.service.ts | 35              | **60**         | 50        | +25    |
+| prisma.service.ts  | 30              | **80**         | 70        | +50    |
 
 All other currently tracked files keep existing thresholds. The 40% overall target is verified by `npx jest --coverage`; no per-file thresholds are added for backup, webhook, redis, logger, guards, or any other M1-milestone files.
 
@@ -259,6 +265,7 @@ apps/api/src/test/setup/global-test-setup.ts
 ```
 apps/api/src/modules/auth/tests/integration/auth-flow.integration.spec.ts
 ```
+
 Covers: register → login → refresh → logout → token revocation verification.
 
 #### Integration Tests — Tenant Isolation (7.2.2) — 1 file
@@ -266,6 +273,7 @@ Covers: register → login → refresh → logout → token revocation verificat
 ```
 apps/api/src/modules/tenants/tests/integration/tenant-isolation.integration.spec.ts
 ```
+
 Covers: cross-tenant read blocked, cross-tenant write blocked via body tenantId, tenant-body guard enforces isolation.
 
 #### Integration Tests — Order CRUD (7.2.3) — 1 file
@@ -273,6 +281,7 @@ Covers: cross-tenant read blocked, cross-tenant write blocked via body tenantId,
 ```
 apps/api/src/modules/orders/tests/integration/order-crud.integration.spec.ts
 ```
+
 Covers: create order (DRAFT), add items, transition to CONFIRMED, transition to COMPLETED, transition to CANCELLED, verify status history entries.
 
 #### Integration Tests — RBAC (7.2.4) — 3 files
@@ -282,6 +291,7 @@ apps/api/src/modules/backup/tests/integration/rbac.integration.spec.ts
 apps/api/src/modules/privacy/tests/integration/rbac.integration.spec.ts
 apps/api/src/modules/gift-cards/tests/integration/rbac.integration.spec.ts
 ```
+
 Each covers: OWNER succeeds, MANAGER succeeds (where allowed), STAFF/VIEWER denied.
 
 #### Unit Tests — DTOs (7.2.5) — 4 files
@@ -292,6 +302,7 @@ apps/api/src/modules/inventory-analytics/tests/dto/inventory-analytics.dto.spec.
 apps/api/src/modules/customer-analytics/tests/dto/customer-analytics.dto.spec.ts
 apps/api/src/modules/crm/tests/dto/crm.dto.spec.ts
 ```
+
 Each validates: required fields, type validation, minimum/maximum constraints, enum values.
 
 ### Files to Modify (3 files)
@@ -299,7 +310,9 @@ Each validates: required fields, type validation, minimum/maximum constraints, e
 ```
 apps/api/jest.config.ts
 ```
+
 Changes:
+
 1. Remove `'!<rootDir>/src/**/*.dto.ts'` from `collectCoverageFrom` (7.2.12)
 2. Replace `setupFilesAfterSetup: [...]` with `setupFiles: ['<rootDir>/src/test/setup/global-test-setup.ts']` — fixes dead config (7.2.11)
 3. Update coverage thresholds per §17 (7.2.9)
@@ -307,11 +320,13 @@ Changes:
 ```
 apps/api/src/prisma/tests/prisma.service.spec.ts  (EXTEND)
 ```
+
 Add test cases for: `onModuleInit` connection retry, `onModuleDestroy` graceful shutdown, `enableShutdownHooks` error handler.
 
 ```
 apps/api/src/common/filters/tests/http-exception.filter.spec.ts  (EXTEND)
 ```
+
 Add test cases for: BadRequestException (validation errors), UnauthorizedException, ForbiddenException, NotFoundException, ConflictException, InternalServerErrorException, ThrottlerException.
 
 ### Files to NOT Modify
@@ -343,37 +358,37 @@ npx jest
 
 ## 21. Risks and Blockers
 
-| # | Risk | Likelihood | Impact | Mitigation |
-|---|------|-----------|--------|------------|
-| R1 | **`setupFiles` wiring** — if `setupFilesAfterSetup` is simply renamed without understanding that the old property was dead code, the setup file may still not execute | High | High | Verify by running `node -e "require('./src/test/setup/global-test-setup')"` before hooking into Jest; verify `process.env.JWT_SECRET` is set in a test |
-| R2 | **Coverage thresholds fail on first run** — thresholds set too high relative to actual coverage after tests are written | High | Medium | Run `npx jest --coverage` BEFORE committing final thresholds; set achievable numbers based on actual output |
-| R3 | **DTO tests (7.2.5) miss edge cases** — reduced to 4 files, but some analytics modules may have zero DTOs | Medium | Low | Verify DTO existence in each analytics module before creating test file; skip empty DTO dirs |
-| R4 | **Test factories duplicate existing patterns** — `src/test/mocks/` already has manual mocks | Low | Low | Review existing mocks first; factories are composable and additive |
-| R5 | **Integration tests too slow** — 6 integration files with mocked I/O could slow overall suite | Low | Medium | Keep <50 test cases per file; mock Prisma queries return instantly |
-| R6 | **7.2.10 deferred** — E2E gap remains after M2; auth→tenant→order→payment path never tested end-to-end | Medium | Low | Document in M2 report; re-assess after 7.3 Payments Module |
-| R7 | **40% target from 12.8% in one milestone** — requires tripling covered code; 21 new test files may not be sufficient | Medium | High | Prioritize integration tests for high-coverage-impact flows (auth, orders); run early coverage check and add file-level tests if needed |
-| R8 | **Test factories are soft dependency** — integration tests (7.2.1–4) can use inline data; factories are convenience | Low | Low | Run factories and integration tests in parallel; inline data in integration tests until factories are ready |
+| #   | Risk                                                                                                                                                                  | Likelihood | Impact | Mitigation                                                                                                                                             |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| R1  | **`setupFiles` wiring** — if `setupFilesAfterSetup` is simply renamed without understanding that the old property was dead code, the setup file may still not execute | High       | High   | Verify by running `node -e "require('./src/test/setup/global-test-setup')"` before hooking into Jest; verify `process.env.JWT_SECRET` is set in a test |
+| R2  | **Coverage thresholds fail on first run** — thresholds set too high relative to actual coverage after tests are written                                               | High       | Medium | Run `npx jest --coverage` BEFORE committing final thresholds; set achievable numbers based on actual output                                            |
+| R3  | **DTO tests (7.2.5) miss edge cases** — reduced to 4 files, but some analytics modules may have zero DTOs                                                             | Medium     | Low    | Verify DTO existence in each analytics module before creating test file; skip empty DTO dirs                                                           |
+| R4  | **Test factories duplicate existing patterns** — `src/test/mocks/` already has manual mocks                                                                           | Low        | Low    | Review existing mocks first; factories are composable and additive                                                                                     |
+| R5  | **Integration tests too slow** — 6 integration files with mocked I/O could slow overall suite                                                                         | Low        | Medium | Keep <50 test cases per file; mock Prisma queries return instantly                                                                                     |
+| R6  | **7.2.10 deferred** — E2E gap remains after M2; auth→tenant→order→payment path never tested end-to-end                                                                | Medium     | Low    | Document in M2 report; re-assess after 7.3 Payments Module                                                                                             |
+| R7  | **40% target from 12.8% in one milestone** — requires tripling covered code; 21 new test files may not be sufficient                                                  | Medium     | High   | Prioritize integration tests for high-coverage-impact flows (auth, orders); run early coverage check and add file-level tests if needed                |
+| R8  | **Test factories are soft dependency** — integration tests (7.2.1–4) can use inline data; factories are convenience                                                   | Low        | Low    | Run factories and integration tests in parallel; inline data in integration tests until factories are ready                                            |
 
 ---
 
 ## 22. Estimated Effort
 
-| Task | Days | Parallelizable | Dependencies |
-|------|------|---------------|-------------|
-| 7.2.11 — Global test setup | 0.25 | ✅ Yes | None |
-| 7.2.12 — Remove DTO exclusion | 0.08 | ✅ Yes | None |
-| 7.2.8 — Test factories | 2.5 | ✅ Yes | None (soft dependency for integration tests) |
-| 7.2.1 — Auth integration tests | 2 | ✅ Yes | None (can use inline data) |
-| 7.2.2 — Tenant isolation integration | 2 | ✅ Yes | None (can use inline data) |
-| 7.2.3 — Order CRUD integration | 2 | ✅ Yes | None (can use inline data) |
-| 7.2.4 — RBAC integration | 1 | ✅ Yes | None (can use inline data) |
-| 7.2.5 — DTO unit tests | 0.5 | ✅ Yes | None |
-| 7.2.6 — PrismaService unit tests | 1 | ✅ Yes | None |
-| 7.2.7 — Exception filter tests | 1 | ✅ Yes | None |
-| 7.2.9 — Coverage thresholds | 0.5 | ❌ No | All above (must run coverage first) |
-| Quality gates + fixes | 0.5 | ❌ No | All above |
-| **Subtotal** | **~13 days** | | |
-| With 25% buffer | **~16 days** | | |
+| Task                                 | Days         | Parallelizable | Dependencies                                 |
+| ------------------------------------ | ------------ | -------------- | -------------------------------------------- |
+| 7.2.11 — Global test setup           | 0.25         | ✅ Yes         | None                                         |
+| 7.2.12 — Remove DTO exclusion        | 0.08         | ✅ Yes         | None                                         |
+| 7.2.8 — Test factories               | 2.5          | ✅ Yes         | None (soft dependency for integration tests) |
+| 7.2.1 — Auth integration tests       | 2            | ✅ Yes         | None (can use inline data)                   |
+| 7.2.2 — Tenant isolation integration | 2            | ✅ Yes         | None (can use inline data)                   |
+| 7.2.3 — Order CRUD integration       | 2            | ✅ Yes         | None (can use inline data)                   |
+| 7.2.4 — RBAC integration             | 1            | ✅ Yes         | None (can use inline data)                   |
+| 7.2.5 — DTO unit tests               | 0.5          | ✅ Yes         | None                                         |
+| 7.2.6 — PrismaService unit tests     | 1            | ✅ Yes         | None                                         |
+| 7.2.7 — Exception filter tests       | 1            | ✅ Yes         | None                                         |
+| 7.2.9 — Coverage thresholds          | 0.5          | ❌ No          | All above (must run coverage first)          |
+| Quality gates + fixes                | 0.5          | ❌ No          | All above                                    |
+| **Subtotal**                         | **~13 days** |                |                                              |
+| With 25% buffer                      | **~16 days** |                |                                              |
 
 **Parallel execution groups:**
 
@@ -410,27 +425,31 @@ Group B (independent, parallel with Group A):
 ## 24. Deliverables
 
 ### Documentation
+
 - `PHASE7-M2-REPORT.md` — milestone completion report
 - `PHASE7-M2-CHANGELOG.md` — per-file change log
 
 ### Verification
+
 - `scripts/verify-phase7-m2.js` — automated verification script
 
 ### Reports (generated during quality gates)
+
 - Coverage report (`coverage/lcov-report/index.html`)
 - Test results (Jest XML output)
 
 ### Tag
+
 - `v7.2.0` — milestone completion tag (after quality gates pass)
 
 ---
 
 ## 25. Finding-to-Task Mapping
 
-| Finding | Forensic Report Section | M2 Tasks |
-|---------|------------------------|----------|
+| Finding                           | Forensic Report Section       | M2 Tasks                                                                      |
+| --------------------------------- | ----------------------------- | ----------------------------------------------------------------------------- |
 | P0-11: 68/69 controllers untested | FORENSIC-VALIDATION.md §P0-11 | 7.2.1, 7.2.2, 7.2.3, 7.2.4, 7.2.5, 7.2.6, 7.2.7, 7.2.8, 7.2.9, 7.2.11, 7.2.12 |
-| P0-12: Zero E2E/integration tests | FORENSIC-VALIDATION.md §P0-12 | 7.2.1, 7.2.2, 7.2.3, 7.2.4 (integration), 7.2.10 (deferred) |
+| P0-12: Zero E2E/integration tests | FORENSIC-VALIDATION.md §P0-12 | 7.2.1, 7.2.2, 7.2.3, 7.2.4 (integration), 7.2.10 (deferred)                   |
 
 Both findings are from FORENSIC-VALIDATION.md, confirmed at 98.3% verification rate with zero false positives in the P0 category.
 
@@ -438,35 +457,35 @@ Both findings are from FORENSIC-VALIDATION.md, confirmed at 98.3% verification r
 
 ## 26. Quality Gates
 
-| Gate | Command | Expected |
-|------|---------|----------|
-| Lint test files | `npx eslint "apps/api/src/**/*.spec.ts" --max-warnings=0` | 0 errors, 0 warnings |
-| TypeScript check | `npx tsc --noEmit -p apps/api/tsconfig.spec.json` | 0 errors |
-| Unit tests | `npx jest --testPathPattern='\.spec\.ts$'` | 100% pass |
-| Integration tests | `npx jest --testPathPattern='\.integration\.spec\.ts$'` | 100% pass |
-| Full suite | `npx jest` | 100% pass |
-| Coverage | `npx jest --coverage` | ≥40% line, ≥60% critical modules |
-| Verify script | `node scripts/verify-phase7-m2.js` | 100% pass |
+| Gate              | Command                                                   | Expected                         |
+| ----------------- | --------------------------------------------------------- | -------------------------------- |
+| Lint test files   | `npx eslint "apps/api/src/**/*.spec.ts" --max-warnings=0` | 0 errors, 0 warnings             |
+| TypeScript check  | `npx tsc --noEmit -p apps/api/tsconfig.spec.json`         | 0 errors                         |
+| Unit tests        | `npx jest --testPathPattern='\.spec\.ts$'`                | 100% pass                        |
+| Integration tests | `npx jest --testPathPattern='\.integration\.spec\.ts$'`   | 100% pass                        |
+| Full suite        | `npx jest`                                                | 100% pass                        |
+| Coverage          | `npx jest --coverage`                                     | ≥40% line, ≥60% critical modules |
+| Verify script     | `node scripts/verify-phase7-m2.js`                        | 100% pass                        |
 
 ---
 
 ## 27. Internal Consistency Check
 
-| Check | Value | Pass/Fail |
-|-------|-------|-----------|
-| **Total tasks** | 12 (11 actionable + 1 deferred) | ✅ |
-| **Files to create** | 21 (10 factories + 1 setup + 1 auth + 1 tenant + 1 order + 3 RBAC + 4 DTO) | ✅ |
-| **Files to modify** | 3 (jest.config.ts + prisma.service.spec.ts + exception-filter.spec.ts) | ✅ |
-| **Total file changes** | 24 | ✅ |
-| **Production source files modified** | 0 — all changes are test files + jest config | ✅ |
-| **Scope creep items** | 0 — DTO tests reduced to 4 analytics/CRM modules; M1 threshold entries removed | ✅ |
-| **Dependencies** | All tasks parallelizable except 7.2.9 (needs coverage output) | ✅ |
-| **Contradictions** | None — counts match, descriptions match file lists, findings match forensic report | ✅ |
-| **7.2.10 blocker** | Documented as deferred, blocked on 7.3 Payments | ✅ |
-| **`setupFiles` fix** | Replaces dead `setupFilesAfterSetup` with valid Jest `setupFiles` property | ✅ |
-| **Coverage threshold names** | All 4 threshold changes match existing jest.config.ts entries; no new entries added | ✅ |
-| **All test targets exist** | Verified: auth.controller, tenants.controller, orders.controller, backup.controller, privacy.controller, gift-cards.controller, prisma.service, http-exception.filter | ✅ |
-| **All DTO modules exist** | Verified: sales-analytics, inventory-analytics, customer-analytics, CRM have module directories | ✅ |
+| Check                                | Value                                                                                                                                                                 | Pass/Fail |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| **Total tasks**                      | 12 (11 actionable + 1 deferred)                                                                                                                                       | ✅        |
+| **Files to create**                  | 21 (10 factories + 1 setup + 1 auth + 1 tenant + 1 order + 3 RBAC + 4 DTO)                                                                                            | ✅        |
+| **Files to modify**                  | 3 (jest.config.ts + prisma.service.spec.ts + exception-filter.spec.ts)                                                                                                | ✅        |
+| **Total file changes**               | 24                                                                                                                                                                    | ✅        |
+| **Production source files modified** | 0 — all changes are test files + jest config                                                                                                                          | ✅        |
+| **Scope creep items**                | 0 — DTO tests reduced to 4 analytics/CRM modules; M1 threshold entries removed                                                                                        | ✅        |
+| **Dependencies**                     | All tasks parallelizable except 7.2.9 (needs coverage output)                                                                                                         | ✅        |
+| **Contradictions**                   | None — counts match, descriptions match file lists, findings match forensic report                                                                                    | ✅        |
+| **7.2.10 blocker**                   | Documented as deferred, blocked on 7.3 Payments                                                                                                                       | ✅        |
+| **`setupFiles` fix**                 | Replaces dead `setupFilesAfterSetup` with valid Jest `setupFiles` property                                                                                            | ✅        |
+| **Coverage threshold names**         | All 4 threshold changes match existing jest.config.ts entries; no new entries added                                                                                   | ✅        |
+| **All test targets exist**           | Verified: auth.controller, tenants.controller, orders.controller, backup.controller, privacy.controller, gift-cards.controller, prisma.service, http-exception.filter | ✅        |
+| **All DTO modules exist**            | Verified: sales-analytics, inventory-analytics, customer-analytics, CRM have module directories                                                                       | ✅        |
 
 ---
 

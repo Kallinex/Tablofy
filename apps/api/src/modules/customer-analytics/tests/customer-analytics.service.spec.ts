@@ -57,7 +57,13 @@ describe('CustomerAnalyticsService', () => {
         { status: 'BLOCKED', _count: 5 },
       ]);
 
-      const result = await service.getOverview(testTenantId, {} as never);
+      const result = (await service.getOverview(testTenantId, {} as never)) as {
+        totalCustomers: number;
+        activeCustomers: number;
+        inactiveCustomers: number;
+        blockedCustomers: number;
+        statusBreakdown: unknown[];
+      };
 
       expect(result.totalCustomers).toBe(50);
       expect(result.activeCustomers).toBe(30);
@@ -71,7 +77,11 @@ describe('CustomerAnalyticsService', () => {
       prisma.customer.count.mockResolvedValue(0);
       prisma.customer.groupBy.mockResolvedValue([]);
 
-      const result = await service.getOverview(testTenantId, {} as never);
+      const result = (await service.getOverview(testTenantId, {} as never)) as {
+        activeCustomers: number;
+        inactiveCustomers: number;
+        blockedCustomers: number;
+      };
 
       expect(result.activeCustomers).toBe(0);
       expect(result.inactiveCustomers).toBe(0);
@@ -140,9 +150,9 @@ describe('CustomerAnalyticsService', () => {
       cache.get.mockResolvedValue(null);
       prisma.$queryRaw.mockResolvedValueOnce([{ count: 3 }]);
 
-      const result = await service.getChurn(testTenantId, {
+      const result = (await service.getChurn(testTenantId, {
         startDate: '2026-01-01',
-      } as never);
+      } as never)) as { churnedByInactivity: number };
 
       expect(result.churnedByInactivity).toBe(3);
       const sqlArg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as {
@@ -164,10 +174,10 @@ describe('CustomerAnalyticsService', () => {
         { customerPhone: 'p2', orderCount: 2 },
       ]);
 
-      const result = await service.getVisitFrequency(testTenantId, {
+      const result = (await service.getVisitFrequency(testTenantId, {
         startDate: '2026-01-01',
         endDate: '2026-02-01',
-      } as never);
+      } as never)) as { totalActiveCustomers: number };
 
       expect(result.totalActiveCustomers).toBe(2);
       const sqlArg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as {
@@ -189,7 +199,9 @@ describe('CustomerAnalyticsService', () => {
         { customerPhone: 'p1', recency: 3, frequency: 5, monetary: 120 },
       ]);
 
-      const result = await service.getRfmSegmentation(testTenantId, {} as never);
+      const result = (await service.getRfmSegmentation(testTenantId, {} as never)) as {
+        segments: unknown[];
+      };
 
       expect(result.segments.length).toBeGreaterThan(0);
       const sqlArg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as {
@@ -219,10 +231,10 @@ describe('CustomerAnalyticsService', () => {
       prisma.wallet.aggregate.mockResolvedValue({ _avg: { balance: 5 }, _sum: { balance: 15 } });
       prisma.$queryRaw.mockResolvedValueOnce([{ date: '2026-01-01', credits: 10, debits: 0 }]);
 
-      const result = await service.getWalletActivity(testTenantId, {
+      const result = (await service.getWalletActivity(testTenantId, {
         startDate: '2026-01-01',
         endDate: '2026-02-01',
-      } as never);
+      } as never)) as { totalCredits: number; trend: unknown[] };
 
       expect(result.totalCredits).toBe(10);
       expect(result.trend).toHaveLength(1);

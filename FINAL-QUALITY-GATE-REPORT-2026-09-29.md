@@ -1,0 +1,147 @@
+# FINAL QUALITY-GATE REPORT — 2026-09-29
+
+المرحلة: `feature/phase7-m5` — HEAD `735bf74` — worktree `tablofy-p4-01-clean`
+النطاق: فحص شامل وإصلاح كل الأخطاء والتحذيرات (tsc / eslint / jest / prettier / build / npm audit) + اختبارRuntime وتكامل DB + تشغيل سكربتات التحقق الـ11 + توثيق الاستثناءات.
+
+## 1) البوابات الثابتة (static gates) — before/after
+
+| البوابة                      | قبل                                     | بعد                                          |
+| ---------------------------- | --------------------------------------- | -------------------------------------------- |
+| tsc (app + specs)            | أخطاء في `specs` فقط: **1295**          | **0**                                        |
+| jest                         | ينجح جزئياً مع تحذير ts-jest deprecated | **102 suites / 1358 tests PASS** — بلا تحذير |
+| eslint (شامل)                | أخطاء (unused + prettier/CRLF)          | **exit 0**                                   |
+| prettier (نطاق العمل)        | خطأ في 4 ملفات إعداد + 3 ملفات CRLF     | **نظيف** (انظر الاستثناء 3)                  |
+| build (nx run-many -t build) | libs الثلاثة تتشتّع (TS6059 rootDir)    | **4/4 نجاح** (api + types/constants/utils)   |
+| prisma                       | validate/migrate سليمان                 | **validate OK — 27 migration up to date**    |
+| npm audit (--omit=dev)       | 7 high                                  | **0**                                        |
+
+## 2) تفاصيل الإصلاحات
+
+### a) tsc specs: 1295 → 0
+
+- Mock جذري موسّع في `apps/api/src/test/mocks/prisma.mock.ts`.
+- الفريق A (8 ملفات، 59→0): `orders.service.spec` (25)، `transfers.service.spec` (23) — السبب ضيّقُ `baseTransfer.status` literal فوسّع إلى `TransferStatus` — `order-crud.integration`، `inventory.service.spec`، `inventory.controller.spec`، `inventory.processor.spec`، `recipes.processor.spec`، `recipes.service.reversal`.
+- الفريق B (10 ملفات، 45→0): المسارات الفعلية per-module (`customer-analytics/tests`، `inventory-analytics/tests`، `sales-analytics/tests`، `supplier-analytics/tests`، `customers`، `usage`، `email.processor`، `export-engine`، `forecasting-dashboard`، `users`).
+- الفريق C (9 ملفات، 23→0): `role-reference-coverage` (2)، `rbac-route-coverage` (2)، `roles.guard` (1)، `auth.service.spec` (1)، gift-cards/backup/privacy rbac (6+4+4)، `purchasing.roles` (3). الأنماط: `Reflect.getMetadata(key, proto[methodName] as object)` ومطابقة Nest 11.
+- `payments/tests/reconcile-pending.spec.ts`: `PaymobProvider & { getPaymentStatus: jest.Mock }` (السطرا 27/98).
+
+### b) ts-jest deprecation warning
+
+- ملف جديد `apps/api/tsconfig.jest.json` (extends `tsconfig.spec.json` + `isolatedModules: true`)؛ `jest.config.ts` يعيّن `tsconfig: '<rootDir>/tsconfig.jest.json'`. التحذير اختفى.
+
+### c) build libs
+
+- `libs/shared/{types,constants,utils}/tsconfig.json`: `extends "../../../tsconfig.base.json"`، `rootDir ".."` (عبر تعيين المسار utils→types، وإلا TS6059)، `outDir "../../../dist/out-tsc"`.
+
+### d) npm audit
+
+- `npm audit fix`: nodemailer، qs.
+- overrides في `package.json`: `@prisma/config → deepmerge-ts ^8.0.2` (حل ثغرة prisma دون تخفيض كاسر 6.19.3→6.12.0)، `@istanbuljs/load-nyc-config → js-yaml 3.15.2`، `cosmiconfig → js-yaml 4.3.2`، `(js-yaml 5.2.2 قائمة)`.
+- الناتج: `npm audit --omit=dev` = 0. (الاستثناء 1.)
+
+### e) eslint
+
+- إزالة `configService` المُعلَن/المُسنَد بدون قراءة في `auth.service.spec.ts` (سطرا 24/67).
+- إصلاح تنسيق/CRLF: `prisma.mock.ts`، `libs/shared/types/src/index.d.ts`، `payments.service.spec.ts`.
+
+### f) prettier
+
+- `nx.json`، `package.json`، `tsconfig.base.json`، وملف الجلسة `apps/api/tsconfig.jest.json`. (الاستثناء 3.)
+
+## 3) Runtime smoke (خادم مبني من `dist/apps/api/main.js`)
+
+- الإقلاع: DI كامل، Redis متصل، عمال bullmq (webhook-delivery/webhook-retry)، cron ScheduledReports — بلا أخطاء.
+- `GET /api/v1/health/live` و `GET /api/v1/health` → `200` `status: ok` (database، redis، memory_rss، bullmq — 24 طابوراً؛ عدادات failed تاريخية مثل email 17 وهي عدادات لا فشل فعلي).
+- `GET /docs` و `/docs-json` → `200` (swagger).
+- `GET /api/v1/customers` بدون توكن وبـتوكن مزيف → **401** في الحالين.
+
+## 4) تكامل DB (اختبار دائري عملي)
+
+- سكربت مؤقت: إنشاء tenant+user في `$transaction` + قراءة + join + `ROLLBACK_MARKER` → `rollbackOk=true`، `dbClean=true` (17 tenants / 19 users قبل = بعد، صفر تسريب).
+- البيئة: `tablofy-postgres` 127.0.0.1:5434 و`tablofy-redis` 127.0.0.1:6381 (REDIS_PORT=6381) عبر Docker Desktop (مستوى المستخدم).
+
+## 5) سكربتات التحقق: 11/11 exit 0
+
+| السكربت                           | النتيجة                                 |
+| --------------------------------- | --------------------------------------- |
+| `scripts/audit-gatewayref.js`     | exit 0                                  |
+| `scripts/m4-audit-enum-data.js`   | PASS — 0 صف تتأثر                       |
+| `scripts/m4-audit-orphan-data.js` | PASS — 0 orphan rows                    |
+| `scripts/verify-phase6-m2.js`     | ALL CHECKS PASSED                       |
+| `scripts/verify-phase6-m3.js`     | 68 passed، 0 failed — ALL CHECKS PASSED |
+| `scripts/verify-phase6-m4.js`     | 78/78                                   |
+| `scripts/verify-phase7-m1.js`     | 55/55                                   |
+| `scripts/verify-phase7-m2.js`     | 33 passed، 0 failed                     |
+| `scripts/verify-phase7-m3.js`     | 39 passed، 0 failed                     |
+| `scripts/verify-phase7-m4.js`     | 33 passed، 0 failed                     |
+| `scripts/verify-phase7-m5.js`     | 39 passed، 0 failed                     |
+
+ملاحظة: نفذت 5 من هذه في البداية ففشلت فقط لأن قاعدة البيانات كانت متوقفة — بعد استعادة Docker عادت كلها exit 0.
+
+## 6) الاستثناءات الموثّقة (غير المعالجة عمداً)
+
+1. **smol-toml / nx CLI**: 10 vulnerabilities (high) في `npm audit` الكامل، كلها عبر nx CLI (أداة تطوير لا تُشحن)؛ إصلاحها غير آمن (الترقية 23.3.0 غير صادرة / نزول nx 22.6.4 يكسر الـtoolchain) — استثناء مقبول.
+2. **لا بيانات اعتماد حية** لـ Stripe/Paymob لتدفق دفع خارجي حقيقي — الاكتفاء بالخرائط (mocks) وتدفق `reconcile-pending`.
+3. **prettier repo-wide**: 114 ملفاً قديماً (تقارير `.md` تاريخية، سكربتات `verify-*.js`/`audit-*.js` قديمة، `.vscode/*.json`، `apps/api/project.json`، `webpack.config.js`، مخلف `libs/shared/types/src/index.js`) بأسطر CRLF بينما الإعداد `endOfLine: "lf"`. كلها سابقة الوجود وغير ملموسة — قرار المستخدم: توثيقها كديون سابقة، وليس تعديلها. كل ملفات هذا العمل نظيفة تحت prettier.
+
+## 7) نطاق التغيير
+
+- ملفات جوهرية: `apps/api/src/**` (mocks + 29 ملف spec محدّثاً)، `libs/shared/{types,constants,utils}/tsconfig.json`، `apps/api/jest.config.ts` + `apps/api/tsconfig.jest.json` (جديد)، `package.json`/`package-lock.json`، `tsconfig.base.json`، `nx.json`.
+- لم يُنفَّذ أي commit في هذه الجولة (لم يُطلب). الحالة الحالية للعمل تراكمية فوق HEAD `735bf74`.
+
+## 8) الخلاصة
+
+كل البوابات الثابتة **خضراء** (tsc 0، eslint 0، jest 102/1358، build 4/4، prisma سليم، audit prod 0)، والـRuntime يعمل ويستجيب صحّةً وأماناً (401)، وتكامل الـDB سليم دون تسريب، وكل سكربتات التحقق الـ11 pass. الاستثناءات الثلاثة موثّقة أعلاه.
+
+## 9) إضافة نهائية — 2026-09-29 (إعادة الفحص الكامل قبل التسليم)
+
+أُعيد تشغيل كل البوابات على آخر build (كلها exit 0):
+
+- `tsc -p tsconfig.app.json` و`tsconfig.spec.json` → **0 أخطاء**؛ `nx run-many -t lint` → **success 4 projects**؛ `nx test api` → **102 suites / 1358 tests PASS**؛ `nx build api` → نجاح؛ `npx prisma validate` سليم + `migrate status` → **27 migration up to date**؛ `npm audit --omit=dev` → **0 vulnerabilities**.
+- `prettier --check` لنطاق العمل → **All matched files use Prettier code style**.
+- **إصلاح إضافي** اكتُشف أثناء الفحص النهائي: تحذير Node `DEP0152` عند الإقلاع (قراءة `entry.kind`، accessor قديم) في `common/metrics/metrics.service.ts` — استبدل بـ`entry.detail?.kind` (التحذير اختفى؛ القيم متطابقة بعد اختبار trace + run time).
+- إقلاع خادم البناء النهائي: **stderr فارغ تماماً** — "Nest application successfully started"، "Application is running on: http://localhost:3100/api/v1"، "Swagger docs available at: http://localhost:3100/docs"، "Redis connected successfully".
+- Endpoints (build نهائي): `/api/v1/health/live` → 200؛ `/api/v1/health` → status=ok db=up redis=up؛ `/api/v1/customers` → **401**؛ `/docs` → 200.
+- Docker: `tablofy-postgres` (5434) و`tablofy-redis` (6381) healthy.
+
+## 10) التصفير الكامل — صفر استثناءات (2026-09-29، الجولة النهائية)
+
+بناءً على توجيه المستخدم ("لا أريد أي خطأ ولا بنسبة 1%") أُزيلت كل الاستثناءات السابقة:
+
+- **npm audit الكامل = 0** (كان 10 high): أُضيف override `"smol-toml": "^1.9.0"` في `package.json` (الضعف GHSA-7w5x-hrqm-74c2 فُحص في `<=1.7.0` والعلاج `1.7.1`؛ رُفع من 1.6.1 إلى 1.9.0). كل من `npm audit` و`npm audit --omit=dev` → **0/0/0/0/0**.
+- **format:check كامل المستودع = exit 0** (كان 114 ملفاً): `npm run format` نسّق كل ملفات المستودع (تقارير `.md`، سكربتات `verify-*.js`/`audit-*.js` قديمة، `.vscode`، `project.json`، `webpack.config.js`، المخلّف `libs/shared/types/src/index.js`) + إصلاح ملفّين انفلت من الجولة (`FINAL-AUDIT-REPORT-v7.md`، `POST-P1-REMEDIATION-INDEPENDENT-DECISION-AUDIT.md`). **لا استثناء prettier متبقٍّ**.
+- **نظافة المستودع**:
+  - استُعيد `server-reg.out` من HEAD (كان انحرف إلى 0 بايت خلال الجلسة) → 133352 بايت، بلا diff.
+  - حُذفت بقايا مولّدة من `libs/shared/types/src/` (`index.js` فارغ + `index.js.map` + `index.d.ts`).
+  - حُذفت سجلات ضالة (`server-m2.log`، `server-orders.log`، `server-verify.log`).
+  - أُفرغ دليل `exports/` المولّد (بيانات تصدير وقت التشغيل) وأُضيف `/exports` إلى `.gitignore` (منع التلوث مستقبلاً).
+- **إعادة كل البوابات بعد كل التغييرات** → all exit 0:
+  - tsc app 0، tsc spec 0، eslint (4 مشاريع) نجاح، jest **102 suites / 1358 tests** بلا أي تحذير، build (4 مشاريع) نجاح بلا warnings، prisma validate سليم + 27 migration up to date، format:check 0.
+  - سكربتات التحقق الـ11 أُعيد تشغيلها بعد إعادة تنسيقها → **11/11 OK (0 فشل)** (m2: 72/0، m3: 68/0، m4: 78/78، p7-m1: 55/55، p7-m2: 33/0، p7-m3: 39/0، p7-m4: 33/0، p7-m5: 39/0، enum/orphan PASS 0 صف).
+  - Runtime (build نهائي): boot نظيف stderr فارغ، `/api/v1/health/live` 200، health status=ok db/redis up، `/customers` **401** بتوكن وبدونه، `/docs` 200.
+
+## 11) ملاحظات التسليم
+
+- **ملف جديد يجب الالتزام به**: `apps/api/tsconfig.jest.json` (و `jest.config.ts` يشير إليه). هو أساس إزالة تحذير ts-jest؛ بدون إدراجه في الالتزام، العمل غير مكتمل.
+- حالة العمل: `package.json`/`package-lock.json`/`tsconfig.base.json`/`nx.json`/`.gitignore` وكل ملفات المصدر والاختبار والمستندات منسّقة ومعدّلة فوق HEAD `735bf74` — **لم يُنفَّذ commit** (لم يُطلب). التغييرات الـ`M` العديدة في `git status` هي التطبيع الشامل الذي طلبه المستخدم.
+- البيئة المحلية: Docker Desktop يعمل و`tablofy-postgres`/`tablofy-redis` (5434/6381) healthy؛ الـAPI يُشغَّل بـ`node dist/apps/api/main.js`.
+
+## 12) E2E Runtime الكامل — 78/78 PASS (آخر تشغيل 2026-09-29، كود بُني من HEAD + الإصلاحات أدناه)
+
+تشغيل حقيقي 78 سيناريو ضد API حي (`http://localhost:3100`) + Postgres + Redis + BullMQ (webhook-delivery/webhook-retry/dead-letter) — **TOTAL: 78 / PASS: 78 / FAIL: 0**. التغطية: auth lifecycle (register→login→refresh→logout→re-login، رفض كلمة سر خاطئة)، عزل tenant (restaurant عبر tenant 404)، RBAC (cashier ممنوع من الكتابة بالقائمة ومخوَّل بالقراءة للطلبات)، menu (categories/products/tags/allergens/nutrition/variants/modifiers/availability)، customers (loyalty/wallet/gift-card/segments/analytics)، inventory (وحدة/فئة/صنف + batch + ضبط لا-يحتاج-موافقة auto-approve + استهلاك انخفاض المخزون low-stock + warehouses)، purchasing (PO→GRN)، transfers (lifecycle)، recipes (cost + deduction + rollback)، webhooks (إنشاء/SSRF يرفض loopback/retry عابر/DELIVERED/FAILED non-2xx)، orders (create→submit→confirm→preparing→kitchen→SERVED→pay→COMPLETED)، export-engine (توليد+تنزيل حقيقي)، dashboard snapshot، scheduled-report، queue stats، analytics، و**نظافة كاملة تستعيد كل العدادات** بعد الحذف.
+
+**أخطاء حقيقية اكتُشفت أثناء E2E وأُصلحت:**
+
+1. **webhook retry لم يكن يُجدول** عند non-2xx أو فشل شبكة: كان الـprocessor يعيد البدء كأنها نجحت (job COMPLETED) دون طابور `webhook-retry`، وكان `markFailed` يقارن بعدد محاولات عام بدل `delivery.maxRetries` لكل سجل. الإصلاح: `webhook-processor.ts` (فرعا non-2xx والشبكة يجدولان `webhook-retry` بـ`delay: calculateBackoff` عند بقاء محاولات؛ `webhook-delivery.service.ts` عند `attemptCount >= (delivery.maxRetries || 1)`) + تحديث `webhook-processor.spec.ts`. تحقق: transient→RETRYING ثم DEAD_LETTER؛ 500 مع retryCount=1→DEAD_LETTER فوراً.
+
+2. **كاش مخزون قديم بعد كل كتابة كمية**: GRN/خصم/نقل/reconcile تحدّث DB لكن `GET /inventory/items/:id` يعيد كاش `item:${id}` (MEDIUM TTL) — ظهر "140→140". إبطال كاش صريح (حذف `item:${id}` + أنماط `items:*`/`low-stock:*`/`critical-stock:*`/`out-of-stock:*`) في 4 خدمات: `purchasing` (createGRN/cancelGRN)، `recipes` (deduct/rollback)، `transfers` (start/receive/cancel)، `cycle-counts` (reconcile). تحقق من DB: 149 = 100 + ADJ +50 −10 + GRN +10 − TR_OUT 5 + TR_IN 5 − CONSUMPTION 1؛ وحلقة الحسم 150→149→150 عبر API.
+
+3. **حذف hard لـtenant عبر prisma يترك أيتاماً**: الجداول `inventory_items/suppliers/purchase_orders/recipes/stock_*/branch_transfers` بلا FK نحو `tenants` مباشرة (FKs عبر branch/PO بنمط SET NULL) فلا تتسلسل عند حذف tenant. لا خلل منتجي: نقطة التطبيق `DELETE /tenants/:id` **soft delete** فقط. أصلحنا منظف E2E ليحذف أشجار هذه الجداول صراحةً قبل حذف tenant + مسح أيتام عام، فعادت كل العدادات للصفر بعد التشغيل (دليل S14).
+
+**شكل استجابة تقرير الحسم**: `GET /recipes/deduction/:orderId` يُرجع `{ orderId, movements[], totalMovements, totalQuantity, totalCost }` (حقل `items` غير مستخدم) — عُدّل تأكيد السكربت إلى `movements`.
+
+بعد الإصلاحات أُعيد التشغيل (build مطابق للتعديلات) → **78/78**. اختبارات الوحدة بعد التعديلات: **102 suites / 1358 tests نظيفة** (أُضيف `deletePattern` إلى cacheMock في recipes tests وأُحدّث webhook-processor.spec ليتوافق مع جدولة retry).
+
+**حالة الالتزام**: أُزيلت ملفات البروبات المؤقتة (`probe-*.mjs`) من `apps/api`؛ ملفات E2E/cleanup في مجلد مؤقت خارج الريبو (`C:\Users\ELNOUR~1\AppData\Local\Temp\opencode\e2e`) لا تُلتزم مع المصدر.
+
+**تشغيل غرفة نظيفة (clean-room) نهائي**: مٌسحت الـ12 tenants المخلفة من فحوص المراحل السابقة (`P5M1Tenant/TestCorp/CorpP5M3/M6Tenant/M7Tenant/M8Tenant/InfraT-/LockT-/JwtT-` وأشقاؤها) عبر `cleanup.mjs` + مسح الأيتام العام → ثم أُعيد E2E كاملاً على قاعدة صفرية: **78/78 PASS**. الفحص الختامي بعد آخر تشغيل: `tenant=0`, `user=2` (حسابا seed للمنصّة فقط), `inventoryItem/supplier/purchaseOrder/recipe/stockMovement/stockAdjustment/branchTransfer/order/customer = 0`, و**صفر orphan rows** عبر كل الجداول ذات `tenantId`.

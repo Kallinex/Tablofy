@@ -20,6 +20,7 @@ const deliveryServiceMock = {
   markFailed: jest.fn().mockResolvedValue(undefined),
   generateSecret: jest.fn(),
   encryptSecret: jest.fn(),
+  calculateBackoff: jest.fn().mockReturnValue(1000),
 };
 
 const configServiceMock = {
@@ -156,7 +157,7 @@ describe('WebhookProcessor', () => {
     expect(result).toEqual({ delivered: true, statusCode: 200 });
   });
 
-  it('marks a delivery as failed on non-2xx response without retrying', async () => {
+  it('schedules a retry on non-2xx response when attempts remain', async () => {
     ssrfClientMock.postJson.mockResolvedValue({ status: 500, data: { error: 'boom' } });
 
     const result = await processor.processDelivery(job);
@@ -167,7 +168,20 @@ describe('WebhookProcessor', () => {
       500,
       expect.any(Number),
     );
-    expect(queueServiceMock.addJob).not.toHaveBeenCalled();
+    expect(queueServiceMock.addJob).toHaveBeenCalledWith(
+      'webhook-retry',
+      'retry-webhook',
+      {
+        tenantId: 'tenant-1',
+        payload: {
+          webhookId: 'wh-1',
+          deliveryId: 'del-1',
+          eventType: 'order.created',
+          eventId: 'evt-1',
+        },
+      },
+      { delay: 1000 },
+    );
     expect(result).toEqual({ delivered: false, statusCode: 500 });
   });
 
@@ -201,15 +215,20 @@ describe('WebhookProcessor', () => {
       null,
       expect.any(Number),
     );
-    expect(queueServiceMock.addJob).toHaveBeenCalledWith('webhook-retry', 'retry-webhook', {
-      tenantId: 'tenant-1',
-      payload: {
-        webhookId: 'wh-1',
-        deliveryId: 'del-1',
-        eventType: 'order.created',
-        eventId: 'evt-1',
+    expect(queueServiceMock.addJob).toHaveBeenCalledWith(
+      'webhook-retry',
+      'retry-webhook',
+      {
+        tenantId: 'tenant-1',
+        payload: {
+          webhookId: 'wh-1',
+          deliveryId: 'del-1',
+          eventType: 'order.created',
+          eventId: 'evt-1',
+        },
       },
-    });
+      { delay: 1000 },
+    );
     expect(result).toEqual({ delivered: false, error: 'ECONNRESET' });
   });
 

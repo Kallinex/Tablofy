@@ -1,5 +1,4 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { QueueService, QueueJobData } from '../queues/queue.service';
 import { WebhookDeliveryService } from './webhook-delivery.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -62,7 +61,6 @@ export class WebhookProcessor implements OnModuleInit {
     private readonly queueService: QueueService,
     private readonly deliveryService: WebhookDeliveryService,
     private readonly prisma: PrismaService,
-    private readonly configService: ConfigService,
     private readonly logger: AppLoggerService,
     private readonly ssrfClient: SsrfClientService,
   ) {
@@ -147,6 +145,17 @@ export class WebhookProcessor implements OnModuleInit {
           response.status,
           duration,
         );
+        if (delivery.attemptCount + 1 < delivery.maxRetries) {
+          await this.queueService.addJob(
+            'webhook-retry',
+            'retry-webhook',
+            {
+              tenantId,
+              payload: { webhookId, deliveryId, eventType, eventId },
+            },
+            { delay: this.deliveryService.calculateBackoff(delivery.attemptCount + 1) },
+          );
+        }
         this.logger.warn(`Webhook ${deliveryId} failed with status ${response.status}`);
         return { delivered: false, statusCode: response.status };
       }
@@ -167,11 +176,16 @@ export class WebhookProcessor implements OnModuleInit {
       const errorMessage = error instanceof Error ? error.message : String(error);
       await this.deliveryService.markFailed(deliveryId, errorMessage, null, duration);
 
-      if (delivery.attemptCount < this.configService.get('webhook.maxRetries', 5)) {
-        await this.queueService.addJob('webhook-retry', 'retry-webhook', {
-          tenantId,
-          payload: { webhookId, deliveryId, eventType, eventId },
-        });
+      if (delivery.attemptCount + 1 < delivery.maxRetries) {
+        await this.queueService.addJob(
+          'webhook-retry',
+          'retry-webhook',
+          {
+            tenantId,
+            payload: { webhookId, deliveryId, eventType, eventId },
+          },
+          { delay: this.deliveryService.calculateBackoff(delivery.attemptCount + 1) },
+        );
       }
 
       this.logger.error(`Webhook delivery ${deliveryId} failed: ${errorMessage}`);

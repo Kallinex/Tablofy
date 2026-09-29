@@ -756,6 +756,10 @@ export class RecipesService {
     });
 
     await this.cacheService.delete(tenantId, 'inventory:list');
+    await this.invalidateItemCache(
+      tenantId,
+      reportItems.map((i) => i.inventoryItemId),
+    );
     this.gateway.broadcastInventoryUpdate(tenantId, 'inventory.deducted', report);
 
     return report;
@@ -882,6 +886,10 @@ export class RecipesService {
     });
 
     await this.cacheService.delete(tenantId, 'inventory:list');
+    await this.invalidateItemCache(
+      tenantId,
+      movements.map((m) => m.inventoryItemId),
+    );
     this.gateway.broadcastInventoryUpdate(tenantId, 'deduction.rolled_back', {
       orderId,
       movementsReversed: reversedCount,
@@ -1134,5 +1142,16 @@ export class RecipesService {
         foodCostPercentage: Math.round(foodCostPercentage * 100) / 100,
       },
     });
+  }
+
+  private async invalidateItemCache(tenantId: string, itemIds: (string | undefined | null)[]) {
+    const ids = new Set(itemIds.filter((v): v is string => Boolean(v)));
+    for (const id of ids) {
+      await this.cacheService.delete(tenantId, `item:${id}`);
+    }
+    await this.cacheService.deletePattern(tenantId, 'items:*');
+    await this.cacheService.deletePattern(tenantId, 'low-stock:*');
+    await this.cacheService.deletePattern(tenantId, 'critical-stock:*');
+    await this.cacheService.deletePattern(tenantId, 'out-of-stock:*');
   }
 }

@@ -33,13 +33,13 @@
 
 ## 5. P0-E Source Re-Audit (independent, from current source)
 
-| Claim | Source evidence (verified) |
-|---|---|
-| Token hashed before lookup | `findByToken()` (invitations.service.ts:127-147): `createHash('sha256').update(token).digest('hex')`, WHERE `{ token: hashedToken, status: PENDING }`, expiry → status `EXPIRED` then NotFound. SHA-256 precedent in auth.service.ts lines 451/484/591/657. |
-| Accept is atomic | `accept()` (invitations.service.ts:149-210): `prisma.$transaction(async (tx) => …)` containing `tx.invitation.updateMany({ where: { id, status: PENDING }, data: { status: ACCEPTED, acceptedAt } })`; `claim.count !== 1` → `ConflictException('Invitation is no longer pending')`. |
-| Inviter/role check | Inviter fetched with `where: { id: invitedBy, tenantId, deletedAt: null }`; `canAssignRole` enforced before user creation. |
-| Rollback on user-create failure | `usersService.create(…, tx)` inside the same transaction → any failure rolls back the ACCEPTED claim. |
-| Schema constraints | Invitation model (schema.prisma:350-373): `token String @unique`, `@@unique([tenantId, email])`, `@@index([token])`, `@@map("invitations")`; InvitationStatus enum PENDING/ACCEPTED/REJECTED/EXPIRED (57-62); User `@@unique([tenantId, email])` (line 234). |
+| Claim                           | Source evidence (verified)                                                                                                                                                                                                                                                           |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Token hashed before lookup      | `findByToken()` (invitations.service.ts:127-147): `createHash('sha256').update(token).digest('hex')`, WHERE `{ token: hashedToken, status: PENDING }`, expiry → status `EXPIRED` then NotFound. SHA-256 precedent in auth.service.ts lines 451/484/591/657.                          |
+| Accept is atomic                | `accept()` (invitations.service.ts:149-210): `prisma.$transaction(async (tx) => …)` containing `tx.invitation.updateMany({ where: { id, status: PENDING }, data: { status: ACCEPTED, acceptedAt } })`; `claim.count !== 1` → `ConflictException('Invitation is no longer pending')`. |
+| Inviter/role check              | Inviter fetched with `where: { id: invitedBy, tenantId, deletedAt: null }`; `canAssignRole` enforced before user creation.                                                                                                                                                           |
+| Rollback on user-create failure | `usersService.create(…, tx)` inside the same transaction → any failure rolls back the ACCEPTED claim.                                                                                                                                                                                |
+| Schema constraints              | Invitation model (schema.prisma:350-373): `token String @unique`, `@@unique([tenantId, email])`, `@@index([token])`, `@@map("invitations")`; InvitationStatus enum PENDING/ACCEPTED/REJECTED/EXPIRED (57-62); User `@@unique([tenantId, email])` (line 234).                         |
 
 ## 6. P0-E Invariants, Concurrency & Security
 
@@ -55,15 +55,15 @@
 
 ## 8. Regression Gates (freshly re-run, cache skipped)
 
-| Gate | Result |
-|---|---|
-| `npx jest --config jest.config.ts --no-coverage` | **87 suites / 1126 tests PASS** |
-| `npx tsc -p tsconfig.app.json --noEmit` | **exit 0** |
-| `npx nx lint api` | **exit 0** |
-| `npx nx build api` | **exit 0** (production webpack) |
-| `prisma validate` | **schema valid** |
-| `prisma migrate status` | **exit 1 — all 24 "not yet applied"** (see §23 — no `_prisma_migrations` table) |
-| `prisma migrate diff` (from migrations → schema, shadow DB) | **"No difference detected", exit 0** |
+| Gate                                                        | Result                                                                          |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `npx jest --config jest.config.ts --no-coverage`            | **87 suites / 1126 tests PASS**                                                 |
+| `npx tsc -p tsconfig.app.json --noEmit`                     | **exit 0**                                                                      |
+| `npx nx lint api`                                           | **exit 0**                                                                      |
+| `npx nx build api`                                          | **exit 0** (production webpack)                                                 |
+| `prisma validate`                                           | **schema valid**                                                                |
+| `prisma migrate status`                                     | **exit 1 — all 24 "not yet applied"** (see §23 — no `_prisma_migrations` table) |
+| `prisma migrate diff` (from migrations → schema, shadow DB) | **"No difference detected", exit 0**                                            |
 
 ## 9. Database Verification (live DB, read-only)
 
@@ -83,15 +83,15 @@
 
 ## 11. Runtime Verification (live probes, safe/read-only)
 
-| Probe | Result |
-|---|---|
-| `GET /api/v1/health` | **200** |
-| `GET /health/live` | **200** |
-| `GET /health/ready` | **200** |
-| `GET /docs` | **200** |
+| Probe                                                       | Result                                  |
+| ----------------------------------------------------------- | --------------------------------------- |
+| `GET /api/v1/health`                                        | **200**                                 |
+| `GET /health/live`                                          | **200**                                 |
+| `GET /health/ready`                                         | **200**                                 |
+| `GET /docs`                                                 | **200**                                 |
 | `POST /api/v1/invitations/accept` (synthetic garbage token) | **404** "Invalid or expired invitation" |
-| `GET /api/v1/invitations/token/<garbage>` | **404** |
-| `GET /api/v1/invitations` (no auth) | **401** (route is auth-gated) |
+| `GET /api/v1/invitations/token/<garbage>`                   | **404**                                 |
+| `GET /api/v1/invitations` (no auth)                         | **401** (route is auth-gated)           |
 
 Classification: the accept-path probes are safe-input probes (expected-reject behavior), classified **LIVE VERIFIED for the reject path**; the success path is **UNIT VERIFIED + STRUCTURALLY VERIFIED** (CAS + DB constraints), not live-verified with a real invitation because that would mutate data (prohibited).
 
@@ -105,35 +105,35 @@ Classification: the accept-path probes are safe-input probes (expected-reject be
 
 ## 13. P0 Backlog Re-classification (against current code)
 
-| # | Item | Status | Evidence |
-|---|---|---|---|
-| P0-A | Payments reconciliation | **PARTIAL** | `reconcile()` (payments.service.ts:1167-1220): tenant-scoped, compares local vs provider status, returns counts; **report-only, no auto-correction**. Route binding verified (controller spec). |
-| P0-B | clientSecret exposure | **CLOSED** | `toResponseDto` returns `clientSecret` only for `PENDING`; logger redacts it; no other module serializes `gatewayData`. |
-| P0-C | Auth throttling | **CLOSED** | `ThrottlerModule.forRootAsync` + global `ThrottlerGuard` + `PlanThrottleGuard` (app.module.ts:143, 244-261); auth.controller `@Throttle` limits (register 20, login 30, refresh 60, forgot/reset 3, verify-email 5, change 3). |
-| P0-D | API-key auth | **CLOSED** | `ApiKeyGuard` (guards/api-key.guard.ts) requires `apikey` scheme, validates + scopes + tenant binding; api-keys.config provides rate/prefix/length settings. |
-| P0-E | Invitation acceptance | **CLOSED** | §5-6 of this report. |
-| P0-F | Costing weighted-average | **OPEN** | `calculateWeightedAverageCost` (costing.service.ts:150-175) returns stored `averageCost` when > 0; batch-weighted fallback only when 0. Correctness of the maintained `averageCost` is not independently verified; no row-lock integration tests. **Not started (mission constraint).** |
-| P0-G | Supplier-performance isolation | **CLOSED** | `getSupplierPerformanceSummary` (dashboard.service.ts:130-140) scopes by `tenantId`. |
-| P0-H | Recipe rollback / idempotency | **OPEN** | `updateRecipe` (recipes.service.ts:225-252): `update` (version++), then `deleteMany` + `createMany` of recipeItems **without a surrounding transaction** — partial state possible if createMany fails; not concurrency-safe. |
-| P0-I | PURCHASING role references | **OPEN** | String `PURCHASING` in purchasing.controller.ts:40,68,87,105,112,141; **absent from `UserRole` enum** (schema 14-23), `role-policy.ts`, and `TENANT_ASSIGNABLE_ROLES`. No user can hold it; guards reduce to OWNER/MANAGER. |
-| P0-J | Order client-price trust | **OPEN** | Order create uses client-supplied `unitPrice` for totals + `priceSnapshot` (orders.service.ts:87,122,137,141); no server-side recompute from catalog. |
+| #    | Item                           | Status      | Evidence                                                                                                                                                                                                                                                                                |
+| ---- | ------------------------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0-A | Payments reconciliation        | **PARTIAL** | `reconcile()` (payments.service.ts:1167-1220): tenant-scoped, compares local vs provider status, returns counts; **report-only, no auto-correction**. Route binding verified (controller spec).                                                                                         |
+| P0-B | clientSecret exposure          | **CLOSED**  | `toResponseDto` returns `clientSecret` only for `PENDING`; logger redacts it; no other module serializes `gatewayData`.                                                                                                                                                                 |
+| P0-C | Auth throttling                | **CLOSED**  | `ThrottlerModule.forRootAsync` + global `ThrottlerGuard` + `PlanThrottleGuard` (app.module.ts:143, 244-261); auth.controller `@Throttle` limits (register 20, login 30, refresh 60, forgot/reset 3, verify-email 5, change 3).                                                          |
+| P0-D | API-key auth                   | **CLOSED**  | `ApiKeyGuard` (guards/api-key.guard.ts) requires `apikey` scheme, validates + scopes + tenant binding; api-keys.config provides rate/prefix/length settings.                                                                                                                            |
+| P0-E | Invitation acceptance          | **CLOSED**  | §5-6 of this report.                                                                                                                                                                                                                                                                    |
+| P0-F | Costing weighted-average       | **OPEN**    | `calculateWeightedAverageCost` (costing.service.ts:150-175) returns stored `averageCost` when > 0; batch-weighted fallback only when 0. Correctness of the maintained `averageCost` is not independently verified; no row-lock integration tests. **Not started (mission constraint).** |
+| P0-G | Supplier-performance isolation | **CLOSED**  | `getSupplierPerformanceSummary` (dashboard.service.ts:130-140) scopes by `tenantId`.                                                                                                                                                                                                    |
+| P0-H | Recipe rollback / idempotency  | **OPEN**    | `updateRecipe` (recipes.service.ts:225-252): `update` (version++), then `deleteMany` + `createMany` of recipeItems **without a surrounding transaction** — partial state possible if createMany fails; not concurrency-safe.                                                            |
+| P0-I | PURCHASING role references     | **OPEN**    | String `PURCHASING` in purchasing.controller.ts:40,68,87,105,112,141; **absent from `UserRole` enum** (schema 14-23), `role-policy.ts`, and `TENANT_ASSIGNABLE_ROLES`. No user can hold it; guards reduce to OWNER/MANAGER.                                                             |
+| P0-J | Order client-price trust       | **OPEN**    | Order create uses client-supplied `unitPrice` for totals + `priceSnapshot` (orders.service.ts:87,122,137,141); no server-side recompute from catalog.                                                                                                                                   |
 
 ## 14. P1 Hardening Re-check (12 areas, structural)
 
-| Area | Status | Evidence |
-|---|---|---|
-| Full-refund CAS | VERIFIED | `$transaction` + `updateMany` status-guarded claims (payments.service.ts:125, 564-565, 664-665). |
-| Split/merge order CAS | VERIFIED | `verResult = tx.order.updateMany` + transaction (293-294, 466, 553, 606, 742-894). |
-| KDS ticket idempotency | VERIFIED | order/orderItem/orderItemModifier `updateMany` guarded updates (373-385); ticket creation keyed to unique order-item constraint (migration present). |
-| GRN receive-cap / attribution | VERIFIED | goods-receipts code + `add_grn_batch_attribution` migration present (24th migration). |
-| GRN cancellation attribution | VERIFIED | CAS-style guarded updates in purchasing flow. |
-| Inventory mutation CAS | VERIFIED | `updateMany` guarded moves (inventory.service.ts:436 area) + optimistic checks. |
-| Loyalty atomic earnPoints | VERIFIED | transaction-wrapped point accrual with balance guards. |
-| Redis auth | VERIFIED | container `requirepass` + NOAUTH behavior (prior live check) + `REDIS_PASSWORD` (64 chars) in docker `.env`. |
-| Split-payment three-phase | VERIFIED | `splitPayment` (payments.service.ts:779+) uses `$transaction` (805) with per-split CAS claims. |
-| averageCost row locking | **PARTIAL** | CAS via guarded `updateMany`; no explicit `SELECT … FOR UPDATE` integration test on the cost row. |
-| Logger payment-secret redaction | VERIFIED | §12. |
-| Auth throttling / invitation CAS | VERIFIED | §13 P0-C/P0-E. |
+| Area                             | Status      | Evidence                                                                                                                                             |
+| -------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Full-refund CAS                  | VERIFIED    | `$transaction` + `updateMany` status-guarded claims (payments.service.ts:125, 564-565, 664-665).                                                     |
+| Split/merge order CAS            | VERIFIED    | `verResult = tx.order.updateMany` + transaction (293-294, 466, 553, 606, 742-894).                                                                   |
+| KDS ticket idempotency           | VERIFIED    | order/orderItem/orderItemModifier `updateMany` guarded updates (373-385); ticket creation keyed to unique order-item constraint (migration present). |
+| GRN receive-cap / attribution    | VERIFIED    | goods-receipts code + `add_grn_batch_attribution` migration present (24th migration).                                                                |
+| GRN cancellation attribution     | VERIFIED    | CAS-style guarded updates in purchasing flow.                                                                                                        |
+| Inventory mutation CAS           | VERIFIED    | `updateMany` guarded moves (inventory.service.ts:436 area) + optimistic checks.                                                                      |
+| Loyalty atomic earnPoints        | VERIFIED    | transaction-wrapped point accrual with balance guards.                                                                                               |
+| Redis auth                       | VERIFIED    | container `requirepass` + NOAUTH behavior (prior live check) + `REDIS_PASSWORD` (64 chars) in docker `.env`.                                         |
+| Split-payment three-phase        | VERIFIED    | `splitPayment` (payments.service.ts:779+) uses `$transaction` (805) with per-split CAS claims.                                                       |
+| averageCost row locking          | **PARTIAL** | CAS via guarded `updateMany`; no explicit `SELECT … FOR UPDATE` integration test on the cost row.                                                    |
+| Logger payment-secret redaction  | VERIFIED    | §12.                                                                                                                                                 |
+| Auth throttling / invitation CAS | VERIFIED    | §13 P0-C/P0-E.                                                                                                                                       |
 
 ## 15. Test Quality Audit
 
@@ -192,14 +192,14 @@ Classification: the accept-path probes are safe-input probes (expected-reject be
 
 ## 25. Risk Matrix & Production Readiness
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Missing `_prisma_migrations` blocks future migrate deploy | Medium | High (ops) | Baseline/regenerate bookkeeping via `prisma migrate resolve --applied` or dump restore with migrations table; verify with diff after |
-| P0-H recipe partial update | Low-Med | Medium | Wrap recipe update in a transaction (P0-F package or dedicated fix) |
-| P0-I dead PURCHASING role | Low | Low-Med | Add to enum+policy or remove references |
-| P0-J client-price trust | Medium | Medium | Server-side catalog price resolution before financial rollout |
-| P0-F averageCost correctness | Medium | High | Include row-lock + weighted-average integration tests in P0-F package |
-| Proxy-scope throttling (shared IP) | Low (current direct mapping) | Medium | Enable `trust proxy` + Redis-backed throttle storage in reverse-proxy deployment |
+| Risk                                                      | Likelihood                   | Impact     | Mitigation                                                                                                                           |
+| --------------------------------------------------------- | ---------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Missing `_prisma_migrations` blocks future migrate deploy | Medium                       | High (ops) | Baseline/regenerate bookkeeping via `prisma migrate resolve --applied` or dump restore with migrations table; verify with diff after |
+| P0-H recipe partial update                                | Low-Med                      | Medium     | Wrap recipe update in a transaction (P0-F package or dedicated fix)                                                                  |
+| P0-I dead PURCHASING role                                 | Low                          | Low-Med    | Add to enum+policy or remove references                                                                                              |
+| P0-J client-price trust                                   | Medium                       | Medium     | Server-side catalog price resolution before financial rollout                                                                        |
+| P0-F averageCost correctness                              | Medium                       | High       | Include row-lock + weighted-average integration tests in P0-F package                                                                |
+| Proxy-scope throttling (shared IP)                        | Low (current direct mapping) | Medium     | Enable `trust proxy` + Redis-backed throttle storage in reverse-proxy deployment                                                     |
 
 Production readiness: the deployed service is healthy, synchronized with source, redaction active, P0-E reject path live-verified. The above items are pre-existing backlog / environment hygiene, not regressions introduced by P0-E.
 

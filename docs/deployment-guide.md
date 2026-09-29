@@ -10,6 +10,7 @@
 ## Environment Setup
 
 1. Copy the environment template:
+
    ```bash
    cp .env.example .env
    ```
@@ -33,11 +34,13 @@ npm run prisma:status
 ```
 
 **Migration workflow:**
+
 - **Development**: `npm run prisma:migrate:dev` — creates and applies migrations
 - **Production**: `npm run prisma:migrate:prod` — applies pending migrations only
 - **Reset**: `npm run prisma:reset` — drops and recreates database (dev only)
 
 **Rollback strategy:**
+
 - Prisma Migrate does not support automatic rollback of individual migrations
 - To revert: create a new migration that reverses the unwanted changes
 - For emergencies: restore from database backup, then re-apply migrations
@@ -45,11 +48,13 @@ npm run prisma:status
 ## Docker Deployment
 
 ### Development
+
 ```bash
 docker compose -f docker/docker-compose.yml up -d
 ```
 
 ### Production
+
 ```bash
 # Build and start all services
 docker compose -f docker/docker-compose.prod.yml up -d --build
@@ -59,6 +64,7 @@ docker compose -f docker/docker-compose.prod.yml logs -f api
 ```
 
 The production compose file includes:
+
 - PostgreSQL 16 with health check
 - Redis 7 with persistence
 - API service with multi-stage build
@@ -99,18 +105,19 @@ Queue stats available at `GET /api/v1/queues/:name/stats` (OWNER/MANAGER role).
 
 Cron jobs (via @nestjs/schedule):
 
-| Job | Schedule | Description |
-|-----|----------|-------------|
-| cleanup_expired_sessions | Every 6 hours | Removes expired sessions |
-| cleanup_expired_tokens | Every 12 hours | Removes expired verification tokens |
-| archive_old_audit_logs | Daily at midnight | Archives audit logs beyond retention period |
+| Job                      | Schedule          | Description                                 |
+| ------------------------ | ----------------- | ------------------------------------------- |
+| cleanup_expired_sessions | Every 6 hours     | Removes expired sessions                    |
+| cleanup_expired_tokens   | Every 12 hours    | Removes expired verification tokens         |
+| archive_old_audit_logs   | Daily at midnight | Archives audit logs beyond retention period |
 
 ### Configurable Retention
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CLEANUP_SESSION_RETENTION_DAYS` | 30 | Session retention in days |
-| `CLEANUP_TOKEN_RETENTION_DAYS` | 7 | Token retention in days |
-| `AUDIT_LOG_RETENTION_DAYS` | 365 | Audit log retention before archival |
+
+| Variable                         | Default | Description                         |
+| -------------------------------- | ------- | ----------------------------------- |
+| `CLEANUP_SESSION_RETENTION_DAYS` | 30      | Session retention in days           |
+| `CLEANUP_TOKEN_RETENTION_DAYS`   | 7       | Token retention in days             |
+| `AUDIT_LOG_RETENTION_DAYS`       | 365     | Audit log retention before archival |
 
 ## Health Checks
 

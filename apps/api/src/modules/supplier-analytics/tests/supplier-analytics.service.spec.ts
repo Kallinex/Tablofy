@@ -87,7 +87,12 @@ describe('SupplierAnalyticsService', () => {
         { supplierDetailId: 'sd-1', supplierName: 'Vendor A', totalSpend: 100, orderCount: 2n },
       ]);
 
-      const result = await service.getPurchaseTrends(testTenantId, {} as never);
+      const result = (await service.getPurchaseTrends(testTenantId, {} as never)) as {
+        trends: unknown[];
+        totalSpend: number;
+        totalOrders: number;
+        bySupplier: Array<{ supplierId: string; supplierName: string }>;
+      };
 
       expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
       const first = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as {

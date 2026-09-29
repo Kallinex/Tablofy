@@ -172,7 +172,7 @@ export class MetricsService implements OnModuleInit, OnModuleDestroy {
     try {
       const observer = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
-          const kind = (entry as unknown as { kind?: number }).kind;
+          const kind = (entry as { detail?: { kind?: number } }).detail?.kind;
           this.gcDuration.set({ type: kind === 2 ? 'major' : 'minor' }, entry.duration);
         }
       });

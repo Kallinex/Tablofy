@@ -72,7 +72,11 @@ describe('InventoryController', () => {
 
 describe('InventoryController DTO validation', () => {
   let app: INestApplication;
-  let service: { getLowStockItems: jest.Mock };
+  let service: {
+    getLowStockItems: jest.Mock;
+    getCriticalStockItems: jest.Mock;
+    getOutOfStockItems: jest.Mock;
+  };
 
   beforeAll(async () => {
     service = {

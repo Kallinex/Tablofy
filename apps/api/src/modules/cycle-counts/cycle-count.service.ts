@@ -324,6 +324,10 @@ export class CycleCountService {
     });
 
     await this.invalidateCache(id, tenantId);
+    await this.invalidateStockItemCache(
+      tenantId,
+      existing.items.map((i) => i.inventoryItemId),
+    );
     this.gateway.broadcastCycleCountUpdate(tenantId, 'cycle-count.reconciled', updated);
 
     return updated;
@@ -449,5 +453,16 @@ export class CycleCountService {
 
   private async invalidateListCache(tenantId: string) {
     await this.cacheService.deletePattern(tenantId, 'cycle-counts:*');
+  }
+
+  private async invalidateStockItemCache(tenantId: string, itemIds: (string | undefined | null)[]) {
+    const ids = new Set(itemIds.filter((v): v is string => Boolean(v)));
+    for (const id of ids) {
+      await this.cacheService.delete(tenantId, `item:${id}`);
+    }
+    await this.cacheService.deletePattern(tenantId, 'items:*');
+    await this.cacheService.deletePattern(tenantId, 'low-stock:*');
+    await this.cacheService.deletePattern(tenantId, 'critical-stock:*');
+    await this.cacheService.deletePattern(tenantId, 'out-of-stock:*');
   }
 }

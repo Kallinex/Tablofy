@@ -21,11 +21,11 @@ The P0-E finding was confirmed against current source and fixed with the smalles
 
 ## 2. Work Package Scope
 
-| ID | Finding (audit §11 item 4) | Class |
-|---|---|---|
+| ID   | Finding (audit §11 item 4)                                                    | Class                           |
+| ---- | ----------------------------------------------------------------------------- | ------------------------------- |
 | P0-E | `accept()` not transactional; invitation update unconditional (no status CAS) | IMPLEMENTED + TESTED + DEPLOYED |
-| P0-E | raw P2002 from duplicate user creation escapes as-is (not Conflict) | IMPLEMENTED + TESTED + DEPLOYED |
-| P0-E | raw invitation tokens persisted at rest (DB + Redis) | IMPLEMENTED + TESTED + DEPLOYED |
+| P0-E | raw P2002 from duplicate user creation escapes as-is (not Conflict)           | IMPLEMENTED + TESTED + DEPLOYED |
+| P0-E | raw invitation tokens persisted at rest (DB + Redis)                          | IMPLEMENTED + TESTED + DEPLOYED |
 
 Explicitly **out of scope** (documented, not started): all other audit backlog items (P0-F+, P1, Phase 3 product features), frontend, payments/Stripe/Paymob, credentials, `.env` edits, unrelated refactors, destructive Prisma commands, `prisma reset`, and any production-data mutation.
 
@@ -59,6 +59,7 @@ Explicitly **out of scope** (documented, not started): all other audit backlog i
 ## 6. P0-E — Fix Applied
 
 **`invitations.service.ts`**
+
 - `create()` (`:64`, `:70`, `:79`): generates `token = randomBytes(32).hex`; stores `hashedToken = sha256(token)` in the DB `token` column and in the Redis key `invitation:<hashedToken>`; returns `{ ...invitation, token }` — the **raw token goes only to the inviter** (`:94`).
 - `findByToken()` (`:128`, `:131`): hashes the incoming raw token before the Prisma lookup (never queries by raw token).
 - `accept()` (`:173-197`): entire claim+create flow inside `this.prisma.$transaction(async (tx) => { ... })`:
@@ -69,6 +70,7 @@ Explicitly **out of scope** (documented, not started): all other audit backlog i
 - `reject()` (`:230`) / `revoke()` (`:265`): delete `invitation:<hashedToken>` (hashed stored token, never raw input).
 
 **`users.service.ts`**
+
 - `create()` (`:48`): optional `tx?: Prisma.TransactionClient` 6th parameter; `const db = tx ?? this.prisma` (`:55`) used for `findFirst` + `create`.
 - `P2002` conversion (`:92-105`): `PrismaClientKnownRequestError` with code `P2002` whose target is empty or contains `email`/`tenantId` → `ConflictException('A user with this email already exists')`; any unrelated P2002 is rethrown unchanged (no global swallow).
 
@@ -93,12 +95,14 @@ Under two concurrent accepts of the same invitation, both `findByToken` calls re
 ## 10. P0-E — Test Evidence
 
 **Rewritten `invitations.service.spec.ts` (20 tests, all PASS)**
+
 - create: role-escalation rejection, duplicate-pending rejection, existing-user rejection, hashed-at-rest + raw-returned, no raw token in row/Redis key.
 - findByToken: unknown → NotFound, expired → EXPIRED + NotFound, valid pending returned, hashed lookup (never raw).
 - accept: inviter-role Forbidden, full happy path (transaction + CAS `updateMany` + `tx` passed to `usersService.create` + hashed-key Redis delete + audit), CAS count 0 → Conflict, P2002-Conflict propagation with no post-transaction side effects, **concurrent claim (one FULFILLED / one Conflict / create called once)**, best-effort Redis failure non-fatal, audit event excludes token.
 - reject: marks REJECTED + removes hashed Redis key (never raw). revoke/revokeExpired: non-pending → BadRequest, EXPIRED + hashed-key delete, bulk-expire count.
 
 **Extended `users.service.spec.ts` (20 tests, all PASS)**
+
 - Added: duplicate-email P2002 → `ConflictException` (no audit write), unrelated P2002 rethrown as the original error, provided transaction client used for reads/writes (prisma client untouched).
 
 **Focused run:** 2 suites / **40 tests PASS**. **Full regression:** **87 suites / 1126 tests PASS, 0 failures** (baseline 87/1115 → +11: invitations +8, users +3).
@@ -119,13 +123,13 @@ Under two concurrent accepts of the same invitation, both `findByToken` calls re
 
 ## 13. P0-E — Live Verification (pre- and post-deploy, safe probes only)
 
-| Probe | Result |
-|---|---|
-| `GET /api/v1/health` | **200** (db/redis/bullmq/disk up) |
-| `POST /api/v1/invitations/accept` (synthetic garbage token, valid DTO shape) | **404** `Invalid or expired invitation`, no DB mutation |
-| `GET /api/v1/invitations/token/<garbage>` | **404** `Invalid or expired invitation`, no DB mutation |
-| `SELECT` on `invitations` before/after probes | **0 rows, unchanged** |
-| Container logs | No errors; no raw token in any log line; probe failures logged cleanly |
+| Probe                                                                        | Result                                                                 |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `GET /api/v1/health`                                                         | **200** (db/redis/bullmq/disk up)                                      |
+| `POST /api/v1/invitations/accept` (synthetic garbage token, valid DTO shape) | **404** `Invalid or expired invitation`, no DB mutation                |
+| `GET /api/v1/invitations/token/<garbage>`                                    | **404** `Invalid or expired invitation`, no DB mutation                |
+| `SELECT` on `invitations` before/after probes                                | **0 rows, unchanged**                                                  |
+| Container logs                                                               | No errors; no raw token in any log line; probe failures logged cleanly |
 
 A **real successful acceptance** (creating a live user) was **NOT attempted and NOT fabricated** — it requires a genuine invitation + email flow and would mutate production data. This item is classified **NOT LIVE-VERIFIED (external)** below; the remediation is proven instead by 40 unit tests, bundle inspection, and the safe probes.
 
@@ -144,16 +148,16 @@ A **real successful acceptance** (creating a live user) was **NOT attempted and 
 
 ## 16. P0-E — Classifications Summary
 
-| Item | Classification |
-|---|---|
-| `accept()` wrapped in `$transaction` (atomic claim + user creation) | **IMPLEMENTED + TESTED + DEPLOYED** |
-| Atomic status CAS (`updateMany where status=PENDING`, count!=1 → Conflict) | **IMPLEMENTED + TESTED + DEPLOYED** |
-| Duplicate-email P2002 → `ConflictException` (target-discriminated) | **IMPLEMENTED + TESTED + DEPLOYED** |
-| Tokens hashed at rest (SHA-256, DB + Redis), raw token to inviter only | **IMPLEMENTED + TESTED + DEPLOYED** |
-| Concurrency: exactly one accept wins | **PROVEN** (barrier test; no live race exercised — no invitation data exists) |
-| Real successful live acceptance path | **NOT LIVE-VERIFIED (external)** — requires a genuine invitation flow; not fabricated |
-| Schema/migration change | **NONE** (verified: zero rows, diff = no difference) |
-| Spec-typecheck (`tsconfig.spec.json`) | **PRE-EXISTING DIRTY** (1060 errors repo-wide, systemic mock typing; not a gate here; out of scope) |
+| Item                                                                       | Classification                                                                                      |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `accept()` wrapped in `$transaction` (atomic claim + user creation)        | **IMPLEMENTED + TESTED + DEPLOYED**                                                                 |
+| Atomic status CAS (`updateMany where status=PENDING`, count!=1 → Conflict) | **IMPLEMENTED + TESTED + DEPLOYED**                                                                 |
+| Duplicate-email P2002 → `ConflictException` (target-discriminated)         | **IMPLEMENTED + TESTED + DEPLOYED**                                                                 |
+| Tokens hashed at rest (SHA-256, DB + Redis), raw token to inviter only     | **IMPLEMENTED + TESTED + DEPLOYED**                                                                 |
+| Concurrency: exactly one accept wins                                       | **PROVEN** (barrier test; no live race exercised — no invitation data exists)                       |
+| Real successful live acceptance path                                       | **NOT LIVE-VERIFIED (external)** — requires a genuine invitation flow; not fabricated               |
+| Schema/migration change                                                    | **NONE** (verified: zero rows, diff = no difference)                                                |
+| Spec-typecheck (`tsconfig.spec.json`)                                      | **PRE-EXISTING DIRTY** (1060 errors repo-wide, systemic mock typing; not a gate here; out of scope) |
 
 ## 17. Out-of-Scope / Deferred (documented, not acted on)
 

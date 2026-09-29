@@ -5,6 +5,7 @@
 **Scope:** findings F2–F6 + D1–D6, D13 from `POST-P1-BATCH-2-FULL-AUDIT.md`, per `P1-BATCH-3-PLAN.md`. B3-9 verify-only. Deferred D7–D12/F1-backlog unchanged.
 
 ### Files changed (tracked, working tree)
+
 - `apps/api/src/modules/webhooks/webhook-event-emitter.ts` — canonical event dispatch, per-delivery deliveryId, active-webhook lookup.
 - `apps/api/src/modules/webhooks/webhooks.service.ts` — event normalization + header/metadata bounds on create/update; `hasSome` active-webhook matching.
 - `apps/api/src/modules/webhooks/dto/create-webhook.dto.ts` — `@ArrayMaxSize(50)` + `@MaxLength(100,{each})` on `events`.
@@ -33,6 +34,7 @@
 - `apps/api/jest.config.ts` — (unchanged thresholds; green via new tests).
 
 ### Files added (untracked)
+
 - `apps/api/src/modules/webhooks/webhook-events.ts` — canonical event names/aliases/normalizer.
 - `apps/api/src/modules/webhooks/tests/` — `webhook-events.spec.ts`, `webhook-event-emitter.spec.ts`, plus webhook service/processor specs.
 - `apps/api/src/modules/recipes/tests/` — `recipes.processor.spec.ts` F1 regression coverage.
@@ -43,6 +45,7 @@
 - `P1-BATCH-3-IMPLEMENTATION-REPORT.md`, `P1-BATCH-3-CERTIFICATION-REPORT-2026-08-08.md`.
 
 ### Verification summary
+
 - 68 suites / 776 tests pass; `jest --coverage` exit 0.
 - `tsc --noEmit`, `nx build api`, `prisma validate`, `prettier --check`, changed-file ESLint: all clean.
 - `migrate status` up to date (20 migrations); `migrate diff` → "No difference detected".

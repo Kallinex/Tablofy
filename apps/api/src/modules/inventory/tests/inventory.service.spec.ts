@@ -106,7 +106,7 @@ describe('InventoryService', () => {
         return cb(tx);
       });
 
-      const result = await service.createUnit(dto, testTenantId, testUserId);
+      const result = await service.createUnit(dto as never, testTenantId, testUserId);
 
       expect(result.id).toBe('unit-1');
       expect(prisma.$transaction).toHaveBeenCalled();
@@ -116,7 +116,7 @@ describe('InventoryService', () => {
     it('should throw ConflictException for duplicate name', async () => {
       prisma.inventoryUnit.findFirst.mockResolvedValue({ id: 'existing' });
 
-      await expect(service.createUnit(dto, testTenantId, testUserId)).rejects.toThrow(
+      await expect(service.createUnit(dto as never, testTenantId, testUserId)).rejects.toThrow(
         ConflictException,
       );
     });
@@ -182,7 +182,7 @@ describe('InventoryService', () => {
         return cb(tx);
       });
 
-      const result = await service.createCount(dto, testTenantId, testUserId);
+      const result = await service.createCount(dto as never, testTenantId, testUserId);
 
       expect(result.id).toBe('count-1');
       expect(prisma.$transaction).toHaveBeenCalled();
@@ -196,7 +196,7 @@ describe('InventoryService', () => {
     it('should throw NotFoundException when item does not exist', async () => {
       prisma.inventoryItem.findFirst.mockResolvedValue(null);
 
-      await expect(service.createCount(dto, testTenantId, testUserId)).rejects.toThrow(
+      await expect(service.createCount(dto as never, testTenantId, testUserId)).rejects.toThrow(
         NotFoundException,
       );
       expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -420,7 +420,7 @@ describe('InventoryService', () => {
 
       const result = await service.approveAdjustment('adj-1', testTenantId, testUserId);
 
-      expect(result.status).toBe('APPROVED');
+      expect(result?.status).toBe('APPROVED');
       expect(fakeTx.inventoryItem.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -489,7 +489,9 @@ describe('InventoryService', () => {
       prisma.inventoryItem.findMany.mockResolvedValue([{ id: 'item-1' }]);
       prisma.inventoryItem.count.mockResolvedValue(1);
 
-      const result = await service.listItems(testTenantId, { page: 1, limit: 20 });
+      const result = (await service.listItems(testTenantId, { page: 1, limit: 20 })) as {
+        data: unknown[];
+      };
 
       expect(result.data).toHaveLength(1);
     });

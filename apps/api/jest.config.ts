@@ -9,8 +9,7 @@ const config: Config = {
     '^.+\\.ts$': [
       'ts-jest',
       {
-        tsconfig: '<rootDir>/tsconfig.spec.json',
-        isolatedModules: true,
+        tsconfig: '<rootDir>/tsconfig.jest.json',
       },
     ],
   },

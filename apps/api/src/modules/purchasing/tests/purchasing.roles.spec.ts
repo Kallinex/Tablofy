@@ -8,10 +8,10 @@ describe('PurchasingController role policy (P0-I)', () => {
 
   function rolesByRoute(): Map<string, string[]> {
     const map = new Map<string, string[]>();
-    const proto = PurchasingController.prototype;
+    const proto = PurchasingController.prototype as unknown as Record<string, unknown>;
     for (const methodName of Object.getOwnPropertyNames(proto)) {
       if (methodName === 'constructor') continue;
-      const fn = proto[methodName] as unknown;
+      const fn = proto[methodName] as object;
       const isRoute = Reflect.getMetadata(PATH_METADATA, fn) !== undefined;
       if (!isRoute) continue;
       const roles = Reflect.getMetadata(ROLES_KEY, fn) as string[] | undefined;

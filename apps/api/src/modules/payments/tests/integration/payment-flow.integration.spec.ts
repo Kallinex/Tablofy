@@ -12,7 +12,20 @@ import { SplitPaymentDto } from '../../dto/split-payment.dto';
 
 describe('PaymentFlowIntegration', () => {
   let service: PaymentsService;
-  let prisma: Record<string, jest.Mock>;
+  let prisma: {
+    order: { findFirst: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
+    payment: {
+      findFirst: jest.Mock;
+      findMany: jest.Mock;
+      findUnique: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      count: jest.Mock;
+    };
+    orderStatusHistory: { create: jest.Mock };
+    paymentWebhookReceipt: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
+    $transaction: jest.Mock;
+  };
   let metrics: Record<string, jest.Mock>;
 
   const mockOrder = {
@@ -68,6 +81,11 @@ describe('PaymentFlowIntegration', () => {
       },
       orderStatusHistory: {
         create: jest.fn(),
+      },
+      paymentWebhookReceipt: {
+        create: jest.fn().mockResolvedValue({}),
+        findUnique: jest.fn().mockResolvedValue({ status: 'PROCESSING' }),
+        update: jest.fn().mockResolvedValue({}),
       },
       $transaction: jest.fn(),
     };

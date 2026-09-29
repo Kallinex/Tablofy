@@ -2,7 +2,10 @@ const { exec, spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
 const VERIFY_PORT = Number(process.env.VERIFY_PORT || 3000);
-const REDIS = { host: process.env.REDIS_HOST || '127.0.0.1', port: Number(process.env.REDIS_PORT || 6379) };
+const REDIS = {
+  host: process.env.REDIS_HOST || '127.0.0.1',
+  port: Number(process.env.REDIS_PORT || 6379),
+};
 
 const BASE = 'http://localhost:' + VERIFY_PORT + '/api/v1';
 

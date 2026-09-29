@@ -97,7 +97,10 @@ describe('RecipesService consumption reversal (F-002 MODEL C)', () => {
   };
 
   const auditLogsMock = { log: jest.fn().mockResolvedValue(undefined) };
-  const cacheMock = { delete: jest.fn().mockResolvedValue(undefined) };
+  const cacheMock = {
+    delete: jest.fn().mockResolvedValue(undefined),
+    deletePattern: jest.fn().mockResolvedValue(undefined),
+  };
   const queueServiceMock = { addJob: jest.fn() };
   const eventEmitterMock = { emit: jest.fn() };
   const gatewayMock = { broadcastInventoryUpdate: jest.fn() };
@@ -320,7 +323,7 @@ describe('RecipesService consumption reversal (F-002 MODEL C)', () => {
         amountRefunded: 1,
       });
 
-      expect(reversal.created[0].quantity.toString()).toBe('-33.3333');
+      expect((reversal.created[0].quantity as Prisma.Decimal).toString()).toBe('-33.3333');
     });
 
     it('skips when the order total is zero', async () => {

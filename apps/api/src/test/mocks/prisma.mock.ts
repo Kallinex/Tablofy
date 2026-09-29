@@ -121,7 +121,28 @@ const prismaModelNames = [
   'apiKey',
 ];
 
-function createMockDelegate() {
+export interface MockDelegate {
+  fields: Record<string, unknown>;
+  findUnique: jest.Mock;
+  findFirst: jest.Mock;
+  findMany: jest.Mock;
+  create: jest.Mock;
+  update: jest.Mock;
+  updateMany: jest.Mock;
+  delete: jest.Mock;
+  deleteMany: jest.Mock;
+  count: jest.Mock;
+  upsert: jest.Mock;
+  aggregate: jest.Mock;
+  groupBy: jest.Mock;
+  createMany: jest.Mock;
+}
+
+export interface MockDelegateWithTransaction extends MockDelegate {
+  $queryRaw: jest.Mock;
+}
+
+function createMockDelegate(): MockDelegate {
   return {
     fields: {} as Record<string, unknown>,
     findUnique: jest.fn(),
@@ -140,22 +161,175 @@ function createMockDelegate() {
   };
 }
 
-function createMockDelegateWithTransaction() {
+function createMockDelegateWithTransaction(): MockDelegateWithTransaction {
   return {
     ...createMockDelegate(),
     $queryRaw: jest.fn().mockResolvedValue([]),
   };
 }
 
-export function createMockPrisma() {
-  const delegates: Record<string, ReturnType<typeof createMockDelegate>> = {};
+/**
+ * Maps every prisma model name to a {@link MockDelegate}. Keeping the model
+ * names as a literal-union keyed record (rather than an inferred object literal
+ * built from a `Record<string, ...>` spread, which drops its index signature)
+ * is what lets `prisma[model].<method>` type-check in the 50+ spec files that
+ * construct services with `createMockPrisma()`.
+ */
+export type PrismaModelName = (typeof prismaModelNames)[number];
+
+export interface MockPrismaModelDelegates {
+  tenant: MockDelegate;
+  user: MockDelegate;
+  refreshToken: MockDelegate;
+  session: MockDelegate;
+  subscription: MockDelegate;
+  invitation: MockDelegate;
+  verificationToken: MockDelegate;
+  auditLog: MockDelegate;
+  restaurant: MockDelegate;
+  branch: MockDelegate;
+  floor: MockDelegate;
+  diningArea: MockDelegate;
+  table: MockDelegate;
+  menuCategory: MockDelegate;
+  product: MockDelegate;
+  variantGroup: MockDelegate;
+  productVariant: MockDelegate;
+  modifierGroup: MockDelegate;
+  modifier: MockDelegate;
+  productVariantModifier: MockDelegate;
+  productTag: MockDelegate;
+  allergen: MockDelegate;
+  productTagAssignment: MockDelegate;
+  productAllergenAssignment: MockDelegate;
+  productImage: MockDelegate;
+  productAvailability: MockDelegate;
+  nutritionalInfo: MockDelegate;
+  businessHours: MockDelegate;
+  businessException: MockDelegate;
+  order: MockDelegate;
+  orderItem: MockDelegate;
+  orderItemModifier: MockDelegate;
+  orderStatusHistory: MockDelegate;
+  orderNote: MockDelegate;
+  kitchenTicket: MockDelegate;
+  payment: MockDelegate;
+  paymentWebhookReceipt: MockDelegate;
+  ingredient: MockDelegate;
+  supplier: MockDelegate;
+  productIngredient: MockDelegate;
+  notification: MockDelegate;
+  message: MockDelegate;
+  report: MockDelegate;
+  feedback: MockDelegate;
+  taxRate: MockDelegate;
+  serviceCharge: MockDelegate;
+  unit: MockDelegate;
+  campaign: MockDelegate;
+  kitchenStation: MockDelegate;
+  kitchenTicketItem: MockDelegate;
+  customer: MockDelegate;
+  customerAddress: MockDelegate;
+  customerPreference: MockDelegate;
+  visitHistory: MockDelegate;
+  giftCard: MockDelegate;
+  giftCardTransaction: MockDelegate;
+  loyaltyProgram: MockDelegate;
+  loyaltyTier: MockDelegate;
+  loyaltyPointsTransaction: MockDelegate;
+  membership: MockDelegate;
+  membershipHistory: MockDelegate;
+  reward: MockDelegate;
+  wallet: MockDelegate;
+  walletTransaction: MockDelegate;
+  referral: MockDelegate;
+  customerSegment: MockDelegate;
+  customerSegmentAssignment: MockDelegate;
+  customerAnalytics: MockDelegate;
+  crmTimelineEntry: MockDelegate;
+  communicationTemplate: MockDelegate;
+  communicationLog: MockDelegate;
+  campaignTemplate: MockDelegate;
+  campaignRecipient: MockDelegate;
+  campaignAnalytics: MockDelegate;
+  campaignApproval: MockDelegate;
+  promotion: MockDelegate;
+  promotionBranchRestriction: MockDelegate;
+  promotionProductRestriction: MockDelegate;
+  promotionCategoryRestriction: MockDelegate;
+  promotionUsage: MockDelegate;
+  eventRule: MockDelegate;
+  eventLog: MockDelegate;
+  inventoryCategory: MockDelegate;
+  inventoryUnit: MockDelegate;
+  inventoryLocation: MockDelegate;
+  inventoryItem: MockDelegate;
+  inventoryBatch: MockDelegate;
+  supplierDetail: MockDelegate;
+  supplierContact: MockDelegate;
+  supplierDocument: MockDelegate;
+  purchaseOrder: MockDelegate;
+  purchaseOrderItem: MockDelegate;
+  purchaseOrderApproval: MockDelegate;
+  goodsReceipt: MockDelegate;
+  goodsReceiptItem: MockDelegate;
+  stockMovement: MockDelegate;
+  branchTransfer: MockDelegate;
+  branchTransferItem: MockDelegate;
+  recipe: MockDelegate;
+  recipeItem: MockDelegate;
+  stockAdjustment: MockDelegate;
+  wasteEntry: MockDelegate;
+  inventoryCount: MockDelegate;
+  expirationAlert: MockDelegate;
+  warehouse: MockDelegate;
+  warehouseZone: MockDelegate;
+  storageBin: MockDelegate;
+  warehouseBranch: MockDelegate;
+  barcode: MockDelegate;
+  inventoryForecast: MockDelegate;
+  reorderSuggestion: MockDelegate;
+  consumptionRecord: MockDelegate;
+  cycleCount: MockDelegate;
+  cycleCountItem: MockDelegate;
+  supplierPerformanceMetric: MockDelegate;
+  inventoryValuation: MockDelegate;
+  scheduledReport: MockDelegate;
+  reportExport: MockDelegate;
+  analyticsDashboard: MockDelegate;
+  apiKey: MockDelegate;
+}
+
+export interface MockPrisma extends MockPrismaModelDelegates {
+  $transaction: jest.Mock;
+  $connect: jest.Mock;
+  $disconnect: jest.Mock;
+  $use: jest.Mock;
+  $extends: jest.Mock;
+  $queryRaw: jest.Mock;
+  $queryRawUnsafe: jest.Mock;
+  $executeRawUnsafe: jest.Mock;
+  softDeleteWhere: jest.Mock;
+  onModuleInit: jest.Mock;
+  onModuleDestroy: jest.Mock;
+  reset(): void;
+}
+
+export function createMockPrisma(): MockPrisma {
+  const delegates: Record<PrismaModelName, MockDelegate> = {} as Record<
+    PrismaModelName,
+    MockDelegate
+  >;
   for (const name of prismaModelNames) {
-    delegates[name] = createMockDelegate();
+    delegates[name as PrismaModelName] = createMockDelegate();
   }
 
-  const txMethods: Record<string, ReturnType<typeof createMockDelegateWithTransaction>> = {};
+  const txMethods: Record<PrismaModelName, MockDelegateWithTransaction> = {} as Record<
+    PrismaModelName,
+    MockDelegateWithTransaction
+  >;
   for (const name of prismaModelNames) {
-    txMethods[name] = createMockDelegateWithTransaction();
+    txMethods[name as PrismaModelName] = createMockDelegateWithTransaction();
   }
 
   return {
@@ -200,7 +374,5 @@ export function createMockPrisma() {
       this.$executeRawUnsafe.mockReset();
       this.$executeRawUnsafe.mockResolvedValue([]);
     },
-  };
+  } as MockPrisma;
 }
-
-export type MockPrisma = ReturnType<typeof createMockPrisma>;

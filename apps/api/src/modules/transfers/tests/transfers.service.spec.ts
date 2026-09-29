@@ -30,7 +30,7 @@ describe('TransfersService', () => {
     id: 'trf-1',
     tenantId: testTenantId,
     transferNumber: 'TRF-20260810-ABC12',
-    status: TransferStatus.DRAFT,
+    status: TransferStatus.DRAFT as TransferStatus,
     fromBranchId: 'branch-a',
     toBranchId: 'branch-b',
     notes: null,

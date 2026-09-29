@@ -4,7 +4,16 @@ import { GiftCardsService } from '../../gift-cards.service';
 
 describe('Gift Cards RBAC — Integration', () => {
   let controller: GiftCardsController;
-  let giftCardsService: jest.Mocked<GiftCardsService>;
+  let giftCardsService: {
+    create: jest.Mock;
+    findAll: jest.Mock;
+    findOne: jest.Mock;
+    findByCode: jest.Mock;
+    recharge: jest.Mock;
+    redeem: jest.Mock;
+    getTransactions: jest.Mock;
+    deactivate: jest.Mock;
+  };
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -27,7 +36,7 @@ describe('Gift Cards RBAC — Integration', () => {
     }).compile();
 
     controller = module.get<GiftCardsController>(GiftCardsController);
-    giftCardsService = module.get(GiftCardsService) as jest.Mocked<GiftCardsService>;
+    giftCardsService = module.get(GiftCardsService) as unknown as typeof giftCardsService;
   });
 
   beforeEach(() => {

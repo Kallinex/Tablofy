@@ -59,7 +59,9 @@ describe('InventoryAnalyticsService', () => {
         { inventoryItemId: 'item-2', _max: { createdAt: new Date('2020-01-01') } },
       ]);
 
-      const result = await service.getDeadStock(testTenantId, {} as never);
+      const result = (await service.getDeadStock(testTenantId, {} as never)) as {
+        items: unknown[];
+      };
 
       expect(prisma.stockMovement.groupBy).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -80,7 +82,10 @@ describe('InventoryAnalyticsService', () => {
         { inventoryItemId: 'item-2', _count: 3 },
       ]);
 
-      const result = await service.getClassification(testTenantId, {} as never);
+      const result = (await service.getClassification(testTenantId, {} as never)) as {
+        fastMoving: { count: number; items: unknown[] };
+        slowMoving: { count: number; items: unknown[] };
+      };
 
       expect(prisma.consumptionRecord.groupBy).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -101,7 +106,11 @@ describe('InventoryAnalyticsService', () => {
         { currentQuantity: 10, averageCost: 6, unitCost: 5 },
       ]);
 
-      const result = await service.getTurnover(testTenantId, {} as never);
+      const result = (await service.getTurnover(testTenantId, {} as never)) as {
+        cogs: number;
+        averageInventoryValue: number;
+        turnoverRatio: number;
+      };
 
       expect(result.cogs).toBe(450);
       expect(result.averageInventoryValue).toBe(60);
@@ -137,7 +146,14 @@ describe('InventoryAnalyticsService', () => {
         .mockResolvedValueOnce([{ period: 'DAILY', _sum: { quantity: 75, totalCost: 450 } }])
         .mockResolvedValueOnce([{ period: 'DAILY', _count: 3 }]);
 
-      const result = await service.getConsumptionTrends(testTenantId, {} as never);
+      const result = (await service.getConsumptionTrends(testTenantId, {} as never)) as {
+        byPeriod: Array<{
+          period: string;
+          totalQuantity: number;
+          totalCost: number;
+          count: number;
+        }>;
+      };
 
       expect(prisma.consumptionRecord.groupBy).toHaveBeenCalledTimes(2);
       expect(result.byPeriod[0]).toEqual({
@@ -173,7 +189,9 @@ describe('InventoryAnalyticsService', () => {
         },
       ]);
 
-      const result = await service.getForecastAccuracy(testTenantId, {} as never);
+      const result = (await service.getForecastAccuracy(testTenantId, {} as never)) as {
+        forecasts: Array<{ actualQuantity: number; accuracyPercentage: number }>;
+      };
 
       expect(prisma.consumptionRecord.groupBy).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -217,7 +235,9 @@ describe('InventoryAnalyticsService', () => {
         },
       ]);
 
-      const result = await service.getShrinkage(testTenantId, {} as never);
+      const result = (await service.getShrinkage(testTenantId, {} as never)) as {
+        removalQuantity: number;
+      };
 
       expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
       const sqlArg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as {

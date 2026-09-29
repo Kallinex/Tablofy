@@ -120,7 +120,7 @@ describe('UsageTrackingService', () => {
           { productId: 'p1', quantity: 2 },
           { productId: 'p2', quantity: 3 },
         ],
-      });
+      } as unknown as OrderCreatedEvent);
 
       expect(client.incrby).toHaveBeenCalledWith('usage:t1:r1:orders:count', 5);
       expect(client.incrby).toHaveBeenCalledWith('usage:t1:r1:products:p1:count', 2);
@@ -236,7 +236,7 @@ describe('UsageTrackingService', () => {
         orderId: 'o1',
         orderNumber: 'ORD-000001',
         items: [{ productId: 'p1', quantity: 1 }],
-      });
+      } as unknown as OrderCreatedEvent);
 
       expect(client.incrby).toHaveBeenCalledTimes(3);
       expect(client.store['usage:t1:r1:orders:count']).toBe(1);

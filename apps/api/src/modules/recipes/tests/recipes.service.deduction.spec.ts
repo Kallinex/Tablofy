@@ -105,7 +105,10 @@ describe('RecipesService.deductInventoryForOrder (F1 idempotency)', () => {
   };
 
   const auditLogsMock = { log: jest.fn().mockResolvedValue(undefined) };
-  const cacheMock = { delete: jest.fn().mockResolvedValue(undefined) };
+  const cacheMock = {
+    delete: jest.fn().mockResolvedValue(undefined),
+    deletePattern: jest.fn().mockResolvedValue(undefined),
+  };
   const queueServiceMock = { addJob: jest.fn() };
   const eventEmitterMock = { emit: jest.fn() };
   const gatewayMock = { broadcastInventoryUpdate: jest.fn() };

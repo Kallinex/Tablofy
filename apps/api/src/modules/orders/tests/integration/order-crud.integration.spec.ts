@@ -162,7 +162,7 @@ describe('Order CRUD — Integration', () => {
           branchId: 'branch-1',
           orderType: 'DINE_IN',
           items: [{ productId: 'product-1', quantity: 2, unitPrice: 10.99 }],
-        },
+        } as never,
         'tenant-1',
         'user-1',
       );

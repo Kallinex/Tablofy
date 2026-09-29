@@ -22,6 +22,7 @@ Net verification: **84 suites / 1044 tests passing** (baseline 84 / 1027 → +17
 **Authority:** the P1-05 / P1-06 remediation mandate from the active session (forensic audit findings; PARTIAL → CLOSED required).
 
 **Constraints honored:**
+
 - No Phase 3 features, no unrelated P2s, no UI, no payment credentials, no redesigns.
 - No reset/rebuild of data: migration applies non-destructively to the live `tablofy_prod` DB.
 - Tenant/branch isolation, existing auth/audit logging preserved; no invented roles.
@@ -30,26 +31,27 @@ Net verification: **84 suites / 1044 tests passing** (baseline 84 / 1027 → +17
 
 ## 3. Findings Addressed
 
-| Finding | Title | Prior status → New status | High-level fix |
-| --- | --- | --- | --- |
-| **P1-05** | GRN cancellation can reverse inventory not attributable to the cancelled GRN ("subtract until zero" ownership logic) | PARTIAL → **CLOSED** | DB-level batch attribution (`GoodsReceiptItem.inventoryBatchId` FK), id-targeted CAS batch reversal, legacy null-attribution skip, DB natural-key uniqueness + deterministic P2002 reuse. |
-| **P1-06** | Inventory quantity mutations that read→compute→write (lost updates) and `updateItem` with no optimistic lock | PARTIAL → **CLOSED** | Atomic arithmetic + CAS/version-in-WHERE + status claims across adjustments, waste, cycle-count reconcile, transfers, GRN receive/cancel; real version CAS with `ConflictException` for `updateItem`; serialized `FOR UPDATE` for recipe deduction. |
+| Finding   | Title                                                                                                                | Prior status → New status | High-level fix                                                                                                                                                                                                                                      |
+| --------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P1-05** | GRN cancellation can reverse inventory not attributable to the cancelled GRN ("subtract until zero" ownership logic) | PARTIAL → **CLOSED**      | DB-level batch attribution (`GoodsReceiptItem.inventoryBatchId` FK), id-targeted CAS batch reversal, legacy null-attribution skip, DB natural-key uniqueness + deterministic P2002 reuse.                                                           |
+| **P1-06** | Inventory quantity mutations that read→compute→write (lost updates) and `updateItem` with no optimistic lock         | PARTIAL → **CLOSED**      | Atomic arithmetic + CAS/version-in-WHERE + status claims across adjustments, waste, cycle-count reconcile, transfers, GRN receive/cancel; real version CAS with `ConflictException` for `updateItem`; serialized `FOR UPDATE` for recipe deduction. |
 
 ## 4. Root-Cause Analysis
 
-| Surface | Previous (buggy) behavior | Impact |
-| --- | --- | --- |
-| `cancelGRN` | Reversed inventory with `currentQuantity - qty` floor-at-0 arithmetic per item regardless of which GRN contributed that stock; no batch ownership model. | Cancelling GRN-A could consume stock physically received by GRN-B; history inaccurate; double-cancel could "reverse" stock never held. |
-| Batch identity | No link between a GRN line and the `InventoryBatch` row it created; batch reuse was an unguarded `findFirst → create` sequence. | Two concurrent receipts of the same physical batch could create duplicate batch rows (or rely on an unguarded read). |
-| `updateItem` | `inventoryItem.update` unconditionally overwrote quantities with a stale read. | Two concurrent edits could silently drop one writer's quantity change (lost update). |
-| Adjustments / waste | DECREASE approval used a read→compute→write decrement without a `gte` guard. | Concurrent consumption could drive stock negative (overdraw). |
-| Cycle-count reconcile | Applied variance by absolute read→write without a status claim or guard. | Reconcile could be applied twice, or force negative quantities. |
-| Transfers | start/receive/cancel did not claim status first; item decrement was unguarded read→write. | Double-ship or double-receive of the same transfer could double-decrement. |
-| Recipe deduction | Deduction read → compute → write inside a transaction without a row lock. | Two orders sharing an ingredient could both compute from the same base and lose one order's deduction. |
+| Surface               | Previous (buggy) behavior                                                                                                                                | Impact                                                                                                                                 |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `cancelGRN`           | Reversed inventory with `currentQuantity - qty` floor-at-0 arithmetic per item regardless of which GRN contributed that stock; no batch ownership model. | Cancelling GRN-A could consume stock physically received by GRN-B; history inaccurate; double-cancel could "reverse" stock never held. |
+| Batch identity        | No link between a GRN line and the `InventoryBatch` row it created; batch reuse was an unguarded `findFirst → create` sequence.                          | Two concurrent receipts of the same physical batch could create duplicate batch rows (or rely on an unguarded read).                   |
+| `updateItem`          | `inventoryItem.update` unconditionally overwrote quantities with a stale read.                                                                           | Two concurrent edits could silently drop one writer's quantity change (lost update).                                                   |
+| Adjustments / waste   | DECREASE approval used a read→compute→write decrement without a `gte` guard.                                                                             | Concurrent consumption could drive stock negative (overdraw).                                                                          |
+| Cycle-count reconcile | Applied variance by absolute read→write without a status claim or guard.                                                                                 | Reconcile could be applied twice, or force negative quantities.                                                                        |
+| Transfers             | start/receive/cancel did not claim status first; item decrement was unguarded read→write.                                                                | Double-ship or double-receive of the same transfer could double-decrement.                                                             |
+| Recipe deduction      | Deduction read → compute → write inside a transaction without a row lock.                                                                                | Two orders sharing an ingredient could both compute from the same base and lose one order's deduction.                                 |
 
 ## 5. Schema & Migration (P1-05 Batch Attribution)
 
 **Files:**
+
 - `prisma/schema.prisma` — `InventoryBatch` `@@unique([inventoryItemId, tenantId, batchNumber, lotNumber, expiryDate])` (line 2715); `GoodsReceiptItem.inventoryBatchId String?` (line 2956), relation `inventoryBatch InventoryBatch? @relation(fields: [inventoryBatchId], references: [id], onDelete: SetNull)` (line 2965), `@@index([inventoryBatchId])` (line 2969).
 - `prisma/migrations/20260811120000_add_grn_batch_attribution/migration.sql`:
   - line 7: `ALTER TABLE "goods_receipt_items" ADD COLUMN "inventoryBatchId" TEXT;`
@@ -57,126 +59,133 @@ Net verification: **84 suites / 1044 tests passing** (baseline 84 / 1027 → +17
   - line 13: `CREATE UNIQUE INDEX "inventory_batches_inventoryItemId_tenantId_batchNumber_lotN_key" ON "inventory_batches"("inventoryItemId","tenantId","batchNumber","lotNumber","expiryDate");`
   - line 16: FK `goods_receipt_items_inventoryBatchId_fkey` → `inventory_batches(id)` `ON DELETE SET NULL ON UPDATE CASCADE`.
 
-| Element | Detail |
-| --- | --- |
-| Previous behavior | No database relationship between GRN lines and batch rows; batch identity uniqueness was application-only. |
-| New behavior | A GRN line references exactly one batch row (`inventoryBatchId`); the physical-lot natural key is unique at the DB level; deleting a batch nulls the reference (legacy-safe), it never deletes the GRN. |
-| Invariant | `CANCEL(GRN-A)` can only reach a batch row through GRN-A's own line attribution; no key-match-all, no "subtract until zero" across other GRNs' stock. |
-| DB constraint | `inventory_batches` unique natural key + FK `goods_receipt_items.inventoryBatchId` (`SET NULL`). |
-| Migration safety | Non-destructive add-only. Verified live: column, index, unique index, FK present; `prisma migrate status` 24/24 up to date; affected tables empty at migration time (batches=0, grn_items=0, grns=0). |
+| Element           | Detail                                                                                                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Previous behavior | No database relationship between GRN lines and batch rows; batch identity uniqueness was application-only.                                                                                              |
+| New behavior      | A GRN line references exactly one batch row (`inventoryBatchId`); the physical-lot natural key is unique at the DB level; deleting a batch nulls the reference (legacy-safe), it never deletes the GRN. |
+| Invariant         | `CANCEL(GRN-A)` can only reach a batch row through GRN-A's own line attribution; no key-match-all, no "subtract until zero" across other GRNs' stock.                                                   |
+| DB constraint     | `inventory_batches` unique natural key + FK `goods_receipt_items.inventoryBatchId` (`SET NULL`).                                                                                                        |
+| Migration safety  | Non-destructive add-only. Verified live: column, index, unique index, FK present; `prisma migrate status` 24/24 up to date; affected tables empty at migration time (batches=0, grn_items=0, grns=0).   |
 
 ## 6. Fix: `createGRN` — Batch Attribution & P2002 Resolution
 
 **File:** `apps/api/src/modules/purchasing/purchasing.service.ts`
+
 - `createGRN` at line 866; PO status pre-check (`ORDERED`/`PARTIALLY_RECEIVED`) at lines 874–879; per-line inventory atomic increment at lines 971–981; stock movement at 983–999; batch attribution block at 1001–1056; `goodsReceiptItem.create` carries `inventoryBatchId` at lines 1060–1074.
 - `isBatchKeyConflict(error)` helper at lines 767–778.
 
-| Element | Detail |
-| --- | --- |
-| Previous behavior | Receipt incremented inventory but created/updated batches by unguarded `findFirst`→`create`/`update`; GRN line had no batch reference; a concurrent duplicate batch create could fail or duplicate. |
-| New behavior | Per line: inventory updated atomically (`increment`, `version: { increment: 1 }`) → movement → resolve batch: (a) no batch identity ⇒ `inventoryBatchId = null` and no batch row touched; (b) existing row ⇒ atomic `quantity: { increment }` and reuse; (c) no row ⇒ `inventoryBatch.create`, and on a P2002 whose target is the batch natural key (`isBatchKeyConflict`), re-find the natural key and reuse the winning row with an atomic increment — the GRN never fails for a legitimately shared physical batch. Every `goodsReceiptItem.create` persists `inventoryBatchId`. |
-| Invariant | One physical batch per (item, tenant, batchNumber, lotNumber, expiryDate); each receipt atomically adds its quantity to exactly that row; attribution is recorded on the line. |
-| Proving tests | `purchasing.service.spec.ts`: `createGRN records the exact batch id on the goods receipt line` (:930), `createGRN reuses an existing batch row and increments it (no duplicate)` (:994), `concurrent same-batch receipts resolve on P2002 by reusing the winning row` (:1055, two-party gate barrier; asserts both fulfill, 2 creates, both lines attributed to `batch-1`, one atomic increment), `a receipt without batch identity is not attributed to any batch row` (:1149). |
-| DB constraint | `inventory_batches` unique natural key (line 13 of the migration) makes the P2002 race impossible to lose; FK on `goods_receipt_items.inventoryBatchId`. |
+| Element           | Detail                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Previous behavior | Receipt incremented inventory but created/updated batches by unguarded `findFirst`→`create`/`update`; GRN line had no batch reference; a concurrent duplicate batch create could fail or duplicate.                                                                                                                                                                                                                                                                                                                                                                                 |
+| New behavior      | Per line: inventory updated atomically (`increment`, `version: { increment: 1 }`) → movement → resolve batch: (a) no batch identity ⇒ `inventoryBatchId = null` and no batch row touched; (b) existing row ⇒ atomic `quantity: { increment }` and reuse; (c) no row ⇒ `inventoryBatch.create`, and on a P2002 whose target is the batch natural key (`isBatchKeyConflict`), re-find the natural key and reuse the winning row with an atomic increment — the GRN never fails for a legitimately shared physical batch. Every `goodsReceiptItem.create` persists `inventoryBatchId`. |
+| Invariant         | One physical batch per (item, tenant, batchNumber, lotNumber, expiryDate); each receipt atomically adds its quantity to exactly that row; attribution is recorded on the line.                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Proving tests     | `purchasing.service.spec.ts`: `createGRN records the exact batch id on the goods receipt line` (:930), `createGRN reuses an existing batch row and increments it (no duplicate)` (:994), `concurrent same-batch receipts resolve on P2002 by reusing the winning row` (:1055, two-party gate barrier; asserts both fulfill, 2 creates, both lines attributed to `batch-1`, one atomic increment), `a receipt without batch identity is not attributed to any batch row` (:1149).                                                                                                    |
+| DB constraint     | `inventory_batches` unique natural key (line 13 of the migration) makes the P2002 race impossible to lose; FK on `goods_receipt_items.inventoryBatchId`.                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ## 7. Fix: `cancelGRN` — CAS Reversal & Attribution Ownership
 
 **File:** `apps/api/src/modules/purchasing/purchasing.service.ts`, `cancelGRN` at line 1255.
+
 - Status claim (`goodsReceipt.updateMany`, `CANCELLED`) guards double-cancel; per line: PO-item received-quantity decrement → inventory item CAS `updateMany` with `where { id, tenantId, currentQuantity: { gte: receivedQty }, availableQuantity: { gte: receivedQty } }`, atomic `decrement`, `version: { increment: 1 }`, count 0 → `BadRequestException` (lines 1286–1303) → ADJUSTMENT movement with negative Decimal quantity (`new Prisma.Decimal(item.quantityReceived).neg()`, 4-dp totalCost, lines 1305–1323) → **batch reversal exclusively id-targeted**: `inventoryBatch.updateMany({ where: { id: item.inventoryBatchId, isActive: true, quantity: { gte: receivedQty } }, data: { quantity: { decrement: receivedQty } } })`, count 0 → reject; legacy `inventoryBatchId == null` lines skipped by design (lines 1329–1345).
 
-| Element | Detail |
-| --- | --- |
-| Previous behavior | Cancellation subtracted stock by "until zero" arithmetic on whatever the item had, with no ownership check; could reverse GRN-B stock; no batch reversal targeting. |
-| New behavior | Reversal is CAS-guarded and attributed: it can only decrement exactly the batch row this GRN line references, and only if that row still holds ≥ the received quantity. Insufficient/consumed stock ⇒ the cancel is rejected. Legacy rows without attribution are skipped (they never had a batch row). |
-| Invariant | `CANCEL(GRN-A)` reverses ONLY inventory attributable to GRN-A and never consumes GRN-B's attributable stock; repeat cancel idempotent; concurrent cancel = no double reversal; movement history accurate (one ADJUSTMENT movement, negative quantity, exact totalCost). |
-| Proving tests | `purchasing.service.spec.ts` P1-05 block (:726): `cancelling GRN-A reverses only A quantity on a shared batch; B stock stays intact` (:764), `a second sequential cancel of an already-cancelled GRN is idempotent` (:801), `concurrent cancels of the same GRN reverse exactly once (status claim + barrier)` (:815 — two-party gate, one `BadRequestException`, final item/batch state 0, one movement, one PO update), `concurrent cancels of two GRNs sharing one batch drain it by the exact sum` (:865 — final batch state 0 with exact `[3, 5]` decrements), `cancelling GRN-A never touches a different batch row belonging to GRN-B` (:1203), `cancellation writes exactly one accurate ADJUSTMENT movement for the GRN` (:1256), plus the `cancelGRN` describe cases: CAS shape (:ref), consumed-batch rejection, legacy null-attribution skip, concurrent-claim rejection, negative decimal totalCost. |
-| DB constraint | FK attribution (`goods_receipt_items.inventoryBatchId`) is the ONLY ownership source; the batch decrement is a guarded single-row CAS. |
+| Element           | Detail                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Previous behavior | Cancellation subtracted stock by "until zero" arithmetic on whatever the item had, with no ownership check; could reverse GRN-B stock; no batch reversal targeting.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| New behavior      | Reversal is CAS-guarded and attributed: it can only decrement exactly the batch row this GRN line references, and only if that row still holds ≥ the received quantity. Insufficient/consumed stock ⇒ the cancel is rejected. Legacy rows without attribution are skipped (they never had a batch row).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Invariant         | `CANCEL(GRN-A)` reverses ONLY inventory attributable to GRN-A and never consumes GRN-B's attributable stock; repeat cancel idempotent; concurrent cancel = no double reversal; movement history accurate (one ADJUSTMENT movement, negative quantity, exact totalCost).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Proving tests     | `purchasing.service.spec.ts` P1-05 block (:726): `cancelling GRN-A reverses only A quantity on a shared batch; B stock stays intact` (:764), `a second sequential cancel of an already-cancelled GRN is idempotent` (:801), `concurrent cancels of the same GRN reverse exactly once (status claim + barrier)` (:815 — two-party gate, one `BadRequestException`, final item/batch state 0, one movement, one PO update), `concurrent cancels of two GRNs sharing one batch drain it by the exact sum` (:865 — final batch state 0 with exact `[3, 5]` decrements), `cancelling GRN-A never touches a different batch row belonging to GRN-B` (:1203), `cancellation writes exactly one accurate ADJUSTMENT movement for the GRN` (:1256), plus the `cancelGRN` describe cases: CAS shape (:ref), consumed-batch rejection, legacy null-attribution skip, concurrent-claim rejection, negative decimal totalCost. |
+| DB constraint     | FK attribution (`goods_receipt_items.inventoryBatchId`) is the ONLY ownership source; the batch decrement is a guarded single-row CAS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ## 8. Fix: `updateItem` — Real Version CAS with `ConflictException`
 
 **File:** `apps/api/src/modules/inventory/inventory.service.ts`, `updateItem` at line 461.
+
 - `updateMany` at lines 478–505: `where: { id, tenantId, version: item.version, deletedAt: null }`, atomic quantity writes, `version: { increment: 1 }`; `if (updatedCount.count !== 1)` → `ConflictException('Inventory item was modified by another request. Reload and retry.')` (lines 506–510); post-write re-read for the return value.
 
-| Element | Detail |
-| --- | --- |
-| Previous behavior | `inventoryItem.update` unconditionally applied a stale read's quantities (no version guard). |
-| New behavior | The write only matches when the version the caller read is still current; otherwise `ConflictException`; every successful write bumps the version. |
-| Invariant | Two concurrent writers cannot both commit; exactly one wins; the loser must reload. |
-| Proving tests | `inventory.service.spec.ts` P1-06 block (:605): `updateItem pushes the version into the WHERE and increments it on success` (:617 — asserts `where.version: 3` and `version: { increment: 1 }`), `updateItem throws ConflictException when a concurrent write already bumped the version` (:639), `concurrent updateItem calls serialize on the version — the stale caller gets ConflictException` (:651 — two-party gate; final version 4, one `ConflictException`, exactly one fulfilled). |
-| DB constraint | Version column on `inventory_items` (pre-existing) used as the optimistic-lock token. |
+| Element           | Detail                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Previous behavior | `inventoryItem.update` unconditionally applied a stale read's quantities (no version guard).                                                                                                                                                                                                                                                                                                                                                                                                 |
+| New behavior      | The write only matches when the version the caller read is still current; otherwise `ConflictException`; every successful write bumps the version.                                                                                                                                                                                                                                                                                                                                           |
+| Invariant         | Two concurrent writers cannot both commit; exactly one wins; the loser must reload.                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Proving tests     | `inventory.service.spec.ts` P1-06 block (:605): `updateItem pushes the version into the WHERE and increments it on success` (:617 — asserts `where.version: 3` and `version: { increment: 1 }`), `updateItem throws ConflictException when a concurrent write already bumped the version` (:639), `concurrent updateItem calls serialize on the version — the stale caller gets ConflictException` (:651 — two-party gate; final version 4, one `ConflictException`, exactly one fulfilled). |
+| DB constraint     | Version column on `inventory_items` (pre-existing) used as the optimistic-lock token.                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ## 9. Fix: Adjustments & Waste — Atomic Arithmetic
 
 **File:** `apps/api/src/modules/inventory/inventory.service.ts`
+
 - `createAdjustment` INCREASE: `inventoryItem.updateMany` with `currentQuantity: { increment }`, `availableQuantity: { increment }`, `version: { increment: 1 }`, count≠1 → NotFound (lines 711–721).
 - `approveAdjustment`: status claim `stockAdjustment.updateMany({ where: { id, tenantId, status: 'PENDING' }, data: { status: 'APPROVED' } })`, count≠1 → BadRequest (lines 780–784); DECREASE uses `where { currentQuantity: { gte: decrementQty } }` atomic `decrement` + `version` increment, count≠1 → `BadRequestException('Insufficient stock to apply this adjustment')` (lines 798–811), then available-quantity CAS (lines 813–826).
 
-| Element | Detail |
-| --- | --- |
-| Previous behavior | DECREASE approval decremented by absolute read→compute→write without a `gte` guard. |
-| New behavior | Every mutation is atomic arithmetic behind a CAS/claim; stock can never be driven negative by a concurrent DECREASE. |
-| Invariant | Concurrent consumers of the same stock cannot both commit; no negative inventory. |
-| Proving tests | Pre-existing P1-06 tests: `should not lose stock when two concurrent INCREASE adjustments race (P1-06)` (:294), `should reject when the status claim fails because it is no longer PENDING (P1-06)` (:363), `should reject a DECREASE when stock is insufficient (P1-06)` (:378), `should atomically increment on INCREASE approval (P1-06)` (:408). New: `two DECREASE approvals sharing one item cannot overdraw — the gte guard rejects the loser` (:747 — final item quantity 20, one `BadRequestException`, one movement). |
-| DB constraint | CAS predicates (`status`, `gte`) evaluated by PostgreSQL on the live row. |
+| Element           | Detail                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Previous behavior | DECREASE approval decremented by absolute read→compute→write without a `gte` guard.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| New behavior      | Every mutation is atomic arithmetic behind a CAS/claim; stock can never be driven negative by a concurrent DECREASE.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Invariant         | Concurrent consumers of the same stock cannot both commit; no negative inventory.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Proving tests     | Pre-existing P1-06 tests: `should not lose stock when two concurrent INCREASE adjustments race (P1-06)` (:294), `should reject when the status claim fails because it is no longer PENDING (P1-06)` (:363), `should reject a DECREASE when stock is insufficient (P1-06)` (:378), `should atomically increment on INCREASE approval (P1-06)` (:408). New: `two DECREASE approvals sharing one item cannot overdraw — the gte guard rejects the loser` (:747 — final item quantity 20, one `BadRequestException`, one movement). |
+| DB constraint     | CAS predicates (`status`, `gte`) evaluated by PostgreSQL on the live row.                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## 10. Fix: Cycle-Count Reconcile — Claim + Variance CAS
 
 **File:** `apps/api/src/modules/cycle-counts/cycle-count.service.ts`
+
 - Status claim `cycleCount.updateMany({ where: { id, tenantId, status: { in: [COMPLETED, APPROVED] } }, data: { status: RECONCILED } })`, count≠1 → BadRequest (lines 258–276).
 - Per item: `Prisma.Decimal` variance; skip zero; negative variance ⇒ guarded `updateMany` decrement with `currentQuantity/availableQuantity gte magnitude`, positive ⇒ atomic increment, both with `version: { increment: 1 }`; count≠1 → BadRequest (lines 281–306).
 
-| Element | Detail |
-| --- | --- |
-| Previous behavior | Reconcile applied variance by absolute read→compute→write; no claim, no guard. |
-| New behavior | Reconcile serializes on a status claim (exactly-once), and each item variance is applied with CAS + Decimal arithmetic (no float). |
-| Invariant | Reconcile applied exactly once per count; variance can never push quantities negative. |
-| Proving test | `cycle-count.service.spec.ts` reconcile claim-rejection case (count 0 → BadRequest) plus variance CAS shape assertions. |
-| DB constraint | `cycle_count.status` transition claim; `gte` guards on `inventory_items` quantities. |
+| Element           | Detail                                                                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Previous behavior | Reconcile applied variance by absolute read→compute→write; no claim, no guard.                                                     |
+| New behavior      | Reconcile serializes on a status claim (exactly-once), and each item variance is applied with CAS + Decimal arithmetic (no float). |
+| Invariant         | Reconcile applied exactly once per count; variance can never push quantities negative.                                             |
+| Proving test      | `cycle-count.service.spec.ts` reconcile claim-rejection case (count 0 → BadRequest) plus variance CAS shape assertions.            |
+| DB constraint     | `cycle_count.status` transition claim; `gte` guards on `inventory_items` quantities.                                               |
 
 ## 11. Fix: Transfers — Status Claims + GTE-CAS
 
 **File:** `apps/api/src/modules/transfers/transfers.service.ts`
+
 - `startTransfer` (:357): `branchTransfer.updateMany` claim `APPROVED → IN_TRANSIT` (:368) then per-item CAS `inventoryItem.updateMany` (`gte` on both quantities, atomic decrement, version increment) (:396).
 - `receiveTransfer` (:464): claim `IN_TRANSIT → RECEIVED` at tx start (:475).
 - `cancelTransfer` (:586): claim `notIn [RECEIVED, CANCELLED] → CANCELLED` at tx start (:602).
 
-| Element | Detail |
-| --- | --- |
-| Previous behavior | Transfer steps applied unguarded read→compute→write quantity changes. |
-| New behavior | Every transfer step claims a single status transition (loser rejected) and each quantity change is a guarded CAS. |
-| Invariant | A transfer can be shipped/received/cancelled exactly once; item quantities cannot be double-decremented by concurrent transfers. |
-| Proving tests | `transfers.service.spec.ts` updated: start tests assert the `updateMany` claim + gte-CAS shape and that insufficient quantity skips decrement/movement; receive/cancel tests assert the respective claims; concurrent start/claim-rejection cases retained. |
-| DB constraint | `branch_transfer.status` claim; `gte` guards on `inventory_items`. |
+| Element           | Detail                                                                                                                                                                                                                                                      |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Previous behavior | Transfer steps applied unguarded read→compute→write quantity changes.                                                                                                                                                                                       |
+| New behavior      | Every transfer step claims a single status transition (loser rejected) and each quantity change is a guarded CAS.                                                                                                                                           |
+| Invariant         | A transfer can be shipped/received/cancelled exactly once; item quantities cannot be double-decremented by concurrent transfers.                                                                                                                            |
+| Proving tests     | `transfers.service.spec.ts` updated: start tests assert the `updateMany` claim + gte-CAS shape and that insufficient quantity skips decrement/movement; receive/cancel tests assert the respective claims; concurrent start/claim-rejection cases retained. |
+| DB constraint     | `branch_transfer.status` claim; `gte` guards on `inventory_items`.                                                                                                                                                                                          |
 
 ## 12. Fix: Recipes Deduction — Serialized Locking (`FOR UPDATE`)
 
 **File:** `apps/api/src/modules/recipes/recipes.service.ts`
+
 - Added per-item `SELECT id FROM inventory_items WHERE id = … FOR UPDATE` before the read→compute→write deduction (lines 633 and 658), serializing concurrent deductions across orders sharing an ingredient.
 
-| Element | Detail |
-| --- | --- |
+| Element           | Detail                                                                                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Previous behavior | Deduction read→compute→write inside a transaction with no row lock; two orders sharing an ingredient could both compute from the same base and lose one deduction. |
-| New behavior | Ingredient rows are locked in a deterministic order before the read; concurrent deductions serialize. |
-| Invariant | Two concurrent orders using the same ingredient each deduct exactly once; final quantity reflects both. |
-| Proving test | `recipes.service.deduction.spec.ts` (passes unchanged; the `tx.$queryRaw` mock tolerates the new lock call). |
-| DB constraint | PostgreSQL row lock via `SELECT … FOR UPDATE`. |
+| New behavior      | Ingredient rows are locked in a deterministic order before the read; concurrent deductions serialize.                                                              |
+| Invariant         | Two concurrent orders using the same ingredient each deduct exactly once; final quantity reflects both.                                                            |
+| Proving test      | `recipes.service.deduction.spec.ts` (passes unchanged; the `tx.$queryRaw` mock tolerates the new lock call).                                                       |
+| DB constraint     | PostgreSQL row lock via `SELECT … FOR UPDATE`.                                                                                                                     |
 
 ## 13. Invariants & Proving Tests — P1-05 (10 scenarios)
 
 All in `apps/api/src/modules/purchasing/tests/purchasing.service.spec.ts`, `describe('P1-05 concurrency & attribution scenarios')` (:726). Each concurrency test uses a real two-party gate (both in-flight before either commits) and asserts **final state**.
 
-| # | Scenario | Test (line) | Asserts |
-| --- | --- | --- | --- |
-| 1 | Shared-batch cancellation reverses only GRN-A quantity; GRN-B stock intact | `cancelling GRN-A reverses only A quantity on a shared batch; B stock stays intact` (:764) | Decrements `[5]`, touched batch `['batch-1']`, final item & batch qty 3. |
-| 2 | Repeat sequential cancel idempotent | `a second sequential cancel of an already-cancelled GRN is idempotent` (:801) | `BadRequestException`; no item/batch/movement writes. |
-| 3 | Concurrent same-GRN double-cancel ⇒ exact-once reversal | `concurrent cancels of the same GRN reverse exactly once (status claim + barrier)` (:815) | One rejection (`BadRequestException`), final item/batch 0, one movement, one PO update. |
-| 4 | Concurrent cancels of two GRNs sharing one batch drain by exact sum | `concurrent cancels of two GRNs sharing one batch drain it by the exact sum` (:865) | Both fulfill, final batch & item 0, decrements `[3, 5]`, two movements. |
-| 5 | Exact `inventoryBatchId` attribution on create | `createGRN records the exact batch id on the goods receipt line` (:930) | Line carries `batch-1`; create data batchNumber `B1`, quantity 3. |
-| 6 | Existing batch reuse, no duplicate | `createGRN reuses an existing batch row and increments it (no duplicate)` (:994) | `inventoryBatch.create` not called; atomic increment; line attributed. |
-| 7 | Concurrent same-batch P2002 resolves to one row | `concurrent same-batch receipts resolve on P2002 by reusing the winning row` (:1055) | Both fulfill; 2 creates; both lines `batch-1`; one atomic increment. |
-| 8 | No-attribution receipt leaves no batch row | `a receipt without batch identity is not attributed to any batch row` (:1149) | Line `inventoryBatchId: null`; no `findFirst`/`create`. |
-| 9 | GRN-A never touches GRN-B's batch row | `cancelling GRN-A never touches a different batch row belonging to GRN-B` (:1203) | Only `batch-1` targeted. |
-| 10 | Exact single ADJUSTMENT movement (−qty, −totalCost) | `cancellation writes exactly one accurate ADJUSTMENT movement for the GRN` (:1256) | `Number(quantity) === -3.4`, `totalCost === -6.8`, movement count 1. |
+| #   | Scenario                                                                   | Test (line)                                                                                | Asserts                                                                                 |
+| --- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| 1   | Shared-batch cancellation reverses only GRN-A quantity; GRN-B stock intact | `cancelling GRN-A reverses only A quantity on a shared batch; B stock stays intact` (:764) | Decrements `[5]`, touched batch `['batch-1']`, final item & batch qty 3.                |
+| 2   | Repeat sequential cancel idempotent                                        | `a second sequential cancel of an already-cancelled GRN is idempotent` (:801)              | `BadRequestException`; no item/batch/movement writes.                                   |
+| 3   | Concurrent same-GRN double-cancel ⇒ exact-once reversal                    | `concurrent cancels of the same GRN reverse exactly once (status claim + barrier)` (:815)  | One rejection (`BadRequestException`), final item/batch 0, one movement, one PO update. |
+| 4   | Concurrent cancels of two GRNs sharing one batch drain by exact sum        | `concurrent cancels of two GRNs sharing one batch drain it by the exact sum` (:865)        | Both fulfill, final batch & item 0, decrements `[3, 5]`, two movements.                 |
+| 5   | Exact `inventoryBatchId` attribution on create                             | `createGRN records the exact batch id on the goods receipt line` (:930)                    | Line carries `batch-1`; create data batchNumber `B1`, quantity 3.                       |
+| 6   | Existing batch reuse, no duplicate                                         | `createGRN reuses an existing batch row and increments it (no duplicate)` (:994)           | `inventoryBatch.create` not called; atomic increment; line attributed.                  |
+| 7   | Concurrent same-batch P2002 resolves to one row                            | `concurrent same-batch receipts resolve on P2002 by reusing the winning row` (:1055)       | Both fulfill; 2 creates; both lines `batch-1`; one atomic increment.                    |
+| 8   | No-attribution receipt leaves no batch row                                 | `a receipt without batch identity is not attributed to any batch row` (:1149)              | Line `inventoryBatchId: null`; no `findFirst`/`create`.                                 |
+| 9   | GRN-A never touches GRN-B's batch row                                      | `cancelling GRN-A never touches a different batch row belonging to GRN-B` (:1203)          | Only `batch-1` targeted.                                                                |
+| 10  | Exact single ADJUSTMENT movement (−qty, −totalCost)                        | `cancellation writes exactly one accurate ADJUSTMENT movement for the GRN` (:1256)         | `Number(quantity) === -3.4`, `totalCost === -6.8`, movement count 1.                    |
 
 Plus the `cancelGRN` describe cases (CAS shape, consumed-batch rejection, legacy skip, concurrent-claim rejection).
 
@@ -184,40 +193,41 @@ Plus the `cancelGRN` describe cases (CAS shape, consumed-batch rejection, legacy
 
 Existing 5 in `apps/api/src/modules/inventory/tests/inventory.service.spec.ts`; new block `describe('P1-06 concurrency & lost-update scenarios')` (:605).
 
-| # | Scenario | Test (line) | Asserts |
-| --- | --- | --- | --- |
-| 1 | Concurrent INCREASE adjustments never lose stock | `should not lose stock when two concurrent INCREASE adjustments race (P1-06)` (:294) | Both fulfill; 2 atomic increments; 2 movements. |
-| 2 | Adjustment approval claim serializes | `should reject when the status claim fails because it is no longer PENDING (P1-06)` (:363) | `BadRequestException`; no movement. |
-| 3 | DECREASE approval insufficient stock | `should reject a DECREASE when stock is insufficient (P1-06)` (:378) | `gte`-guarded `updateMany` shape; no movement. |
-| 4 | INCREASE approval atomic | `should atomically increment on INCREASE approval (P1-06)` (:408) | `increment` 10 on both quantities; status APPROVED. |
-| 5 | Concurrent waste overdraw ⇒ one winner | `should allow only one of two concurrent waste entries that overdraw stock (P1-06)` (:443) | One `BadRequestException`; one movement; 2 claims. |
-| 6 | `updateItem` version-in-WHERE | `updateItem pushes the version into the WHERE and increments it on success` (:617) | `where.version: 3`; `version: { increment: 1 }`; available recomputed. |
-| 7 | `updateItem` stale version ⇒ `ConflictException` | `updateItem throws ConflictException when a concurrent write already bumped the version` (:639) | `ConflictException` on count 0. |
-| 8 | Concurrent `updateItem` ⇒ exactly one wins | `concurrent updateItem calls serialize on the version — the stale caller gets ConflictException` (:651) | One `ConflictException`; final version 4; 2 writes attempted. |
-| 9 | Same DECREASE adjustment concurrent approval ⇒ applied once | `concurrent approvals of the same DECREASE adjustment apply the stock change exactly once` (:686) | One `BadRequestException`; final item qty 20; one movement. |
-| 10 | Two DECREASEs sharing stock cannot overdraw | `two DECREASE approvals sharing one item cannot overdraw — the gte guard rejects the loser` (:747) | One `BadRequestException`; final item qty 20; one movement. |
+| #   | Scenario                                                    | Test (line)                                                                                             | Asserts                                                                |
+| --- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 1   | Concurrent INCREASE adjustments never lose stock            | `should not lose stock when two concurrent INCREASE adjustments race (P1-06)` (:294)                    | Both fulfill; 2 atomic increments; 2 movements.                        |
+| 2   | Adjustment approval claim serializes                        | `should reject when the status claim fails because it is no longer PENDING (P1-06)` (:363)              | `BadRequestException`; no movement.                                    |
+| 3   | DECREASE approval insufficient stock                        | `should reject a DECREASE when stock is insufficient (P1-06)` (:378)                                    | `gte`-guarded `updateMany` shape; no movement.                         |
+| 4   | INCREASE approval atomic                                    | `should atomically increment on INCREASE approval (P1-06)` (:408)                                       | `increment` 10 on both quantities; status APPROVED.                    |
+| 5   | Concurrent waste overdraw ⇒ one winner                      | `should allow only one of two concurrent waste entries that overdraw stock (P1-06)` (:443)              | One `BadRequestException`; one movement; 2 claims.                     |
+| 6   | `updateItem` version-in-WHERE                               | `updateItem pushes the version into the WHERE and increments it on success` (:617)                      | `where.version: 3`; `version: { increment: 1 }`; available recomputed. |
+| 7   | `updateItem` stale version ⇒ `ConflictException`            | `updateItem throws ConflictException when a concurrent write already bumped the version` (:639)         | `ConflictException` on count 0.                                        |
+| 8   | Concurrent `updateItem` ⇒ exactly one wins                  | `concurrent updateItem calls serialize on the version — the stale caller gets ConflictException` (:651) | One `ConflictException`; final version 4; 2 writes attempted.          |
+| 9   | Same DECREASE adjustment concurrent approval ⇒ applied once | `concurrent approvals of the same DECREASE adjustment apply the stock change exactly once` (:686)       | One `BadRequestException`; final item qty 20; one movement.            |
+| 10  | Two DECREASEs sharing stock cannot overdraw                 | `two DECREASE approvals sharing one item cannot overdraw — the gte guard rejects the loser` (:747)      | One `BadRequestException`; final item qty 20; one movement.            |
 
 Cross-module (P1-06 "lost-update paths"): GRN receive/cancel (`inventoryItem` atomic increment/CAS — §6/§7), cycle-count reconcile (§10), transfers (§11), recipe deduction `FOR UPDATE` (§12).
 
 ## 15. Verification Gates & Migration Integrity
 
-| Gate | Result |
-| --- | --- |
-| Full Jest suite (`npx nx test api`) | **84/84 suites, 1044/1044 tests PASS** (baseline 1027 → +17; zero regressions; the 8 previously-closed P1 suites all green) |
-| TypeScript (`npx tsc --noEmit -p apps/api/tsconfig.app.json`) | PASS (exit 0) |
-| ESLint (`npx nx lint api`) | PASS — 0 errors (changed files auto-fixed; no non-prettier issues) |
-| Build (`npx nx build api`) | PASS — webpack compiled successfully |
-| `npx prisma validate` | PASS — schema valid |
-| `npx prisma migrate status` (live `tablofy_prod`) | PASS — **24 migrations, database schema is up to date** |
-| Health probe (built server, `GET /api/v1/health/live`) | **200** `{"status":"ok","info":{"database":{"status":"up"},"redis":{"status":"up"}},...}` |
-| Migration integrity | Add-only, non-destructive; live columns/index/FK verified; affected tables empty at apply time; pre-existing m4-4 checksum drift reconciled without reset (verified content-identical before proceeding). |
-| Coverage | No reduction — net +17 tests over the baseline; all touched modules gained assertions (no tests removed except one superseded legacy batch-reversal case replaced by three CAS tests). |
+| Gate                                                          | Result                                                                                                                                                                                                    |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Full Jest suite (`npx nx test api`)                           | **84/84 suites, 1044/1044 tests PASS** (baseline 1027 → +17; zero regressions; the 8 previously-closed P1 suites all green)                                                                               |
+| TypeScript (`npx tsc --noEmit -p apps/api/tsconfig.app.json`) | PASS (exit 0)                                                                                                                                                                                             |
+| ESLint (`npx nx lint api`)                                    | PASS — 0 errors (changed files auto-fixed; no non-prettier issues)                                                                                                                                        |
+| Build (`npx nx build api`)                                    | PASS — webpack compiled successfully                                                                                                                                                                      |
+| `npx prisma validate`                                         | PASS — schema valid                                                                                                                                                                                       |
+| `npx prisma migrate status` (live `tablofy_prod`)             | PASS — **24 migrations, database schema is up to date**                                                                                                                                                   |
+| Health probe (built server, `GET /api/v1/health/live`)        | **200** `{"status":"ok","info":{"database":{"status":"up"},"redis":{"status":"up"}},...}`                                                                                                                 |
+| Migration integrity                                           | Add-only, non-destructive; live columns/index/FK verified; affected tables empty at apply time; pre-existing m4-4 checksum drift reconciled without reset (verified content-identical before proceeding). |
+| Coverage                                                      | No reduction — net +17 tests over the baseline; all touched modules gained assertions (no tests removed except one superseded legacy batch-reversal case replaced by three CAS tests).                    |
 
 ## 16. Verdict, Deviations & Next Steps
 
 **Verdict: ✅ P1-05 and P1-06 are CLOSED.** Every mandated gate is green, both invariants are enforced at the database layer (unique natural key + FK attribution + CAS predicates), and each fix is proven by a concurrency test that reproduces a real race with a two-party barrier and asserts final database state.
 
 **Deviations / notes:**
+
 1. The migration batch also carried a pre-existing `loyalty_points_transactions` index rename (Prisma-generated, same schema as recorded) — verified content-identical before applying; no schema drift remains.
 2. `InventoryBatch` reuse on concurrent P2002 treats the conflict as "another receipt created this physical batch first" and reuses it — never fails a legitimate shared-batch GRN.
 3. Legacy GRN lines with `inventoryBatchId = null` are skipped during cancellation batch reversal by design (they predate attribution and never owned a batch row); their item-level reversal remains CAS-guarded.

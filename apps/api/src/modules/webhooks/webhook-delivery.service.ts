@@ -7,7 +7,6 @@ import * as crypto from 'crypto';
 
 @Injectable()
 export class WebhookDeliveryService {
-  private readonly maxRetries: number;
   private readonly initialBackoffMs: number;
   private readonly backoffFactor: number;
   private readonly maxBackoffMs: number;
@@ -18,7 +17,6 @@ export class WebhookDeliveryService {
     private readonly configService: ConfigService,
     private readonly logger: AppLoggerService,
   ) {
-    this.maxRetries = this.configService.get('webhook.maxRetries', 5);
     this.initialBackoffMs = this.configService.get('webhook.initialBackoffMs', 1000);
     this.backoffFactor = this.configService.get('webhook.backoffFactor', 2);
     this.maxBackoffMs = this.configService.get('webhook.maxBackoffMs', 3600000);
@@ -119,7 +117,8 @@ export class WebhookDeliveryService {
     if (!delivery) return;
 
     const attemptCount = delivery.attemptCount + 1;
-    const isExhausted = attemptCount >= this.maxRetries;
+    const maxRetries = delivery.maxRetries || 1;
+    const isExhausted = attemptCount >= maxRetries;
 
     if (isExhausted) {
       await this.prisma.webhookDelivery.update({

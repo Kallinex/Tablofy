@@ -49,8 +49,12 @@ function checkFile(label, relativePath) {
 }
 
 const schema = read('prisma/schema.prisma');
-const M4_01 = read('prisma/migrations/20260802105959_m4_1_cascade_and_orphan_relations/migration.sql');
-const M4_03 = read('prisma/migrations/20260802111618_m4_3_soft_delete_and_updated_at_indexes/migration.sql');
+const M4_01 = read(
+  'prisma/migrations/20260802105959_m4_1_cascade_and_orphan_relations/migration.sql',
+);
+const M4_03 = read(
+  'prisma/migrations/20260802111618_m4_3_soft_delete_and_updated_at_indexes/migration.sql',
+);
 const M4_05 = read('prisma/migrations/20260802210000_m4_5_enum_conversions/migration.sql');
 const M4_06 = read('prisma/migrations/20260802180442_m4_6_decimal_precision/migration.sql');
 
@@ -102,7 +106,9 @@ const m4_01_cascades = count(M4_01, /ON DELETE CASCADE/g);
 if (curCascades === 122 && m4_01_cascades === 22) {
   ok(`22 cascade FKs added by M4-01 (schema total 122; baseline 100)`);
 } else {
-  fail(`Cascade count mismatch: schema=${curCascades} (expected 122), M4-01 stmts=${m4_01_cascades} (expected 22)`);
+  fail(
+    `Cascade count mismatch: schema=${curCascades} (expected 122), M4-01 stmts=${m4_01_cascades} (expected 22)`,
+  );
 }
 
 // 5b. Orphan relations (2 tables: membership_history, event_logs)
@@ -153,31 +159,43 @@ if (delAtCols === 126) {
 } else {
   fail(`deletedAt columns=${delAtCols} (expected 126)`);
 }
-  const updAtCols = count(schema, /updatedAt\s+DateTime\s+@updatedAt/g);
-  // 126 = 125 models + PaymentWebhookReceipt (the inbound webhook replay
-  // ledger added in phase 7 M5). CookiePreference stays excluded.
-  if (updAtCols === 126) {
-    ok('126 models carry updatedAt @updatedAt (CookiePreference excluded)');
-  } else {
-    fail(`updatedAt columns=${updAtCols} (expected 126)`);
-
+const updAtCols = count(schema, /updatedAt\s+DateTime\s+@updatedAt/g);
+// 126 = 125 models + PaymentWebhookReceipt (the inbound webhook replay
+// ledger added in phase 7 M5). CookiePreference stays excluded.
+if (updAtCols === 126) {
+  ok('126 models carry updatedAt @updatedAt (CookiePreference excluded)');
+} else {
+  fail(`updatedAt columns=${updAtCols} (expected 126)`);
 }
 
-  // 5g. 20 new enums (79 total = 58 baseline + 20 new + PaymentWebhookReceiptStatus)
-  const enumCount = count(schema, /^enum\s+\w+\s*\{/gm);
-  if (enumCount === 79) {
-    ok('79 enum declarations (58 baseline + 20 new + PaymentWebhookReceiptStatus)');
-  } else {
-    fail(`enum declarations=${enumCount} (expected 79)`);
-
+// 5g. 20 new enums (79 total = 58 baseline + 20 new + PaymentWebhookReceiptStatus)
+const enumCount = count(schema, /^enum\s+\w+\s*\{/gm);
+if (enumCount === 79) {
+  ok('79 enum declarations (58 baseline + 20 new + PaymentWebhookReceiptStatus)');
+} else {
+  fail(`enum declarations=${enumCount} (expected 79)`);
 }
 const NEW_ENUMS = [
-  'NotificationType', 'ReportType', 'ReportStatus', 'ApprovalStatus',
-  'GiftCardStatus', 'GiftCardIssueType', 'GiftCardTransactionType',
-  'WebhookDeliveryStatus', 'WebhookEventType', 'BackupRecordType',
-  'BackupRecordStatus', 'ExportFormat', 'SupplierStatus',
-  'StockAdjustmentStatus', 'InventoryCountStatus', 'ExpirationAlertType',
-  'CycleCountType', 'ReportFormat', 'ReportExportStatus', 'ConsentType',
+  'NotificationType',
+  'ReportType',
+  'ReportStatus',
+  'ApprovalStatus',
+  'GiftCardStatus',
+  'GiftCardIssueType',
+  'GiftCardTransactionType',
+  'WebhookDeliveryStatus',
+  'WebhookEventType',
+  'BackupRecordType',
+  'BackupRecordStatus',
+  'ExportFormat',
+  'SupplierStatus',
+  'StockAdjustmentStatus',
+  'InventoryCountStatus',
+  'ExpirationAlertType',
+  'CycleCountType',
+  'ReportFormat',
+  'ReportExportStatus',
+  'ConsentType',
 ];
 let enumsOk = true;
 for (const en of NEW_ENUMS) {
@@ -243,7 +261,10 @@ if (usageSvc.includes('scanKeys') && !/\.keys\(/.test(usageSvc)) {
 }
 
 const ttlRe = /cacheService\.(set|getOrSet)\([^)]*,\s*\d+\s*\)/;
-for (const [label, content] of [['orders.service.ts', ordersSvc], ['inventory.service.ts', invSvc]]) {
+for (const [label, content] of [
+  ['orders.service.ts', ordersSvc],
+  ['inventory.service.ts', invSvc],
+]) {
   if (ttlRe.test(content)) {
     fail(`${label} still has hardcoded numeric TTL`);
   } else if (content.includes('CACHE_TTL.')) {
@@ -253,7 +274,10 @@ for (const [label, content] of [['orders.service.ts', ordersSvc], ['inventory.se
   }
 }
 
-const stockEndpoints = invCtrl.match(/@Get\('(low-stock|critical-stock|out-of-stock)'\)\s+async \w+\(\s*@Query\(\) query: QueryInventoryDto/g) || [];
+const stockEndpoints =
+  invCtrl.match(
+    /@Get\('(low-stock|critical-stock|out-of-stock)'\)\s+async \w+\(\s*@Query\(\) query: QueryInventoryDto/g,
+  ) || [];
 if (stockEndpoints.length === 3) {
   ok('low-stock / critical-stock / out-of-stock handlers use @Query() QueryInventoryDto');
 } else {
@@ -295,7 +319,9 @@ try {
 } catch (e) {
   const msg = String(e.stderr || e.stdout || e);
   if (msg.includes('threshold')) {
-    info('Full-suite coverage run reports pre-existing threshold gaps on non-M4 paths (documented; out of scope)');
+    info(
+      'Full-suite coverage run reports pre-existing threshold gaps on non-M4 paths (documented; out of scope)',
+    );
   } else {
     fail('Coverage run failed unexpectedly');
   }
@@ -323,20 +349,26 @@ const cacheCov = parseLcov('cache.service.ts');
 const invCov = parseLcov('inventory.service.ts');
 
 if (cacheCov && cacheCov.lines >= 70 && cacheCov.funcs >= 70 && cacheCov.branches >= 50) {
-  ok(`cache.service.ts coverage meets threshold (lines ${cacheCov.lines.toFixed(1)}%, funcs ${cacheCov.funcs.toFixed(1)}%, branches ${cacheCov.branches.toFixed(1)}%)`);
+  ok(
+    `cache.service.ts coverage meets threshold (lines ${cacheCov.lines.toFixed(1)}%, funcs ${cacheCov.funcs.toFixed(1)}%, branches ${cacheCov.branches.toFixed(1)}%)`,
+  );
 } else {
   fail(`cache.service.ts coverage below threshold (${JSON.stringify(cacheCov)})`);
 }
 
 if (invCov && invCov.lines >= 20 && invCov.funcs >= 15 && invCov.branches >= 15) {
-  ok(`inventory.service.ts coverage meets threshold (lines ${invCov.lines.toFixed(1)}%, funcs ${invCov.funcs.toFixed(1)}%, branches ${invCov.branches.toFixed(1)}%)`);
+  ok(
+    `inventory.service.ts coverage meets threshold (lines ${invCov.lines.toFixed(1)}%, funcs ${invCov.funcs.toFixed(1)}%, branches ${invCov.branches.toFixed(1)}%)`,
+  );
 } else {
   fail(`inventory.service.ts coverage below threshold (${JSON.stringify(invCov)})`);
 }
 
 const ordersCov = parseLcov('orders.service.ts');
 if (ordersCov) {
-  info(`orders.service.ts coverage ${ordersCov.lines.toFixed(1)}% lines vs pre-existing 60% threshold (pre-existing gap, documented)`);
+  info(
+    `orders.service.ts coverage ${ordersCov.lines.toFixed(1)}% lines vs pre-existing 60% threshold (pre-existing gap, documented)`,
+  );
 }
 
 // ============================================================

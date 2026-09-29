@@ -31,7 +31,7 @@ function collectRoleRoutes(): RouteRef[] {
       const proto = cls.prototype;
       for (const methodName of Object.getOwnPropertyNames(proto)) {
         if (methodName === 'constructor') continue;
-        const fn = proto[methodName] as unknown;
+        const fn = proto[methodName] as object;
         if (Reflect.getMetadata(PATH_METADATA, fn) === undefined) continue;
 
         const roles = (Reflect.getMetadata(ROLES_KEY, fn) as string[] | undefined) || [];

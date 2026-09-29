@@ -5,6 +5,7 @@
 ### Added
 
 #### Test Factories (10 files)
+
 - `apps/api/src/test/factories/user.factory.ts`
 - `apps/api/src/test/factories/tenant.factory.ts`
 - `apps/api/src/test/factories/order.factory.ts`
@@ -17,9 +18,11 @@
 - `apps/api/src/test/factories/index.ts`
 
 #### Global Test Setup (1 file)
+
 - `apps/api/src/test/setup/global-test-setup.ts`
 
 #### Integration Tests (6 files)
+
 - `apps/api/src/modules/auth/tests/integration/auth-flow.integration.spec.ts`
 - `apps/api/src/modules/tenants/tests/integration/tenant-isolation.integration.spec.ts`
 - `apps/api/src/modules/orders/tests/integration/order-crud.integration.spec.ts`
@@ -28,6 +31,7 @@
 - `apps/api/src/modules/gift-cards/tests/integration/rbac.integration.spec.ts`
 
 #### DTO Unit Tests (4 files)
+
 - `apps/api/src/modules/sales-analytics/tests/dto/sales-analytics.dto.spec.ts`
 - `apps/api/src/modules/inventory-analytics/tests/dto/inventory-analytics.dto.spec.ts`
 - `apps/api/src/modules/customer-analytics/tests/dto/customer-analytics.dto.spec.ts`

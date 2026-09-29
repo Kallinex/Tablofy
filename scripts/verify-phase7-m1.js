@@ -93,7 +93,10 @@ console.log('\n6. Webhook Secret Encryption (7.1.5 / P0-5)');
 const deliverySvc = read('modules/webhooks/webhook-delivery.service.ts');
 check('delivery service has encryptSecret method', deliverySvc.includes('encryptSecret'));
 check('delivery service has decryptSecret method', deliverySvc.includes('decryptSecret'));
-check('delivery service uses AES-256-GCM', deliverySvc.includes('aes-256-gcm') || deliverySvc.includes('aes-256'));
+check(
+  'delivery service uses AES-256-GCM',
+  deliverySvc.includes('aes-256-gcm') || deliverySvc.includes('aes-256'),
+);
 const webhookSvc = read('modules/webhooks/webhooks.service.ts');
 check('webhooks.service calls encryptSecret on create', webhookSvc.includes('encryptSecret'));
 const processor = read('modules/webhooks/webhook-processor.ts');
@@ -116,14 +119,29 @@ check('@Scopes decorator defined', scopesDecorator.includes('Scopes'));
 check('SCOPES_KEY metadata key defined', scopesDecorator.includes('SCOPES_KEY'));
 const apiKeyGuard = read('modules/api-keys/guards/api-key.guard.ts');
 check('ApiKeyGuard checks scopes metadata', apiKeyGuard.includes('SCOPES_KEY'));
-check('ApiKeyGuard derives scope from method', apiKeyGuard.includes('getRequest') || apiKeyGuard.includes('request.method') || apiKeyGuard.includes("'read'") || apiKeyGuard.includes('read'));
+check(
+  'ApiKeyGuard derives scope from method',
+  apiKeyGuard.includes('getRequest') ||
+    apiKeyGuard.includes('request.method') ||
+    apiKeyGuard.includes("'read'") ||
+    apiKeyGuard.includes('read'),
+);
 
 // 10. Tenant Status Check (7.1.8 / P1-2)
 console.log('\n9. Tenant Status Check in Login + JWT (7.1.8 / P1-2)');
-check('auth.service login() checks tenant status', authSvc.includes('ACTIVE') || authSvc.includes('TRIALING') || authSvc.includes('tenant.status'));
+check(
+  'auth.service login() checks tenant status',
+  authSvc.includes('ACTIVE') || authSvc.includes('TRIALING') || authSvc.includes('tenant.status'),
+);
 const jwtStrategy = read('modules/auth/strategies/jwt.strategy.ts');
-check('jwt.strategy validates tenant status', jwtStrategy.includes('tenant.status') || jwtStrategy.includes('tenantStatus'));
-check('jwt.strategy validates subscription', jwtStrategy.includes('subscription') || jwtStrategy.includes('Subscription'));
+check(
+  'jwt.strategy validates tenant status',
+  jwtStrategy.includes('tenant.status') || jwtStrategy.includes('tenantStatus'),
+);
+check(
+  'jwt.strategy validates subscription',
+  jwtStrategy.includes('subscription') || jwtStrategy.includes('Subscription'),
+);
 
 // 11. Logger Sanitization (7.1.10 / P0-13)
 console.log('\n10. Logger Sanitization (7.1.10 / P0-13)');
@@ -143,8 +161,14 @@ check('RevokedToken model in schema', schemaRead().includes('model RevokedToken'
 check('RevokedToken has jti field', schemaRead().includes('jti'));
 check('RevokedToken has expiresAt field', schemaRead().includes('expiresAt'));
 const redisSvc = read('redis/redis.service.ts');
-check('redis.service blacklistToken upserts to DB', redisSvc.includes('revokedToken') || redisSvc.includes('RevokedToken'));
-check('redis.service isTokenBlacklisted checks DB', redisSvc.includes('revokedToken') || redisSvc.includes('RevokedToken'));
+check(
+  'redis.service blacklistToken upserts to DB',
+  redisSvc.includes('revokedToken') || redisSvc.includes('RevokedToken'),
+);
+check(
+  'redis.service isTokenBlacklisted checks DB',
+  redisSvc.includes('revokedToken') || redisSvc.includes('RevokedToken'),
+);
 
 // 13. Prisma Schema — Migration-Ready
 console.log('\n12. Prisma Schema Changes');
@@ -163,7 +187,11 @@ try {
   // so it type-checks nothing: the gate used to pass no matter what the code
   // looked like. `tsconfig.app.json` is the project that actually holds the
   // source.
-  execSync('npx tsc --noEmit -p tsconfig.app.json 2>&1', { cwd: path.join(BASE, 'apps', 'api'), stdio: 'pipe', timeout: 120000 });
+  execSync('npx tsc --noEmit -p tsconfig.app.json 2>&1', {
+    cwd: path.join(BASE, 'apps', 'api'),
+    stdio: 'pipe',
+    timeout: 120000,
+  });
   tscPassed = true;
 } catch {
   // tsc failed
@@ -171,7 +199,11 @@ try {
 check('TypeScript compilation: 0 errors', tscPassed);
 
 try {
-  execSync('npx jest --passWithNoTests --silent 2>&1', { cwd: BASE, stdio: 'pipe', timeout: 120000 });
+  execSync('npx jest --passWithNoTests --silent 2>&1', {
+    cwd: BASE,
+    stdio: 'pipe',
+    timeout: 120000,
+  });
   jestPassed = true;
 } catch {
   // jest failed
@@ -179,7 +211,11 @@ try {
 check('Jest: all tests pass', jestPassed);
 
 try {
-  const result = execSync('npx eslint "apps/api/src/**/*.ts" --max-warnings=0 2>&1', { cwd: BASE, stdio: 'pipe', timeout: 120000 });
+  const result = execSync('npx eslint "apps/api/src/**/*.ts" --max-warnings=0 2>&1', {
+    cwd: BASE,
+    stdio: 'pipe',
+    timeout: 120000,
+  });
   eslintPassed = true;
 } catch {
   // eslint failed
@@ -191,7 +227,7 @@ console.log(`Results: ${passed} passed, ${failed} failed`);
 
 if (errors.length > 0) {
   console.log('\nFailed checks:');
-  errors.forEach(e => console.log(`  - ${e}`));
+  errors.forEach((e) => console.log(`  - ${e}`));
 }
 
 const total = passed + failed;

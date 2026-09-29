@@ -58,7 +58,9 @@ describe('ForecastingDashboardService', () => {
         ])
         .mockResolvedValueOnce([{ inventoryItemId: 'item-1' }]);
 
-      const result = await service.getInventoryForecast(testTenantId, {} as never);
+      const result = (await service.getInventoryForecast(testTenantId, {} as never)) as {
+        projections: unknown;
+      };
 
       const secondCall = prisma.consumptionRecord.findMany.mock.calls[1][0] as {
         where: Record<string, unknown>;

@@ -4,7 +4,17 @@ import { PrivacyService } from '../../privacy.service';
 
 describe('Privacy RBAC — Integration', () => {
   let controller: PrivacyController;
-  let privacyService: jest.Mocked<PrivacyService>;
+  let privacyService: {
+    recordConsent: jest.Mock;
+    revokeConsent: jest.Mock;
+    getConsentRecords: jest.Mock;
+    saveCookiePreferences: jest.Mock;
+    getCookiePreferences: jest.Mock;
+    requestDataExport: jest.Mock;
+    getUserExports: jest.Mock;
+    getExportStatus: jest.Mock;
+    anonymizeUser: jest.Mock;
+  };
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -28,7 +38,7 @@ describe('Privacy RBAC — Integration', () => {
     }).compile();
 
     controller = module.get<PrivacyController>(PrivacyController);
-    privacyService = module.get(PrivacyService) as jest.Mocked<PrivacyService>;
+    privacyService = module.get(PrivacyService) as unknown as typeof privacyService;
   });
 
   beforeEach(() => {

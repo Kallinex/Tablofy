@@ -5,6 +5,7 @@
 **Verdict:** ALL P1 FINDINGS CLOSED — ✅ VERIFIED
 
 **Final state (post all fixes):**
+
 - Full Jest: **55 suites / 519 tests — all passing**
 - `nx lint api`: **0 errors, 0 warnings**
 - `nx build api`: **0 errors**
@@ -62,6 +63,7 @@ A full pre-commit audit of the M5 working tree vs the `v7.5.0` baseline found th
 **Root cause:** `twoFactorEnabled` / `twoFactorSecret` columns existed on `User` but were unused; no TOTP flow.
 
 **Files:**
+
 - `apps/api/src/modules/auth/totp.ts` (new) — RFC 6238 SHA1-HMAC TOTP: `generateTotpSecret` (base32, 20 bytes → 32 chars), `generateTotp` (6 digits, 30 s step), `verifyTotp` (window ±1), `generateOtpauthUrl`.
 - `apps/api/src/modules/auth/dto/two-factor.dto.ts` (new) — `TwoFactorCodeDto` (`@Matches(/^\d{6}$/)`), `EnableTwoFactorDto`, `DisableTwoFactorDto`.
 - `apps/api/src/modules/auth/dto/login.dto.ts` — optional `twoFactorCode`.
@@ -97,6 +99,7 @@ A full pre-commit audit of the M5 working tree vs the `v7.5.0` baseline found th
 **Root cause:** `common/guards/roles.guard.ts` matched role names only; no granular permissions (e.g. `orders:delete`).
 
 **Files:**
+
 - `apps/api/src/common/rbac/role-permissions.ts` (new) — `ALL_PERMISSIONS` (14 permissions), `ROLE_PERMISSIONS` mapping (`SUPER_ADMIN`/`OWNER` = `['*']`), `hasPermissions(role, required)`.
 - `apps/api/src/common/decorators/permissions.decorator.ts` (new) — `@Permissions(...)`.
 - `apps/api/src/common/guards/roles.guard.ts` — now enforces both `@Roles` and `@Permissions`; violation throws `ForbiddenException('Insufficient permissions')`.
@@ -143,6 +146,7 @@ A full pre-commit audit of the M5 working tree vs the `v7.5.0` baseline found th
 **Root cause:** `createCategory`, `createUnit`, `deleteItem`, `createCount` performed entity write + audit log as separate non-transactional writes (partially applied mutations, lost audits).
 
 **Files:** `apps/api/src/modules/inventory/inventory.service.ts`:
+
 - `createCategory` (~line 57) — `tx.inventoryCategory.create` + `tx.auditLog.create` (`INVENTORY_CATEGORY_CREATED`) inside `prisma.$transaction`.
 - `createUnit` (~line 175) — `tx.inventoryUnit.create` + audit (`INVENTORY_UNIT_CREATED`) in transaction.
 - `deleteItem` (~line 603) — `tx.inventoryItem.update` + audit (`INVENTORY_ITEM_DELETED`) in transaction.
@@ -162,6 +166,7 @@ A full pre-commit audit of the M5 working tree vs the `v7.5.0` baseline found th
 **Root cause:** `modules/subscriptions/` was an empty directory; subscription management logic partially scattered in `tenants.service.ts`.
 
 **Files (new):**
+
 - `apps/api/src/modules/subscriptions/subscriptions.module.ts` — imports `AuditLogsModule` + `CommonModule` (for `PlanLimitsService`).
 - `apps/api/src/modules/subscriptions/dto/change-plan.dto.ts` — `@IsEnum(PlanType)` on `plan`.
 - `apps/api/src/modules/subscriptions/subscriptions.service.ts` — `getPlans()` (plan catalog from `PLAN_LIMITS`/`BRANCH_LIMITS`/`PLAN_PRICES`), `getCurrent(tenantId)` (subscription + `planLimitsService.getPlanUsage`), `changePlan(...)` (same-plan rejection, `assertDowngradeFits` against current resource counts, transactional plan update + `SUBSCRIPTION_PLAN_CHANGED` audit, reactivation on plan change from CANCELED), `cancel(...)`/`reactivate(...)` (transactional + `SUBSCRIPTION_CANCELED_NOTIFIED`/`SUBSCRIPTION_REACTIVATED_NOTIFIED` audit).
@@ -204,16 +209,16 @@ A full pre-commit audit of the M5 working tree vs the `v7.5.0` baseline found th
 
 ## Verification Summary
 
-| Gate | Result |
-|------|--------|
-| Full Jest (`npx jest --runInBand`) | **55 suites / 519 tests passing** |
-| Lint (`nx lint api`) | **0 errors** |
-| Build (`nx build api`) | **0 errors** |
-| Prisma (`npx prisma validate`) | **valid** |
-| m1 security/behavior harness | **55/55 (100%)** |
-| m2 test-suite harness | **33/33** |
-| m3 schema/regression harness | **39/39** |
-| m5 observability/infra harness | **39/39** |
-| m4 DB-audit harness | **30 static pass / 3 DB-dependent (environment-blocked)** |
+| Gate                               | Result                                                    |
+| ---------------------------------- | --------------------------------------------------------- |
+| Full Jest (`npx jest --runInBand`) | **55 suites / 519 tests passing**                         |
+| Lint (`nx lint api`)               | **0 errors**                                              |
+| Build (`nx build api`)             | **0 errors**                                              |
+| Prisma (`npx prisma validate`)     | **valid**                                                 |
+| m1 security/behavior harness       | **55/55 (100%)**                                          |
+| m2 test-suite harness              | **33/33**                                                 |
+| m3 schema/regression harness       | **39/39**                                                 |
+| m5 observability/infra harness     | **39/39**                                                 |
+| m4 DB-audit harness                | **30 static pass / 3 DB-dependent (environment-blocked)** |
 
 Environment-blocked (documented, not code defects): live Postgres/Redis/gateway-dependent checks — `prisma migrate status`, enum-data audit, orphan-data audit (`scripts/m4-audit-enum-data.js`, `scripts/m4-audit-orphan-data.js`), Stripe/Paymob webhook round-trips, real-disk health assertion.

@@ -6,7 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 const mockSendMail = jest.fn();
-const mockCreateTransport = jest.fn(() => ({ sendMail: mockSendMail }));
+const mockCreateTransport = jest.fn((..._args: unknown[]) => ({ sendMail: mockSendMail }));
 
 jest.mock('nodemailer', () => ({
   createTransport: (...args: unknown[]) => mockCreateTransport(...args),

@@ -34,8 +34,8 @@ async function waitForServer(url, maxRetries = 40) {
     try {
       const r = await request('GET', url);
       if (r.status === 200) return true;
-    } catch { }
-    await new Promise(r => setTimeout(r, 500));
+    } catch {}
+    await new Promise((r) => setTimeout(r, 500));
   }
   return false;
 }
@@ -54,8 +54,12 @@ async function main() {
     env: { ...process.env, PORT: String(VERIFY_PORT), NODE_ENV: 'testing' },
   });
   let serverOutput = '';
-  server.stdout.on('data', (d) => { serverOutput += d.toString(); });
-  server.stderr.on('data', (d) => { serverOutput += d.toString(); });
+  server.stdout.on('data', (d) => {
+    serverOutput += d.toString();
+  });
+  server.stderr.on('data', (d) => {
+    serverOutput += d.toString();
+  });
   const started = await waitForServer('/api/v1/health');
   if (!started) {
     console.log('Server output:', serverOutput.substring(0, 2000));
@@ -505,4 +509,7 @@ async function main() {
   process.exit(failed > 0 ? 1 : 0);
 }
 
-main().catch((e) => { console.error('Fatal:', e); process.exit(1); });
+main().catch((e) => {
+  console.error('Fatal:', e);
+  process.exit(1);
+});

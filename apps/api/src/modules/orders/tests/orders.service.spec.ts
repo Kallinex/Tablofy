@@ -111,7 +111,7 @@ describe('OrdersService', () => {
         return cb(tx);
       });
 
-      const result = await service.create(dto, testTenantId, testUserId);
+      const result = await service.create(dto as never, testTenantId, testUserId);
 
       expect(result).toBeDefined();
       expect(auditLogs.log).toHaveBeenCalledWith(
@@ -150,7 +150,7 @@ describe('OrdersService', () => {
         return cb(tx);
       });
 
-      const result = await service.create(dto, testTenantId, testUserId);
+      const result = await service.create(dto as never, testTenantId, testUserId);
       expect(result).toBeDefined();
     });
 
@@ -204,7 +204,7 @@ describe('OrdersService', () => {
         return cb(tx);
       });
 
-      await service.create(decimalDto, testTenantId, testUserId);
+      await service.create(decimalDto as never, testTenantId, testUserId);
 
       expect(capturedCreateData?.subtotal).toBe(22.28);
       expect(capturedCreateData?.total).toBe(22.28);
@@ -249,7 +249,7 @@ describe('OrdersService', () => {
         return cb(tx);
       });
 
-      await service.create(forgedDto, testTenantId, testUserId);
+      await service.create(forgedDto as never, testTenantId, testUserId);
 
       expect(capturedItems[0].unitPrice).toBe(10.99);
       expect(capturedItems[0].priceSnapshot).toBe(10.99);
@@ -298,7 +298,7 @@ describe('OrdersService', () => {
         return cb(tx);
       });
 
-      await service.create(variantDto, testTenantId, testUserId);
+      await service.create(variantDto as never, testTenantId, testUserId);
 
       expect(capturedItems[0].unitPrice).toBe(12.5);
       expect(capturedItems[0].priceSnapshot).toBe(12.5);
@@ -351,7 +351,7 @@ describe('OrdersService', () => {
         return cb(tx);
       });
 
-      await service.create(modifierDto, testTenantId, testUserId);
+      await service.create(modifierDto as never, testTenantId, testUserId);
 
       const modifiers = capturedItems[0].modifiers as { create: Array<Record<string, unknown>> };
       expect(modifiers.create[0].price).toBe(1.5);
@@ -403,7 +403,7 @@ describe('OrdersService', () => {
         return cb(tx);
       });
 
-      await service.create(customDto, testTenantId, testUserId);
+      await service.create(customDto as never, testTenantId, testUserId);
 
       const modifiers = capturedItems[0].modifiers as { create: Array<Record<string, unknown>> };
       expect(modifiers.create[0].price).toBe(2.25);
@@ -435,7 +435,7 @@ describe('OrdersService', () => {
         ],
       });
 
-      await expect(service.create(unknownDto, testTenantId, testUserId)).rejects.toThrow(
+      await expect(service.create(unknownDto as never, testTenantId, testUserId)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -478,7 +478,7 @@ describe('OrdersService', () => {
         return cb(tx);
       });
 
-      const result = await service.create(dto, testTenantId, testUserId);
+      const result = await service.create(dto as never, testTenantId, testUserId);
 
       expect(result).toBeDefined();
       expect(prisma.$transaction).toHaveBeenCalledTimes(2);
@@ -616,7 +616,7 @@ describe('OrdersService', () => {
       const fakeOrder = buildOrder({
         id: 'order-1',
         items: [item({ id: 'item-1', quantity: 2, unitPrice: 10, discount: 0, total: 20 })],
-      });
+      } as never) as unknown as Record<string, unknown>;
       stubFindOne(fakeOrder);
       const tx = makeTx();
       mockTransaction(tx);
@@ -644,7 +644,7 @@ describe('OrdersService', () => {
       const fakeOrder = buildOrder({
         id: 'order-1',
         items: [item({ id: 'item-1', quantity: 2, unitPrice: 10, discount: 0, total: 20 })],
-      });
+      } as never) as unknown as Record<string, unknown>;
       stubFindOne(fakeOrder);
       const tx = makeTx();
       mockTransaction(tx);
@@ -682,7 +682,7 @@ describe('OrdersService', () => {
             total: 20,
           }),
         ],
-      });
+      } as never) as unknown as Record<string, unknown>;
       stubFindOne(fakeOrder);
       const tx = makeTx();
       mockTransaction(tx);
@@ -715,7 +715,7 @@ describe('OrdersService', () => {
       const fakeOrder = buildOrder({
         id: 'order-1',
         items: [item({ id: 'item-1', quantity: 1, unitPrice: 10, discount: 0, total: 10 })],
-      });
+      } as never) as unknown as Record<string, unknown>;
       stubFindOne(fakeOrder);
       const tx = makeTx();
       mockTransaction(tx);
@@ -1042,7 +1042,7 @@ describe('OrdersService', () => {
         total: 100,
         paidAmount: 100,
         version: 1,
-      });
+      } as never);
       prisma.order.findFirst.mockResolvedValue(fakeOrder);
       prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
         const tx = {
@@ -1070,7 +1070,7 @@ describe('OrdersService', () => {
         total: 100,
         paidAmount: 100,
         version: 1,
-      });
+      } as never);
       prisma.order.findFirst.mockResolvedValue(fakeOrder);
       prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
         const tx = {
@@ -1099,7 +1099,7 @@ describe('OrdersService', () => {
         total: 100,
         paidAmount: 100,
         version: 1,
-      });
+      } as never);
       prisma.order.findFirst.mockResolvedValue(fakeOrder);
       let verWhere: Record<string, unknown> | undefined;
       prisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => {
@@ -2131,7 +2131,7 @@ describe('OrdersService', () => {
         testUserId,
       );
 
-      expect(result.kitchenStatus).toBe('PREPARING');
+      expect(result?.kitchenStatus).toBe('PREPARING');
       expect(prisma.orderItem.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'item-1', tenantId: testTenantId },

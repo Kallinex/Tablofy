@@ -4,6 +4,7 @@
 **Scope source:** `P1-BATCH-3-PLAN.md` (derived from `POST-P1-BATCH-2-FULL-AUDIT.md` findings F2–F6 + D1–D13 and `POST-P1-BATCH-2-F1-FIX.md` §9.5). Deferred items D7–D12 and the F1 backlog were NOT touched per plan scope rules.
 
 **Approved decisions applied:**
+
 - B3-9: verify-only + document (no writes to the production `_prisma_migrations` table).
 - B3-6: raise the flagged files via tests; coverage config unchanged (no threshold loosening).
 
@@ -14,6 +15,7 @@
 **Root cause:** `webhook-event-emitter.ts` subscribed to plural event names (`orders.*`, `customers.*`, …) while the app emits singular names (`order.*`, …); only `payments.*` ever matched.
 
 **Fix (smallest safe):**
+
 - NEW `apps/api/src/modules/webhooks/webhook-events.ts` — single source of truth:
   - `WEBHOOK_EVENT_NAMES` (frozen, ~75 canonical names across order/payment/campaign/crm/nutrition/menu/table/restaurant/recovery).
   - `WEBHOOK_EVENT_ALIASES` (plural→singular normalization; `order.merged`→`orders.merged`).
@@ -33,6 +35,7 @@
 **Root cause:** `partialRefund` only checked `dto.amount > payment.amount`; no cumulative-refunded tracking existed, so repeated partial refunds could exceed the original payment.
 
 **Fix:**
+
 - `Payment.amountRefunded Decimal @default(0)` in `schema.prisma` + migration `20260808120000_payments_amount_refunded`.
 - `payments.service.ts` `partialRefund`: in-transaction atomic claim —
   `updateMany({ where: { id, amountRefunded: { lte: remaining − dto.amount } }, data: { amountRefunded: { increment: dto.amount } } })`; 0 rows → `ConflictException`.
@@ -49,6 +52,7 @@
 **Root cause:** notification worker expected `{title, channel, ...}` but producers enqueued `{items}`/`{alertCount}`; DLQ jobs were consumed+acked with no alerting; health monitor covered only 5/36 queues.
 
 **Fix:**
+
 - `QUEUE_NAMES` (21 queues) in queue config.
 - `NotificationJobPayload` type; `notification.processor.ts` consumes canonical payload, warns on mismatch, falls back to `userId`.
 - `inventory.processor.ts` producers enqueue canonical payloads.
@@ -86,6 +90,7 @@
 **Root cause:** `jest --coverage` exited 1 on unmet per-file thresholds.
 
 **Fix (tests only; config unchanged):**
+
 - `auth.controller.spec.ts` → `auth.controller.ts`: branches 59.48% (≥50), statements/lines/functions 100%.
 - `orders.service.spec.ts` → `orders.service.ts` (58 tests): statements 85.1% (≥60), lines 81.32% (≥60), functions 92.45% (≥50), branches 58.8% (≥30). Added coverage for `applyDiscount`, `removeDiscount`, `addPayment`, `refundPayment`, `addNote`, `splitOrder`, `mergeOrders`, `moveTable`, `duplicateOrder`, `applyServiceCharge`, `applyTaxRate`, `voidItem`, `updateItemKitchenStatus`, `findKitchenTickets`, `updateKitchenTicketStatus`, `restore` (incl. error/terminal/tenant paths).
 - `audit-log.interceptor.spec.ts` → `audit-log.interceptor.ts`: functions 100% (≥90); Edge/Firefox UA branches + error-path log-failure swallow covered.
@@ -100,6 +105,7 @@
 **Root cause:** `events` unbounded/unvalidated; `headers`/`metadata` unbounded.
 
 **Fix:**
+
 - `create-webhook.dto.ts`: `@ArrayMaxSize(50)` + `@MaxLength(100, { each: true })` on `events`.
 - `webhooks.service.ts`: `normalizeEvents()` (rejects empty / >50 / unknown, canonicalizes on create+update), `assertHeaderBounds()` (≤20 keys, keys/values ≤256), `assertMetadataBounds()` (≤20 keys, keys ≤256, scalar values ≤1000); `getActiveWebhooksForEvent` matches `{ hasSome: webhookEventCandidates(...) }`, returns `[]` pre-query for unknown events.
 
@@ -120,6 +126,7 @@
 ## B3-9 — M4.4 migration checksum reconciliation (F4, MED) — VERIFY-ONLY + DOCUMENT
 
 **Approved decision:** no production writes. Verification results:
+
 - Working-tree `20260802120914_m4_4_soft_delete_updated_at/migration.sql` SHA-256 = `ED81A8A2EAC4921C…` (matches the audit-recorded `ed81a8a2…`).
 - Live `_prisma_migrations` recorded checksum = `286c65297f5328319e…` (matches the audit-recorded `286c6529…`).
 - `prisma migrate status` → "Database schema is up to date!" (20 migrations, all applied).

@@ -145,7 +145,7 @@ describe('RecipesProcessor (inventory deduction queue)', () => {
   });
 
   it('skips refund events without the required refund payload', async () => {
-    await processor.onPaymentsRefunded({ tenantId: 'tenant-1', orderId: 'order-1' });
+    await processor.onPaymentsRefunded({ tenantId: 'tenant-1', orderId: 'order-1' } as never);
 
     expect(recipesServiceMock.reverseConsumptionForRefund).not.toHaveBeenCalled();
   });

@@ -9,25 +9,27 @@
 
 ## Tasks Completed
 
-| ID | Finding | Description | Files Changed | Status |
-|---|---|---|---|---|
-| 7.1.12 | P1-4 | Generic registration error (no info leak) | auth.service.ts, auth.controller.ts | ✅ |
-| 7.1.1 | P0-1 | @Roles('OWNER') on backup controller | backup.controller.ts | ✅ |
-| 7.1.2 | P0-2 | @Roles('OWNER','MANAGER') on privacy controller | privacy.controller.ts | ✅ |
-| 7.1.3 | P0-3 | @Roles on gift-cards controller | gift-cards.controller.ts | ✅ |
-| 7.1.4 | P0-4 | Fix webhook event routing | webhook-event-emitter.ts | ✅ |
-| 7.1.5 | P0-5 | Fix webhook HMAC signing with AES-256 encryption | webhook-delivery.service.ts, webhooks.service.ts, webhook-processor.ts, webhook.config.ts, schema.prisma | ✅ |
-| 7.1.6 | P0-6 | TenantBodyGuard | tenant-body.guard.ts (NEW) | ✅ |
-| 7.1.7 | P0-9 | @Scopes() decorator + ApiKeyGuard enforcement | scopes.decorator.ts (NEW), api-key.guard.ts | ✅ |
-| 7.1.8 | P1-2 | Tenant status check in login + JwtStrategy | auth.service.ts, jwt.strategy.ts | ✅ |
-| 7.1.10 | P0-13 | Sensitive data sanitizer in logger | logger.service.ts | ✅ |
-| 7.1.11 | P1-3 | JWT blacklist persistence (RevokedToken + DB fallback) | schema.prisma, redis.service.ts | ✅ |
+| ID     | Finding | Description                                            | Files Changed                                                                                            | Status |
+| ------ | ------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | ------ |
+| 7.1.12 | P1-4    | Generic registration error (no info leak)              | auth.service.ts, auth.controller.ts                                                                      | ✅     |
+| 7.1.1  | P0-1    | @Roles('OWNER') on backup controller                   | backup.controller.ts                                                                                     | ✅     |
+| 7.1.2  | P0-2    | @Roles('OWNER','MANAGER') on privacy controller        | privacy.controller.ts                                                                                    | ✅     |
+| 7.1.3  | P0-3    | @Roles on gift-cards controller                        | gift-cards.controller.ts                                                                                 | ✅     |
+| 7.1.4  | P0-4    | Fix webhook event routing                              | webhook-event-emitter.ts                                                                                 | ✅     |
+| 7.1.5  | P0-5    | Fix webhook HMAC signing with AES-256 encryption       | webhook-delivery.service.ts, webhooks.service.ts, webhook-processor.ts, webhook.config.ts, schema.prisma | ✅     |
+| 7.1.6  | P0-6    | TenantBodyGuard                                        | tenant-body.guard.ts (NEW)                                                                               | ✅     |
+| 7.1.7  | P0-9    | @Scopes() decorator + ApiKeyGuard enforcement          | scopes.decorator.ts (NEW), api-key.guard.ts                                                              | ✅     |
+| 7.1.8  | P1-2    | Tenant status check in login + JwtStrategy             | auth.service.ts, jwt.strategy.ts                                                                         | ✅     |
+| 7.1.10 | P0-13   | Sensitive data sanitizer in logger                     | logger.service.ts                                                                                        | ✅     |
+| 7.1.11 | P1-3    | JWT blacklist persistence (RevokedToken + DB fallback) | schema.prisma, redis.service.ts                                                                          | ✅     |
 
 ## Files Created (2)
+
 - `apps/api/src/common/guards/tenant-body.guard.ts`
 - `apps/api/src/modules/api-keys/decorators/scopes.decorator.ts`
 
 ## Files Modified (16)
+
 - `apps/api/src/modules/auth/auth.service.ts`
 - `apps/api/src/modules/auth/auth.controller.ts`
 - `apps/api/src/modules/backup/backup.controller.ts`
@@ -47,12 +49,12 @@
 
 ## Quality Gates
 
-| Gate | Result |
-|---|---|
-| Prisma generate | ✅ Passed |
-| TypeScript build (nx build api) | ✅ Passed (0 errors) |
-| ESLint (nx lint api) | ✅ Passed (0 errors, 0 warnings) |
-| Jest tests (nx test api) | ✅ Passed (26 suites, 213 tests) |
+| Gate                            | Result                           |
+| ------------------------------- | -------------------------------- |
+| Prisma generate                 | ✅ Passed                        |
+| TypeScript build (nx build api) | ✅ Passed (0 errors)             |
+| ESLint (nx lint api)            | ✅ Passed (0 errors, 0 warnings) |
+| Jest tests (nx test api)        | ✅ Passed (26 suites, 213 tests) |
 
 ## Design Decisions
 

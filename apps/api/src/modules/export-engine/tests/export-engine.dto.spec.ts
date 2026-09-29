@@ -1,11 +1,15 @@
 import 'reflect-metadata';
-import { plainToInstance } from 'class-transformer';
+import { plainToInstance, ClassConstructor } from 'class-transformer';
 import { validate } from 'class-validator';
 import { GenerateExportDto, ExportType } from '../dto/generate-export.dto';
 import { ExportQueryDto } from '../dto/export-query.dto';
 
-async function errorsFor(cls: typeof GenerateExportDto | typeof ExportQueryDto, payload: object) {
-  const errors = await validate(plainToInstance(cls, payload));
+async function errorsFor(
+  cls: ClassConstructor<GenerateExportDto> | ClassConstructor<ExportQueryDto>,
+  payload: object,
+) {
+  const instance = plainToInstance<GenerateExportDto | ExportQueryDto, object>(cls, payload);
+  const errors = await validate(instance);
   return errors.flatMap((e) => Object.values(e.constraints ?? {}));
 }
 

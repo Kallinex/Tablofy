@@ -2,16 +2,21 @@ const http = require('http');
 async function request(method, path, body, headers = {}) {
   return new Promise((resolve, reject) => {
     const opts = {
-      hostname: 'localhost', port: 3000,
-      path, method,
+      hostname: 'localhost',
+      port: 3000,
+      path,
+      method,
       headers: { 'Content-Type': 'application/json', ...headers },
     };
     const req = http.request(opts, (res) => {
       let data = '';
       res.on('data', (c) => (data += c));
       res.on('end', () => {
-        try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
-        catch { resolve({ status: res.statusCode, body: data }); }
+        try {
+          resolve({ status: res.statusCode, body: JSON.parse(data) });
+        } catch {
+          resolve({ status: res.statusCode, body: data });
+        }
       });
     });
     req.on('error', reject);
@@ -22,7 +27,10 @@ async function request(method, path, body, headers = {}) {
 
 async function main() {
   // Get token first
-  const login = await request('POST', '/api/v1/auth/login', { email: 'test@test.com', password: 'Test123!' });
+  const login = await request('POST', '/api/v1/auth/login', {
+    email: 'test@test.com',
+    password: 'Test123!',
+  });
   const token = login.body?.data?.accessToken || login.body?.accessToken;
   const h = { authorization: `Bearer ${token}` };
 
@@ -41,7 +49,10 @@ async function main() {
   for (const ep of endpoints) {
     const [method, p] = ep.split(' ');
     const r = await request(method, p, null, h);
-    const bodyStr = typeof r.body === 'object' ? JSON.stringify(r.body).substring(0, 1000) : String(r.body).substring(0, 1000);
+    const bodyStr =
+      typeof r.body === 'object'
+        ? JSON.stringify(r.body).substring(0, 1000)
+        : String(r.body).substring(0, 1000);
     console.log(`${ep} => ${r.status}`);
     console.log(`  ${bodyStr}`);
   }

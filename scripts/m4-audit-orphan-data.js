@@ -70,7 +70,9 @@ async function main() {
   if (totalOrphans === 0) {
     console.log('RESULT: PASS (0 orphan rows - M4-01 FK creation is safe)');
   } else {
-    console.log('RESULT: FAIL (orphan rows present - cleanup per plan section 9.2/16 step 2 before M4-01)');
+    console.log(
+      'RESULT: FAIL (orphan rows present - cleanup per plan section 9.2/16 step 2 before M4-01)',
+    );
   }
 
   await prisma.$disconnect();

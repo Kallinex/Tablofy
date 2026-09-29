@@ -88,22 +88,35 @@ if (appModule.includes('PaymentsModule')) {
   fail('app.module.ts missing PaymentsModule import');
 }
 
-const ordersService = fs.readFileSync(path.join(ROOT, 'apps/api/src/modules/orders/orders.service.ts'), 'utf-8');
+const ordersService = fs.readFileSync(
+  path.join(ROOT, 'apps/api/src/modules/orders/orders.service.ts'),
+  'utf-8',
+);
 if (ordersService.includes('PaymentsService')) {
   ok('orders.service.ts injects PaymentsService');
 } else {
   fail('orders.service.ts missing PaymentsService injection');
 }
 
-const ordersModule = fs.readFileSync(path.join(ROOT, 'apps/api/src/modules/orders/orders.module.ts'), 'utf-8');
+const ordersModule = fs.readFileSync(
+  path.join(ROOT, 'apps/api/src/modules/orders/orders.module.ts'),
+  'utf-8',
+);
 if (ordersModule.includes('PaymentsModule')) {
   ok('orders.module.ts imports PaymentsModule');
 } else {
   fail('orders.module.ts missing PaymentsModule import');
 }
 
-const metricsService = fs.readFileSync(path.join(ROOT, 'apps/api/src/common/metrics/metrics.service.ts'), 'utf-8');
-for (const method of ['incrementPaymentsCompleted', 'incrementPaymentsFailed', 'incrementPaymentsRefunded']) {
+const metricsService = fs.readFileSync(
+  path.join(ROOT, 'apps/api/src/common/metrics/metrics.service.ts'),
+  'utf-8',
+);
+for (const method of [
+  'incrementPaymentsCompleted',
+  'incrementPaymentsFailed',
+  'incrementPaymentsRefunded',
+]) {
   if (metricsService.includes(method)) {
     ok(`metrics.service.ts includes ${method}()`);
   } else {
@@ -112,7 +125,10 @@ for (const method of ['incrementPaymentsCompleted', 'incrementPaymentsFailed', '
 }
 
 const jestConfig = fs.readFileSync(path.join(ROOT, 'apps/api/jest.config.ts'), 'utf-8');
-for (const glob of ['**/src/modules/payments/payments.service.ts', '**/src/modules/payments/payment-state-machine.ts']) {
+for (const glob of [
+  '**/src/modules/payments/payments.service.ts',
+  '**/src/modules/payments/payment-state-machine.ts',
+]) {
   if (jestConfig.includes(glob)) {
     ok(`jest.config.ts includes coverage threshold for ${glob}`);
   } else {
@@ -137,7 +153,11 @@ try {
 // 5. Verify lint on payments module files only
 console.log('\n=== Lint (payments module) ===\n');
 try {
-  execSync('npx eslint apps/api/src/modules/payments/ --ext .ts', { cwd: ROOT, timeout: 120000, stdio: 'pipe' });
+  execSync('npx eslint apps/api/src/modules/payments/ --ext .ts', {
+    cwd: ROOT,
+    timeout: 120000,
+    stdio: 'pipe',
+  });
   ok('Payments module files pass ESLint (0 errors)');
 } catch {
   fail('ESLint errors in payments module files');
@@ -158,8 +178,16 @@ try {
 
 // 7. Verify payment state machine functions
 console.log('\n=== State Machine ===\n');
-const stateMachine = fs.readFileSync(path.join(ROOT, 'apps/api/src/modules/payments/payment-state-machine.ts'), 'utf-8');
-for (const fn of ['validatePaymentTransition', 'isRefundableStatus', 'isVoidableStatus', 'isTerminalPaymentStatus']) {
+const stateMachine = fs.readFileSync(
+  path.join(ROOT, 'apps/api/src/modules/payments/payment-state-machine.ts'),
+  'utf-8',
+);
+for (const fn of [
+  'validatePaymentTransition',
+  'isRefundableStatus',
+  'isVoidableStatus',
+  'isTerminalPaymentStatus',
+]) {
   if (stateMachine.includes(`export function ${fn}`)) {
     ok(`State machine exports ${fn}()`);
   } else {

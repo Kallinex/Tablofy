@@ -17,20 +17,20 @@ Eliminate 8 P0 and 3 P1 security findings from the production audit to raise Sec
 
 ### In Scope (12 tasks, 11 unique findings)
 
-| ID | Task | Finding | Severity |
-|----|------|---------|----------|
-| 7.1.1 | `@Roles('OWNER')` on backup controller | P0-1 | P0 |
-| 7.1.2 | `@Roles('OWNER','MANAGER')` on privacy controller | P0-2 | P0 |
-| 7.1.3 | `@Roles('OWNER','MANAGER')` on gift-cards controller | P0-3 | P0 |
-| 7.1.4 | Fix webhook event routing (event name from @OnEvent context) | P0-4 | P0 |
-| 7.1.5 | Fix webhook signing (encrypt raw secret at rest, decrypt for HMAC) | P0-5 | P0 |
-| 7.1.6 | Body/query tenantId validation middleware | P0-8 | P0 |
-| 7.1.7 | API key scope enforcement with `@Scopes()` decorator | P0-9 | P0 |
-| 7.1.8 | Tenant/subscription status check on login + JwtStrategy.validate() | P1-2 | P1 |
-| 7.1.9 | Cross-tenant Prisma query audit — tenantId WHERE filter in all services | P0-8 ext | P0 |
-| 7.1.10 | Sensitive data sanitizer for logger | P0-13 | P0 |
-| 7.1.11 | Persist revoked JWT blacklist to DB; wire calls into logout flow | P1-3 | P1 |
-| 7.1.12 | Generic error message on duplicate registration | P1-4 | P1 |
+| ID     | Task                                                                    | Finding  | Severity |
+| ------ | ----------------------------------------------------------------------- | -------- | -------- |
+| 7.1.1  | `@Roles('OWNER')` on backup controller                                  | P0-1     | P0       |
+| 7.1.2  | `@Roles('OWNER','MANAGER')` on privacy controller                       | P0-2     | P0       |
+| 7.1.3  | `@Roles('OWNER','MANAGER')` on gift-cards controller                    | P0-3     | P0       |
+| 7.1.4  | Fix webhook event routing (event name from @OnEvent context)            | P0-4     | P0       |
+| 7.1.5  | Fix webhook signing (encrypt raw secret at rest, decrypt for HMAC)      | P0-5     | P0       |
+| 7.1.6  | Body/query tenantId validation middleware                               | P0-8     | P0       |
+| 7.1.7  | API key scope enforcement with `@Scopes()` decorator                    | P0-9     | P0       |
+| 7.1.8  | Tenant/subscription status check on login + JwtStrategy.validate()      | P1-2     | P1       |
+| 7.1.9  | Cross-tenant Prisma query audit — tenantId WHERE filter in all services | P0-8 ext | P0       |
+| 7.1.10 | Sensitive data sanitizer for logger                                     | P0-13    | P0       |
+| 7.1.11 | Persist revoked JWT blacklist to DB; wire calls into logout flow        | P1-3     | P1       |
+| 7.1.12 | Generic error message on duplicate registration                         | P1-4     | P1       |
 
 ### Out of Scope
 
@@ -69,7 +69,7 @@ All must pass before M1 is considered complete:
 ```
 Controller                Guard Layer                  Service                  Prisma
 ──────────              ─────────────              ────────────              ───────
-                                          
+
 backup.controller.ts    JwtAuthGuard + TenantGuard     backup.service.ts       BackupRecord
 privacy.controller.ts   JwtAuthGuard + TenantGuard     privacy.service.ts      ConsentRecord, etc.
 gift-cards.controller   JwtAuthGuard + TenantGuard     gift-cards.service.ts   GiftCard
@@ -165,6 +165,7 @@ Remove redundant `JwtAuthGuard` + `TenantGuard` if RolesGuard is in APP_GUARD. V
 **File:** `apps/api/src/modules/webhooks/webhook-event-emitter.ts`
 
 **Root cause:** Two bugs:
+
 1. `payload.eventType` is checked but `eventType` is never in the payload — events are emitted as `this.eventEmitter.emit('order.created', payload)` where payload has no `eventType` field
 2. Event name mismatch: emitted as `'order.created'` (singular) but subscribed as `'orders.created'` (plural)
 
@@ -180,6 +181,7 @@ async handleEvent(payload: any, eventName?: string) {
 ```
 
 Also fix all emitters to use consistent naming:
+
 - `order.created` (not `orders.created`)
 - `inventory.low-stock` (not `inventories.low-stock`)
 - etc.
@@ -187,12 +189,14 @@ Also fix all emitters to use consistent naming:
 ### 5.5 Webhook Processor / Delivery (7.1.5)
 
 **Current flow:**
+
 1. `generateSecret()` creates random 32-byte hex `secret`, computes `hmac(sha256, secret).digest('hex')` as `hash`
 2. `secretHash` in `WebhookRegistration` stores `hash` (the HMAC output)
 3. `getWebhookSecret()` returns `registration.secretHash` (the HMAC hash, not the raw secret)
 4. `signPayload(payloadBody, secret)` signs with `hash` instead of `secret`
 
 **Fix:**
+
 1. Add `encryptedSecret` field to `WebhookRegistration` schema — stores AES-256-GCM encrypted raw secret
 2. Add an environment variable `WEBHOOK_SECRET_ENCRYPTION_KEY` (32 hex chars = 16 bytes AES-256 key)
 3. `generateSecret()` returns `{ secret, hash, encryptedSecret, prefix }`:
@@ -207,10 +211,12 @@ Also fix all emitters to use consistent naming:
 ### 5.6 API Key Scope Guard (7.1.7)
 
 **New files:**
+
 - `apps/api/src/modules/api-keys/decorators/scopes.decorator.ts`
 - `apps/api/src/modules/api-keys/guards/api-key-scope.guard.ts` (or modify `api-key.guard.ts`)
 
 **Design:**
+
 ```typescript
 // scopes.decorator.ts
 export const SCOPES_KEY = 'scopes';
@@ -224,7 +230,7 @@ const requiredScopes = this.reflector.getAllAndOverride<string[]>(SCOPES_KEY, [
   context.getClass(),
 ]);
 if (requiredScopes && result.scopes) {
-  const hasScope = requiredScopes.some(s => result.scopes?.includes(s));
+  const hasScope = requiredScopes.some((s) => result.scopes?.includes(s));
   if (!hasScope) throw new ForbiddenException('API key scope insufficient');
 }
 ```
@@ -244,6 +250,7 @@ if (requiredScopes && result.scopes) {
 **File:** `apps/api/src/modules/auth/auth.service.ts`
 
 **Changes for 7.1.8:**
+
 ```typescript
 // Inside login() — after user authentication, before token generation
 const tenant = await this.prisma.tenant.findUnique({
@@ -259,6 +266,7 @@ if (tenant.subscription?.status !== 'ACTIVE') {
 ```
 
 **Changes for 7.1.12:**
+
 ```typescript
 // Current: returns { user: existingUser } with full user details
 // Target: returns generic error
@@ -279,6 +287,7 @@ if (existingUser) {
 **File:** `apps/api/src/redis/redis.service.ts`
 
 **Change:** Modify `blacklistToken()` to:
+
 1. Persist JTI + expiry to `RevokedToken` table via Prisma
 2. Keep Redis SET as fast-check cache
 3. Add `isTokenBlacklisted(jti: string): Promise<boolean>` that checks Redis first, falls back to DB
@@ -288,6 +297,7 @@ if (existingUser) {
 **File:** `apps/api/src/modules/webhooks/webhook-delivery.service.ts`
 
 **Change:** `getWebhookSecret()` decrypts `encryptedSecret` field:
+
 ```typescript
 async getWebhookSecret(registrationId: string): Promise<string> {
   const reg = await this.prisma.webhookRegistration.findUnique({
@@ -310,6 +320,7 @@ async getWebhookSecret(registrationId: string): Promise<string> {
 **Purpose:** Validate that `request.body.tenantId` (if present) and `request.query.tenantId` (if present) match the JWT's tenantId claim.
 
 **Design:**
+
 ```typescript
 @Injectable()
 export class TenantBodyGuard implements CanActivate {
@@ -336,6 +347,7 @@ Register as global guard or apply to specific controllers.
 **Purpose:** Check Tenant.status and Subscription.status on every authenticated request (not just login). Provides defense-in-depth.
 
 **Design:**
+
 ```typescript
 @Injectable()
 export class TenantStatusGuard implements CanActivate {
@@ -467,14 +479,14 @@ All changes are internal — no new API endpoints. Existing API contracts remain
 
 ### 11.2 Response changes
 
-| Endpoint | Change |
-|----------|--------|
+| Endpoint              | Change                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------ |
 | `POST /auth/register` | 409 response body: `{ "message": "User already exists" }` (was detailed user object) |
-| `POST /auth/login` | Now returns 403 if tenant disabled or subscription expired |
-| `POST /backup/*` | Now returns 403 for non-OWNER (was accessible to all) |
-| `POST /privacy/*` | Now returns 403 for non-OWNER/MANAGER (was accessible to all) |
-| `POST /gift-cards/*` | Now returns 403 for non-OWNER/MANAGER on create/recharge/deactivate |
-| All endpoints | Body/query tenantId matching JWT claim — 403 if mismatch |
+| `POST /auth/login`    | Now returns 403 if tenant disabled or subscription expired                           |
+| `POST /backup/*`      | Now returns 403 for non-OWNER (was accessible to all)                                |
+| `POST /privacy/*`     | Now returns 403 for non-OWNER/MANAGER (was accessible to all)                        |
+| `POST /gift-cards/*`  | Now returns 403 for non-OWNER/MANAGER on create/recharge/deactivate                  |
+| All endpoints         | Body/query tenantId matching JWT claim — 403 if mismatch                             |
 
 ---
 
@@ -488,14 +500,15 @@ No DTO changes required for M1. All changes are in guards, services, and interna
 
 ### 13.1 New configuration entries
 
-| Config Key | Source | Default | Used By |
-|------------|--------|---------|---------|
+| Config Key                      | Source  | Default    | Used By                     |
+| ------------------------------- | ------- | ---------- | --------------------------- |
 | `WEBHOOK_SECRET_ENCRYPTION_KEY` | Env var | (required) | webhook-delivery.service.ts |
-| `SCRYPT_ENABLED` | Env var | `false` | Guard registrations |
+| `SCRYPT_ENABLED`                | Env var | `false`    | Guard registrations         |
 
 ### 13.2 Config module updates
 
 Add to `config/webhook.config.ts`:
+
 ```typescript
 encryptionKey: {
   env: 'WEBHOOK_SECRET_ENCRYPTION_KEY',
@@ -505,6 +518,7 @@ encryptionKey: {
 ```
 
 Add to `config/app.config.ts`:
+
 ```typescript
 tenantStatusCheck: {
   env: 'TENANT_STATUS_CHECK_ENABLED',
@@ -519,10 +533,10 @@ tenantStatusCheck: {
 
 ### 14.1 New environment variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `WEBHOOK_SECRET_ENCRYPTION_KEY` | Yes | 32-hex-char (16 byte) AES-256 key for encrypting webhook secrets |
-| `TENANT_STATUS_CHECK_ENABLED` | No | Enable/disable tenant status guard (default: true) |
+| Variable                        | Required | Description                                                      |
+| ------------------------------- | -------- | ---------------------------------------------------------------- |
+| `WEBHOOK_SECRET_ENCRYPTION_KEY` | Yes      | 32-hex-char (16 byte) AES-256 key for encrypting webhook secrets |
+| `TENANT_STATUS_CHECK_ENABLED`   | No       | Enable/disable tenant status guard (default: true)               |
 
 ### 14.2 .env.example additions
 
@@ -569,26 +583,28 @@ Layer 8: JWT blacklist — revoked tokens rejected (NEW — 7.1.11)
 
 ### 16.1 Unit Tests (per task)
 
-| Task | Test | Coverage Target |
-|------|------|----------------|
-| 7.1.1–7.1.3 | `RolesGuard` rejects non-OWNER for each controller | 3 test cases each |
-| 7.1.4 | `handleEvent()` resolves event name from EventEmitter2 context | 2 test cases |
-| 7.1.5 | `generateSecret()` produces valid encrypted secret; `getWebhookSecret()` decrypts correctly | 3 test cases |
-| 7.1.6 | `TenantBodyGuard` rejects body.tenantId mismatch | 3 test cases |
-| 7.1.7 | `ApiKeyGuard` rejects read key on POST; passes read key on GET | 4 test cases |
-| 7.1.8 | `login()` throws when tenant disabled; `validate()` throws when subscription expired | 4 test cases |
-| 7.1.10 | Logger redacts sensitive keys; preserves non-sensitive keys | 2 test cases |
-| 7.1.11 | `blacklistToken()` persists to DB; `isTokenBlacklisted()` returns true | 3 test cases |
-| 7.1.12 | `register()` returns generic error on duplicate email | 2 test cases |
+| Task        | Test                                                                                        | Coverage Target   |
+| ----------- | ------------------------------------------------------------------------------------------- | ----------------- |
+| 7.1.1–7.1.3 | `RolesGuard` rejects non-OWNER for each controller                                          | 3 test cases each |
+| 7.1.4       | `handleEvent()` resolves event name from EventEmitter2 context                              | 2 test cases      |
+| 7.1.5       | `generateSecret()` produces valid encrypted secret; `getWebhookSecret()` decrypts correctly | 3 test cases      |
+| 7.1.6       | `TenantBodyGuard` rejects body.tenantId mismatch                                            | 3 test cases      |
+| 7.1.7       | `ApiKeyGuard` rejects read key on POST; passes read key on GET                              | 4 test cases      |
+| 7.1.8       | `login()` throws when tenant disabled; `validate()` throws when subscription expired        | 4 test cases      |
+| 7.1.10      | Logger redacts sensitive keys; preserves non-sensitive keys                                 | 2 test cases      |
+| 7.1.11      | `blacklistToken()` persists to DB; `isTokenBlacklisted()` returns true                      | 3 test cases      |
+| 7.1.12      | `register()` returns generic error on duplicate email                                       | 2 test cases      |
 
 ### 16.2 Smoke Tests (manual)
 
 After all changes, run the existing test suite:
+
 ```bash
 npx jest --passWithNoTests
 ```
 
 Verify via curl/integration:
+
 1. Login as STAFF → try backup create → expect 403
 2. Login as OWNER → backup create → expect 200/201
 3. POST to endpoint with `body.tenantId` mismatched → expect 403
@@ -598,6 +614,7 @@ Verify via curl/integration:
 ### 16.3 Cross-tenant query audit (7.1.9)
 
 Run grep to verify tenantId filter presence:
+
 ```bash
 rg "tenantId" --include="*.service.ts" -l | wc -l
 # Expected: all service files that access Prisma
@@ -638,18 +655,18 @@ npx prisma migrate dev --name add_webhook_encrypted_secret
 
 ### 18.1 Per-task rollback
 
-| Task | Rollback Action |
-|------|----------------|
-| 7.1.1–7.1.3 | Remove `@Roles()` decorators; restore original guard line |
-| 7.1.4 | Restore original `handleEvent()` signature; re-enable `payload.eventType` check |
-| 7.1.5 | Remove `encryptedSecret` field from schema; revert `getWebhookSecret()` |
-| 7.1.6 | Remove `TenantBodyGuard` from module providers |
-| 7.1.7 | Remove `@Scopes()` decorators; revert `ApiKeyGuard` |
-| 7.1.8 | Remove tenant status check from `login()` and `validate()`; remove `TenantStatusGuard` |
-| 7.1.9 | Revert `tenantId` WHERE filters (highly unlikely to need rollback) |
-| 7.1.10 | Restore original logger methods (remove `sanitize()` calls) |
-| 7.1.11 | Remove `RevokedToken` table (migration down); revert `redis.service.ts` |
-| 7.1.12 | Restore original registration response |
+| Task        | Rollback Action                                                                        |
+| ----------- | -------------------------------------------------------------------------------------- |
+| 7.1.1–7.1.3 | Remove `@Roles()` decorators; restore original guard line                              |
+| 7.1.4       | Restore original `handleEvent()` signature; re-enable `payload.eventType` check        |
+| 7.1.5       | Remove `encryptedSecret` field from schema; revert `getWebhookSecret()`                |
+| 7.1.6       | Remove `TenantBodyGuard` from module providers                                         |
+| 7.1.7       | Remove `@Scopes()` decorators; revert `ApiKeyGuard`                                    |
+| 7.1.8       | Remove tenant status check from `login()` and `validate()`; remove `TenantStatusGuard` |
+| 7.1.9       | Revert `tenantId` WHERE filters (highly unlikely to need rollback)                     |
+| 7.1.10      | Restore original logger methods (remove `sanitize()` calls)                            |
+| 7.1.11      | Remove `RevokedToken` table (migration down); revert `redis.service.ts`                |
+| 7.1.12      | Restore original registration response                                                 |
 
 ### 18.2 Full rollback
 
@@ -669,36 +686,37 @@ npx prisma migrate down           # revert DB changes
 
 ## 19. RISKS
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| API key scope enforcement breaks existing integrations | Medium | High | Add `@Scopes('read','write')` to all existing routes before deploying scope guard. Document scope requirement change. |
-| Tenant status guard causes login failures if Tenant record missing | Low | High | Add null-check: skip status check if Tenant not found (defense-in-depth, not gate) |
-| Webhook encryption key lost | Low | High | Document key generation + rotation procedure in README. Add startup validation that key exists. |
-| Performance impact of cross-tenant Prisma query audit (7.1.9) | Low | Medium | Audit is static analysis only. Adding missing `tenantId` WHERE improves query performance. |
-| JWT blacklist DB fallback adds latency | Medium | Low | Redis remains primary check; DB is fallback. Latency only on Redis miss (rare). |
-| Existing tests fail due to new restrictions | Low | Medium | Verify before committing; fix test expectations to match new auth behavior. |
+| Risk                                                               | Likelihood | Impact | Mitigation                                                                                                            |
+| ------------------------------------------------------------------ | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
+| API key scope enforcement breaks existing integrations             | Medium     | High   | Add `@Scopes('read','write')` to all existing routes before deploying scope guard. Document scope requirement change. |
+| Tenant status guard causes login failures if Tenant record missing | Low        | High   | Add null-check: skip status check if Tenant not found (defense-in-depth, not gate)                                    |
+| Webhook encryption key lost                                        | Low        | High   | Document key generation + rotation procedure in README. Add startup validation that key exists.                       |
+| Performance impact of cross-tenant Prisma query audit (7.1.9)      | Low        | Medium | Audit is static analysis only. Adding missing `tenantId` WHERE improves query performance.                            |
+| JWT blacklist DB fallback adds latency                             | Medium     | Low    | Redis remains primary check; DB is fallback. Latency only on Redis miss (rare).                                       |
+| Existing tests fail due to new restrictions                        | Low        | Medium | Verify before committing; fix test expectations to match new auth behavior.                                           |
 
 ---
 
 ## 20. EFFORT ESTIMATES
 
-| ID | Task | Est. Time | Complexity | Owner |
-|----|------|-----------|------------|-------|
-| 7.1.1 | `@Roles('OWNER')` on backup controller | 30 min | Trivial | Backend |
-| 7.1.2 | `@Roles('OWNER', 'MANAGER')` on privacy controller | 30 min | Trivial | Backend |
-| 7.1.3 | `@Roles('OWNER', 'MANAGER')` on gift-cards controller | 30 min | Trivial | Backend |
-| 7.1.4 | Fix webhook event routing | 1 hr | Medium | Backend |
-| 7.1.5 | Fix webhook signing with encryption | 4 hrs | High | Backend |
-| 7.1.6 | Add TenantBodyGuard | 2–3 days | High | Backend |
-| 7.1.7 | Implement `@Scopes()` + ApiKeyGuard enforcement | 2–3 days | High | Backend |
-| 7.1.8 | Add tenant status check on login + JWT validate | 1 day | Medium | Backend |
-| 7.1.9 | Cross-tenant Prisma query audit | 2–3 days | High | Backend |
-| 7.1.10 | Add sensitive data sanitizer for logger | 2–3 hrs | Medium | Backend |
-| 7.1.11 | Persist JWT blacklist to DB | 2–3 days | High | Backend |
-| 7.1.12 | Generic error on duplicate registration | 30 min | Trivial | Backend |
-| **Total** | | **~10–17 days** | | |
+| ID        | Task                                                  | Est. Time       | Complexity | Owner   |
+| --------- | ----------------------------------------------------- | --------------- | ---------- | ------- |
+| 7.1.1     | `@Roles('OWNER')` on backup controller                | 30 min          | Trivial    | Backend |
+| 7.1.2     | `@Roles('OWNER', 'MANAGER')` on privacy controller    | 30 min          | Trivial    | Backend |
+| 7.1.3     | `@Roles('OWNER', 'MANAGER')` on gift-cards controller | 30 min          | Trivial    | Backend |
+| 7.1.4     | Fix webhook event routing                             | 1 hr            | Medium     | Backend |
+| 7.1.5     | Fix webhook signing with encryption                   | 4 hrs           | High       | Backend |
+| 7.1.6     | Add TenantBodyGuard                                   | 2–3 days        | High       | Backend |
+| 7.1.7     | Implement `@Scopes()` + ApiKeyGuard enforcement       | 2–3 days        | High       | Backend |
+| 7.1.8     | Add tenant status check on login + JWT validate       | 1 day           | Medium     | Backend |
+| 7.1.9     | Cross-tenant Prisma query audit                       | 2–3 days        | High       | Backend |
+| 7.1.10    | Add sensitive data sanitizer for logger               | 2–3 hrs         | Medium     | Backend |
+| 7.1.11    | Persist JWT blacklist to DB                           | 2–3 days        | High       | Backend |
+| 7.1.12    | Generic error on duplicate registration               | 30 min          | Trivial    | Backend |
+| **Total** |                                                       | **~10–17 days** |            |         |
 
 **Optimal parallel execution:**
+
 - Track A (trivial): 7.1.1, 7.1.2, 7.1.3, 7.1.12 — 1 day
 - Track B (webhooks): 7.1.4, 7.1.5 — 1 day
 - Track C (guards): 7.1.6, 7.1.7, 7.1.8 — 3 days
@@ -714,57 +732,57 @@ npx prisma migrate down           # revert DB changes
 
 ### 21.1 Files to Create
 
-| # | File | Purpose | Task |
-|---|------|---------|------|
-| 1 | `apps/api/src/common/guards/tenant-body.guard.ts` | Cross-tenant body/query validation | 7.1.6 |
-| 2 | `apps/api/src/common/guards/tenant-status.guard.ts` | Tenant/subscription status check on all routes | 7.1.8 |
-| 3 | `apps/api/src/common/decorators/skip-tenant-status.decorator.ts` | Skip status check for public routes | 7.1.8 |
-| 4 | `apps/api/src/modules/api-keys/decorators/scopes.decorator.ts` | `@Scopes()` decorator | 7.1.7 |
-| 5 | `apps/api/src/common/interceptors/sanitize.interceptor.ts` | Response sanitization | 7.1.10 |
+| #   | File                                                             | Purpose                                        | Task   |
+| --- | ---------------------------------------------------------------- | ---------------------------------------------- | ------ |
+| 1   | `apps/api/src/common/guards/tenant-body.guard.ts`                | Cross-tenant body/query validation             | 7.1.6  |
+| 2   | `apps/api/src/common/guards/tenant-status.guard.ts`              | Tenant/subscription status check on all routes | 7.1.8  |
+| 3   | `apps/api/src/common/decorators/skip-tenant-status.decorator.ts` | Skip status check for public routes            | 7.1.8  |
+| 4   | `apps/api/src/modules/api-keys/decorators/scopes.decorator.ts`   | `@Scopes()` decorator                          | 7.1.7  |
+| 5   | `apps/api/src/common/interceptors/sanitize.interceptor.ts`       | Response sanitization                          | 7.1.10 |
 
 ### 21.2 Files to Modify
 
-| # | File | Change | Task |
-|---|------|--------|------|
-| 6 | `apps/api/src/modules/backup/backup.controller.ts` | Add `@Roles('OWNER')` | 7.1.1 |
-| 7 | `apps/api/src/modules/privacy/privacy.controller.ts` | Add `@Roles('OWNER', 'MANAGER')` | 7.1.2 |
-| 8 | `apps/api/src/modules/gift-cards/gift-cards.controller.ts` | Add `@Roles('OWNER', 'MANAGER')` | 7.1.3 |
-| 9 | `apps/api/src/modules/webhooks/webhook-event-emitter.ts` | Fix event routing | 7.1.4 |
-| 10 | `apps/api/src/modules/webhooks/webhook-delivery.service.ts` | Add secret decryption | 7.1.5 |
-| 11 | `apps/api/src/modules/webhooks/webhook-processor.ts` | Use decrypted secret for signing | 7.1.5 |
-| 12 | `apps/api/src/modules/webhooks/webhook-registration.service.ts` | Encrypt secret on create | 7.1.5 |
-| 13 | `apps/api/src/modules/api-keys/guards/api-key.guard.ts` | Add scope checking | 7.1.7 |
-| 14 | `apps/api/src/modules/auth/auth.service.ts` | Add tenant status check, generic registration error | 7.1.8, 7.1.12 |
-| 15 | `apps/api/src/modules/auth/jwt.strategy.ts` | Add tenant status check in validate() | 7.1.8 |
-| 16 | `apps/api/src/common/logger/logger.service.ts` | Add sensitive data redaction | 7.1.10 |
-| 17 | `apps/api/src/common/logger/http-logging.middleware.ts` | Redact sensitive headers | 7.1.10 |
-| 18 | `apps/api/src/redis/redis.service.ts` | Add DB persistence for blacklist | 7.1.11 |
-| 19 | `apps/api/src/modules/auth/auth.module.ts` | Register new guards/providers | 7.1.8, 7.1.11 |
-| 20 | `apps/api/src/app.module.ts` | Register global guards/interceptors | 7.1.6, 7.1.7, 7.1.10 |
-| 21 | `prisma/schema.prisma` | Add RevokedToken model, encryptedSecret | 7.1.5, 7.1.11 |
-| 22 | `.env.example` | Add new env vars | 7.1.5, 7.1.8 |
-| 23 | `apps/api/src/config/webhook.config.ts` | Add encryption key config | 7.1.5 |
-| 24 | `apps/api/src/config/app.config.ts` | Add tenant status check config | 7.1.8 |
+| #   | File                                                            | Change                                              | Task                 |
+| --- | --------------------------------------------------------------- | --------------------------------------------------- | -------------------- |
+| 6   | `apps/api/src/modules/backup/backup.controller.ts`              | Add `@Roles('OWNER')`                               | 7.1.1                |
+| 7   | `apps/api/src/modules/privacy/privacy.controller.ts`            | Add `@Roles('OWNER', 'MANAGER')`                    | 7.1.2                |
+| 8   | `apps/api/src/modules/gift-cards/gift-cards.controller.ts`      | Add `@Roles('OWNER', 'MANAGER')`                    | 7.1.3                |
+| 9   | `apps/api/src/modules/webhooks/webhook-event-emitter.ts`        | Fix event routing                                   | 7.1.4                |
+| 10  | `apps/api/src/modules/webhooks/webhook-delivery.service.ts`     | Add secret decryption                               | 7.1.5                |
+| 11  | `apps/api/src/modules/webhooks/webhook-processor.ts`            | Use decrypted secret for signing                    | 7.1.5                |
+| 12  | `apps/api/src/modules/webhooks/webhook-registration.service.ts` | Encrypt secret on create                            | 7.1.5                |
+| 13  | `apps/api/src/modules/api-keys/guards/api-key.guard.ts`         | Add scope checking                                  | 7.1.7                |
+| 14  | `apps/api/src/modules/auth/auth.service.ts`                     | Add tenant status check, generic registration error | 7.1.8, 7.1.12        |
+| 15  | `apps/api/src/modules/auth/jwt.strategy.ts`                     | Add tenant status check in validate()               | 7.1.8                |
+| 16  | `apps/api/src/common/logger/logger.service.ts`                  | Add sensitive data redaction                        | 7.1.10               |
+| 17  | `apps/api/src/common/logger/http-logging.middleware.ts`         | Redact sensitive headers                            | 7.1.10               |
+| 18  | `apps/api/src/redis/redis.service.ts`                           | Add DB persistence for blacklist                    | 7.1.11               |
+| 19  | `apps/api/src/modules/auth/auth.module.ts`                      | Register new guards/providers                       | 7.1.8, 7.1.11        |
+| 20  | `apps/api/src/app.module.ts`                                    | Register global guards/interceptors                 | 7.1.6, 7.1.7, 7.1.10 |
+| 21  | `prisma/schema.prisma`                                          | Add RevokedToken model, encryptedSecret             | 7.1.5, 7.1.11        |
+| 22  | `.env.example`                                                  | Add new env vars                                    | 7.1.5, 7.1.8         |
+| 23  | `apps/api/src/config/webhook.config.ts`                         | Add encryption key config                           | 7.1.5                |
+| 24  | `apps/api/src/config/app.config.ts`                             | Add tenant status check config                      | 7.1.8                |
 
 ### 21.3 Verification Scripts
 
-| # | Script | Purpose |
-|---|--------|---------|
-| 1 | `scripts/verify-rbac.sh` | Hit backup/privacy/gift-cards endpoints with each role, verify 403 vs 200 |
-| 2 | `scripts/verify-cross-tenant.sh` | POST with body.tenantId mismatched, verify 403 |
-| 3 | `scripts/verify-webhook-routing.sh` | Trigger order.created event, verify webhook delivery log |
-| 4 | `scripts/verify-webhook-signing.sh` | Verify HMAC signature matches consumer-side expected value |
-| 5 | `scripts/verify-jwt-blacklist.sh` | Login → logout → use same token, verify 401 |
-| 6 | `scripts/verify-registration-leak.sh` | Register twice with same email, verify generic 409 response |
-| 7 | `scripts/verify-sanitizer.sh` | Send request with password/token in body, verify logs show [REDACTED] |
-| 8 | `scripts/verify-cross-tenant-queries.sh` | Grep all service files for tenantId in WHERE clause |
+| #   | Script                                   | Purpose                                                                   |
+| --- | ---------------------------------------- | ------------------------------------------------------------------------- |
+| 1   | `scripts/verify-rbac.sh`                 | Hit backup/privacy/gift-cards endpoints with each role, verify 403 vs 200 |
+| 2   | `scripts/verify-cross-tenant.sh`         | POST with body.tenantId mismatched, verify 403                            |
+| 3   | `scripts/verify-webhook-routing.sh`      | Trigger order.created event, verify webhook delivery log                  |
+| 4   | `scripts/verify-webhook-signing.sh`      | Verify HMAC signature matches consumer-side expected value                |
+| 5   | `scripts/verify-jwt-blacklist.sh`        | Login → logout → use same token, verify 401                               |
+| 6   | `scripts/verify-registration-leak.sh`    | Register twice with same email, verify generic 409 response               |
+| 7   | `scripts/verify-sanitizer.sh`            | Send request with password/token in body, verify logs show [REDACTED]     |
+| 8   | `scripts/verify-cross-tenant-queries.sh` | Grep all service files for tenantId in WHERE clause                       |
 
 ### 21.4 Prisma Migrations
 
-| # | Name | Changes |
-|---|------|---------|
-| 1 | `add_revoked_token_model` | Create `revoked_tokens` table |
-| 2 | `add_webhook_encrypted_secret` | Add `encryptedSecret` column to `webhook_registrations` |
+| #   | Name                           | Changes                                                 |
+| --- | ------------------------------ | ------------------------------------------------------- |
+| 1   | `add_revoked_token_model`      | Create `revoked_tokens` table                           |
+| 2   | `add_webhook_encrypted_secret` | Add `encryptedSecret` column to `webhook_registrations` |
 
 ### 21.5 Dependency/CI-CD Changes
 
@@ -796,13 +814,13 @@ npx prisma migrate down           # revert DB changes
 
 ## APPENDIX B: MINOR INCONSISTENCIES NOTED DURING VERIFICATION
 
-| # | Source | Issue | Resolution |
-|---|--------|-------|------------|
-| 1 | PHASE7-VERIFIED-ROADMAP.md:40 | Header says "4 P1 security findings" but only 3 P1 tasks listed | Minor documentation error — actual count is 3. No impact on implementation. |
-| 2 | FINAL-ENTERPRISE-AUDIT-v6.4.md:3.2 | Claims "✅ RolesGuard with @Roles()" — contradicts P0-1/P0-2/P0-3 | v6.4 audit assessed infrastructure existence, not completeness. Production audit is authoritative. |
-| 3 | FINAL-ENTERPRISE-AUDIT-v6.4.md:3.3 A08 | Claims "✅ Webhook HMAC signing" — contradicts P0-5 | v6.4 did not verify HMAC key correctness. Production audit is authoritative. |
-| 4 | FINAL-ENTERPRISE-AUDIT-v6.4.md:3.2 | Claims "✅ ApiKeyGuard — scopes" — contradicts P0-9 | Scope field exists in schema but is dead code. Production audit confirmed no enforcement. |
+| #   | Source                                 | Issue                                                             | Resolution                                                                                         |
+| --- | -------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| 1   | PHASE7-VERIFIED-ROADMAP.md:40          | Header says "4 P1 security findings" but only 3 P1 tasks listed   | Minor documentation error — actual count is 3. No impact on implementation.                        |
+| 2   | FINAL-ENTERPRISE-AUDIT-v6.4.md:3.2     | Claims "✅ RolesGuard with @Roles()" — contradicts P0-1/P0-2/P0-3 | v6.4 audit assessed infrastructure existence, not completeness. Production audit is authoritative. |
+| 3   | FINAL-ENTERPRISE-AUDIT-v6.4.md:3.3 A08 | Claims "✅ Webhook HMAC signing" — contradicts P0-5               | v6.4 did not verify HMAC key correctness. Production audit is authoritative.                       |
+| 4   | FINAL-ENTERPRISE-AUDIT-v6.4.md:3.2     | Claims "✅ ApiKeyGuard — scopes" — contradicts P0-9               | Scope field exists in schema but is dead code. Production audit confirmed no enforcement.          |
 
 ---
 
-*End of Phase 7 Milestone 1 Implementation Plan. Ready for review and approval before implementation.*
+_End of Phase 7 Milestone 1 Implementation Plan. Ready for review and approval before implementation._

@@ -14,12 +14,12 @@ All **16 P0 (Critical)** and **20 P1 (High)** findings from the original product
 
 ## 1. Finding Catalog (from `FINAL-PRODUCTION-READINESS-AUDIT.md`)
 
-| Severity | Original count | Closed | Remaining | Release gate |
-|----------|----------------|--------|-----------|--------------|
-| P0 — Critical | 16 | 16 | 0 | ✅ |
-| P1 — High | 20 | 20 | 0 | ✅ |
-| P2 — Medium | 16 | Partial (see §3) | Backlog | ⚪ not blocking |
-| P3 — Low | 6 | Partial (see §3) | Backlog | ⚪ not blocking |
+| Severity      | Original count | Closed           | Remaining | Release gate    |
+| ------------- | -------------- | ---------------- | --------- | --------------- |
+| P0 — Critical | 16             | 16               | 0         | ✅              |
+| P1 — High     | 20             | 20               | 0         | ✅              |
+| P2 — Medium   | 16             | Partial (see §3) | Backlog   | ⚪ not blocking |
+| P3 — Low      | 6              | Partial (see §3) | Backlog   | ⚪ not blocking |
 
 ---
 
@@ -27,24 +27,24 @@ All **16 P0 (Critical)** and **20 P1 (High)** findings from the original product
 
 Closed across Phase 6 (hotfix) and Phase 7 M1–M4. Key evidence:
 
-| # | Finding | Closure evidence |
-|---|---------|------------------|
-| P0-1 | Backup controller no `@Roles` | `@Roles('OWNER')` on backup endpoints |
-| P0-2 | Privacy/GDPR controller no `@Roles` | Role-gated; anonymize restricted to self |
-| P0-3 | Gift-cards controller no `@Roles` | Financial ops gated to OWNER/MANAGER |
-| P0-4 | Webhook event routing broken | Emitter dispatches on event name, not missing `payload.eventType` |
-| P0-5 | Webhook secret-hash used as signing key | Raw secret used for HMAC signing; hash only at rest |
-| P0-6 | Missing `onDelete: Cascade` on 19 relations | Cascade FKs added; tenant deletion + GDPR erasure unblocked |
-| P0-7 | Orphaned models `MembershipHistory`/`EventLog` | Prisma `@relation` + cascade added |
-| P0-8 | Cross-tenant data injection via body | Body/query `tenantId` validated against JWT claims |
-| P0-9 | API-key scopes never enforced | `ApiKeyGuard` scope enforcement implemented |
-| P0-10 | No payments module | Full payments module implemented — **5 suites / 87 tests passing**, double-guard on payment processing |
-| P0-11 | Extreme test gap | Coverage expanded to **55 suites / 519 tests**; critical modules (auth, payments, orders, gift cards, inventory, subscriptions, RBAC) now tested |
-| P0-12 | Zero E2E/integration tests | Integration suites added (e.g. `order-crud.integration.spec.ts`) |
-| P0-13 | Sensitive data in logs | Logger sanitization / redaction for credentials and tokens |
-| P0-14 | `/metrics` open by default | Production requires non-empty `METRICS_AUTH_TOKEN` (min 16 chars) + unit test |
-| P0-15 | CI produces no deployable artifact | Docker build+push with registry + git-SHA tagging added (m5 G2) |
-| P0-16 | No security scanning in CI | `npm audit` (SCA) + CodeQL (SAST) gates added (m5 G1) |
+| #     | Finding                                        | Closure evidence                                                                                                                                 |
+| ----- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P0-1  | Backup controller no `@Roles`                  | `@Roles('OWNER')` on backup endpoints                                                                                                            |
+| P0-2  | Privacy/GDPR controller no `@Roles`            | Role-gated; anonymize restricted to self                                                                                                         |
+| P0-3  | Gift-cards controller no `@Roles`              | Financial ops gated to OWNER/MANAGER                                                                                                             |
+| P0-4  | Webhook event routing broken                   | Emitter dispatches on event name, not missing `payload.eventType`                                                                                |
+| P0-5  | Webhook secret-hash used as signing key        | Raw secret used for HMAC signing; hash only at rest                                                                                              |
+| P0-6  | Missing `onDelete: Cascade` on 19 relations    | Cascade FKs added; tenant deletion + GDPR erasure unblocked                                                                                      |
+| P0-7  | Orphaned models `MembershipHistory`/`EventLog` | Prisma `@relation` + cascade added                                                                                                               |
+| P0-8  | Cross-tenant data injection via body           | Body/query `tenantId` validated against JWT claims                                                                                               |
+| P0-9  | API-key scopes never enforced                  | `ApiKeyGuard` scope enforcement implemented                                                                                                      |
+| P0-10 | No payments module                             | Full payments module implemented — **5 suites / 87 tests passing**, double-guard on payment processing                                           |
+| P0-11 | Extreme test gap                               | Coverage expanded to **55 suites / 519 tests**; critical modules (auth, payments, orders, gift cards, inventory, subscriptions, RBAC) now tested |
+| P0-12 | Zero E2E/integration tests                     | Integration suites added (e.g. `order-crud.integration.spec.ts`)                                                                                 |
+| P0-13 | Sensitive data in logs                         | Logger sanitization / redaction for credentials and tokens                                                                                       |
+| P0-14 | `/metrics` open by default                     | Production requires non-empty `METRICS_AUTH_TOKEN` (min 16 chars) + unit test                                                                    |
+| P0-15 | CI produces no deployable artifact             | Docker build+push with registry + git-SHA tagging added (m5 G2)                                                                                  |
+| P0-16 | No security scanning in CI                     | `npm audit` (SCA) + CodeQL (SAST) gates added (m5 G1)                                                                                            |
 
 ---
 
@@ -74,6 +74,7 @@ All closed; per-finding root cause, fix, and tests in **`PHASE7-M5-P1-FIXES.md`*
 - **P1-20 inventory processors** — real logic implemented (m5 7.5.13).
 
 **Pre-commit audit additions (P1-21 … P1-25)** — found during the final pre-commit audit of the M5 tree vs `v7.5.0`, all **fixed and runtime-verified** before sign-off; full detail in `PHASE7-M5-P1-FIXES.md`:
+
 - **P1-21** payment webhooks unreachable (403) — `@SkipTenantCheck()` added; runtime 403→400 signature-rejection verified.
 - **P1-22** email jobs always dead-letter — `smtpConfig` registered in `ConfigModule.load`.
 - **P1-23** Stripe live refund/void — reason sanitized to Stripe enum; void via PaymentIntent cancel.
@@ -94,17 +95,17 @@ P3-1 HSTS all envs, P3-2 Swagger auth, P3-3 implicit conversion, P3-4 AuthModule
 
 ## 6. Verification Evidence (this audit run)
 
-| Gate | Command | Result |
-|------|---------|--------|
-| Unit + integration | `npx jest --config jest.config.ts --runInBand` | **55 suites / 519 tests passed** |
-| Lint | `nx lint api` | **0 errors, 0 warnings** |
-| Build | `nx build api` | **0 errors** |
-| Schema | `npx prisma validate` (repo root) | **valid** |
-| m1 security/behavior | `node scripts/verify-phase7-m1.js` | **55/55 (100%)** |
-| m2 suites/regression | `node scripts/verify-phase7-m2.js` | **33/33** |
-| m3 schema/regression | `node scripts/verify-phase7-m3.js` | **39/39** |
-| m5 observability/infra | `node scripts/verify-phase7-m5.js` | **39/39** |
-| m4 DB audits | `node scripts/verify-phase7-m4.js` | **30 static pass; 3 DB-dependent checks environment-blocked** |
+| Gate                   | Command                                        | Result                                                        |
+| ---------------------- | ---------------------------------------------- | ------------------------------------------------------------- |
+| Unit + integration     | `npx jest --config jest.config.ts --runInBand` | **55 suites / 519 tests passed**                              |
+| Lint                   | `nx lint api`                                  | **0 errors, 0 warnings**                                      |
+| Build                  | `nx build api`                                 | **0 errors**                                                  |
+| Schema                 | `npx prisma validate` (repo root)              | **valid**                                                     |
+| m1 security/behavior   | `node scripts/verify-phase7-m1.js`             | **55/55 (100%)**                                              |
+| m2 suites/regression   | `node scripts/verify-phase7-m2.js`             | **33/33**                                                     |
+| m3 schema/regression   | `node scripts/verify-phase7-m3.js`             | **39/39**                                                     |
+| m5 observability/infra | `node scripts/verify-phase7-m5.js`             | **39/39**                                                     |
+| m4 DB audits           | `node scripts/verify-phase7-m4.js`             | **30 static pass; 3 DB-dependent checks environment-blocked** |
 
 Test highlights: auth 5 suites/75 (incl. TOTP + 2FA), payments 5 suites/93 (incl. double-guard, webhook claim race, Stripe reason/void, Paymob inquiry), orders 2 suites/34 (incl. cross-tenant delete + gift-card redeem race), inventory 18 (incl. transaction paths), subscriptions 13 (plan lifecycle).
 
@@ -113,6 +114,7 @@ Test highlights: auth 5 suites/75 (incl. TOTP + 2FA), payments 5 suites/93 (incl
 ## 7. Environment-Blocked Items (not code defects)
 
 These require a live Postgres/Redis/gateway and are documented as blocked rather than failed:
+
 - `prisma migrate status` against live DB; migration execution on real database.
 - `scripts/m4-audit-enum-data.js`, `scripts/m4-audit-orphan-data.js` (require seeded DB).
 - Stripe/Paymob webhook end-to-end round-trips; real-disk health assertion; Redis throttling/Bull on live cluster.

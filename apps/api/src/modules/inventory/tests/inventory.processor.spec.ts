@@ -64,7 +64,7 @@ describe('InventoryProcessor', () => {
 
     processor = module.get(InventoryProcessor);
     registeredWorkers = queueServiceMock.registerWorker.mock.calls
-      .map((call) => [call[0] as string, call[1]])
+      .map((call): [string, unknown] => [call[0] as string, call[1]])
       .slice();
   });
 

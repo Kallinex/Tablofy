@@ -33,21 +33,21 @@ Verdict: **GO for Phase 3** (when instructed). No further pre-Phase-3 work is ou
 
 ## 3. Findings Addressed
 
-| Finding | Status | Evidence |
-|---|---|---|
-| N1 `createGRN` `averageCost` read→compute→write lost update | **FIXED (new)** | `purchasing.service.ts:948-953` `FOR UPDATE` lock; N1 tests in `purchasing.service.spec.ts` |
-| Redis auth optional by default; BullMQ could connect without password | **FIXED (P1-08)** | `redis.config.ts` builder; `queue.service.ts`/`redis.service.ts` use it; compose prod hard-requires; `env.validation.ts:234-241` |
-| Stale API image ran BullMQ without password → NOAUTH → `/health` hang | **FIXED (ops)** | Image rebuilt from current source; live health 200 with 21 current queues |
-| Migration/DB safety claims unverified against real data | **CLOSED** | `prisma migrate status`, `prisma migrate diff` = no difference, 24/24 applied, object spot-checks |
-| Entire remediation uncommitted | **CLOSED** | Commit `dde9489`; working tree clean |
-| P1-05 GRN batch attribution | CLOSED (prior) | See P1-05/P1-06 reports + `schema.prisma` `inventoryBatchId` |
-| P1-06 concurrency (CAS, atomic arithmetic, transfers, cycle counts, recipes) | CLOSED (prior) | See P1-05/P1-06 reports; full regression re-passed |
+| Finding                                                                      | Status            | Evidence                                                                                                                         |
+| ---------------------------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| N1 `createGRN` `averageCost` read→compute→write lost update                  | **FIXED (new)**   | `purchasing.service.ts:948-953` `FOR UPDATE` lock; N1 tests in `purchasing.service.spec.ts`                                      |
+| Redis auth optional by default; BullMQ could connect without password        | **FIXED (P1-08)** | `redis.config.ts` builder; `queue.service.ts`/`redis.service.ts` use it; compose prod hard-requires; `env.validation.ts:234-241` |
+| Stale API image ran BullMQ without password → NOAUTH → `/health` hang        | **FIXED (ops)**   | Image rebuilt from current source; live health 200 with 21 current queues                                                        |
+| Migration/DB safety claims unverified against real data                      | **CLOSED**        | `prisma migrate status`, `prisma migrate diff` = no difference, 24/24 applied, object spot-checks                                |
+| Entire remediation uncommitted                                               | **CLOSED**        | Commit `dde9489`; working tree clean                                                                                             |
+| P1-05 GRN batch attribution                                                  | CLOSED (prior)    | See P1-05/P1-06 reports + `schema.prisma` `inventoryBatchId`                                                                     |
+| P1-06 concurrency (CAS, atomic arithmetic, transfers, cycle counts, recipes) | CLOSED (prior)    | See P1-05/P1-06 reports; full regression re-passed                                                                               |
 
 ---
 
 ## 4. Root-Cause Analysis
 
-**N1 (`averageCost` lost update).** `createGRN` computed the new weighted average from `invItem.currentQuantity`/`averageCost` read immediately before the write, inside a transaction but *without a row lock*. Two concurrent GRNs for the same item both read the same base and each wrote its computed value; the later commit silently discarded the other's units/cost — an inventory-valuation lost update. The PO line `updateMany` guard prevented over-receipt but did not serialize the *item* mutation.
+**N1 (`averageCost` lost update).** `createGRN` computed the new weighted average from `invItem.currentQuantity`/`averageCost` read immediately before the write, inside a transaction but _without a row lock_. Two concurrent GRNs for the same item both read the same base and each wrote its computed value; the later commit silently discarded the other's units/cost — an inventory-valuation lost update. The PO line `updateMany` guard prevented over-receipt but did not serialize the _item_ mutation.
 
 **Redis NOAUTH hang.** The deployed `docker-api` image was built before `buildRedisConnectionOptions` existed. Its bundled `QueueService` built BullMQ connections with only host/port (no `password`) while `RedisService` sent one; BullMQ hit `NOAUTH`, and because BullMQ sets `maxRetriesPerRequest: null` (infinite retry), the retry loop never terminated — `/health` hung, `rejected_calls` on `client|setinfo`/`client|setname` climbed (~8424→10584) with a 594KB socket queue. Not a code defect in the current tree, but a deployment staleness bug.
 
@@ -58,6 +58,7 @@ Verdict: **GO for Phase 3** (when instructed). No further pre-Phase-3 work is ou
 Changes are confined to two additive migrations plus the `KitchenTicketItem` uniqueness already present in `20260811000000_add_kitchen_ticket_item_unique_order_item`.
 
 **`20260811120000_add_grn_batch_attribution`** (`prisma/migrations/.../migration.sql`):
+
 - `ALTER TABLE goods_receipt_items ADD COLUMN "inventoryBatchId" TEXT;`
 - `CREATE INDEX goods_receipt_items_inventoryBatchId_idx ...`
 - `CREATE UNIQUE INDEX inventory_batches_inventoryItemId_tenantId_batchNumber_lotN_key ON inventory_batches(inventoryItemId, tenantId, batchNumber, lotNumber, expiryDate);`
@@ -65,6 +66,7 @@ Changes are confined to two additive migrations plus the `KitchenTicketItem` uni
 - `ALTER INDEX loyalty_points_transactions_tenantId_referenceType_referenceId_ RENAME TO ...referenc_key;`
 
 **Real-data validation (no reset):**
+
 - `prisma migrate status`: 24 migrations found, **"Database schema is up to date!"**
 - Live objects confirmed: `goods_receipt_items.inventoryBatchId` col+idx+FK; the `inventory_batches` unique key; `payments_tenantId_idempotencyKey_key`; `wallet_transactions_tenantId_referenceType_referenceId_key`; `loyalty_points_transactions_tenantId_referenceType_referenc_key`; inventory tenant index + `averageCost` column.
 - `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma` → **"No difference detected."** (live schema == schema.prisma exactly).
@@ -101,12 +103,14 @@ Related N1 tests prove: concurrent writers serialize (stateful gate in `onNotify
 ## 7. Fix: Redis Authentication Enforcement
 
 **Single source of connection options** — `apps/api/src/config/redis.config.ts` `buildRedisConnectionOptions(configService, { maxRetriesPerRequest? })` returns `{ host, port, password?, tls?, maxRetriesPerRequest? }`, deleting absent `password`/`tls`. Both connection builders now use it:
+
 - `apps/api/src/redis/redis.service.ts:18-27` — `...buildRedisConnectionOptions(...)` + `maxRetriesPerRequest: 3`, `retryStrategy` stops after 3 attempts (no infinite retry → no hang).
 - `apps/api/src/modules/queues/queue.service.ts:84-86, 111-117, 152-155` — BullMQ `Queue` and `Worker` connections built from the same options (`maxRetriesPerRequest: null` as BullMQ requires), so BullMQ **authenticates** in every environment.
 
 **Boot-time validation** — `apps/api/src/config/env.validation.ts:234-241`: production requires `REDIS_PASSWORD` with length ≥ 16, else boot fails with a clear message.
 
 **Compose:**
+
 - `docker/docker-compose.prod.yml` — `REDIS_PASSWORD: ${REDIS_PASSWORD:?...}` (required, both for `redis` and `api`); `redis-server --requirepass` via the password; healthcheck `redis-cli ... -a $REDIS_PASSWORD ping`; postgres/redis now bound to `127.0.0.1` only.
 - `docker/docker-compose.yml` (dev) — strong 64-hex-char dev-only default so Redis always starts with auth locally; explicitly documented as never used in production. The default is also present in the gitignored `docker/.env`/`.env` runtime files.
 - `.env.example` documents the mandatory-in-prod rule.
@@ -119,17 +123,17 @@ Related N1 tests prove: concurrent writers serialize (stateful gate in `onNotify
 
 Environment: all 3 containers healthy (`tablofy-api`, `tablofy-postgres`, `tablofy-redis`).
 
-| Check | Result |
-|---|---|
-| `GET /api/v1/health` | `200`, ~0.02s (no hang), `status: ok` |
-| `info.database` | `up` |
-| `info.redis` | `up` |
-| `info.bullmq` | `up` with **21 queues** = current-source `QUEUE_NAMES` (email…dead-letter) |
-| Queue stats (preserved history) | e.g. webhook-delivery completed 18, kitchen 17, dead-letter completed 14, export-engine failed 7 |
-| `GET /api/v1/health/ready` | `200` |
-| unauthenticated `redis-cli PING` (in container) | `NOAUTH Authentication required.` |
-| authenticated `redis-cli -a <dev-password> PING` | `PONG` |
-| Credentials in health/log output | none |
+| Check                                            | Result                                                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `GET /api/v1/health`                             | `200`, ~0.02s (no hang), `status: ok`                                                            |
+| `info.database`                                  | `up`                                                                                             |
+| `info.redis`                                     | `up`                                                                                             |
+| `info.bullmq`                                    | `up` with **21 queues** = current-source `QUEUE_NAMES` (email…dead-letter)                       |
+| Queue stats (preserved history)                  | e.g. webhook-delivery completed 18, kitchen 17, dead-letter completed 14, export-engine failed 7 |
+| `GET /api/v1/health/ready`                       | `200`                                                                                            |
+| unauthenticated `redis-cli PING` (in container)  | `NOAUTH Authentication required.`                                                                |
+| authenticated `redis-cli -a <dev-password> PING` | `PONG`                                                                                           |
+| Credentials in health/log output                 | none                                                                                             |
 
 The previously observed `rejected_calls` flood and socket queue are gone; the running image now serves exactly the 21 current queues (stale image had 36 old queue names).
 
@@ -148,13 +152,13 @@ Re-verified on the live database with **no reset and no data deletion**:
 
 ## 10. Regression & Gates
 
-| Gate | Result |
-|---|---|
-| Full test run (`nx run api:test`) | **84/84 suites, 1057/1057 tests PASS** (baseline 1044 + 8 N1 + 5 config/Redis) |
-| Fresh re-run of affected suites on committed state | 4/4 suites, **69/69 tests PASS** (purchasing.service 29.4s, env.validation, docker-compose, redis.config) |
-| `nx run api:lint` | PASS (3 lint errors introduced during N1 test edits fixed; prettier applied) |
-| `nx run api:build` (webpack) | PASS (1m 2s) — this is the real compile gate (`tsc -p apps/api/tsconfig.app.json` cannot run because TS 6.0.3 removed `baseUrl` while `tsconfig.base.json:25` still sets it; build covers compilation) |
-| `npx prisma validate` | OK |
+| Gate                                               | Result                                                                                                                                                                                                 |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Full test run (`nx run api:test`)                  | **84/84 suites, 1057/1057 tests PASS** (baseline 1044 + 8 N1 + 5 config/Redis)                                                                                                                         |
+| Fresh re-run of affected suites on committed state | 4/4 suites, **69/69 tests PASS** (purchasing.service 29.4s, env.validation, docker-compose, redis.config)                                                                                              |
+| `nx run api:lint`                                  | PASS (3 lint errors introduced during N1 test edits fixed; prettier applied)                                                                                                                           |
+| `nx run api:build` (webpack)                       | PASS (1m 2s) — this is the real compile gate (`tsc -p apps/api/tsconfig.app.json` cannot run because TS 6.0.3 removed `baseUrl` while `tsconfig.base.json:25` still sets it; build covers compilation) |
+| `npx prisma validate`                              | OK                                                                                                                                                                                                     |
 
 ---
 

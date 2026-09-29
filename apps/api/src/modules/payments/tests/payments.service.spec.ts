@@ -16,7 +16,21 @@ import { SplitPaymentDto } from '../dto/split-payment.dto';
 
 describe('PaymentsService', () => {
   let service: PaymentsService;
-  let prisma: Record<string, jest.Mock>;
+  let prisma: {
+    order: { findFirst: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
+    payment: {
+      findFirst: jest.Mock;
+      findMany: jest.Mock;
+      findUnique: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+      count: jest.Mock;
+    };
+    orderStatusHistory: { create: jest.Mock };
+    paymentWebhookReceipt: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
+    $transaction: jest.Mock;
+  };
   let metrics: Record<string, jest.Mock>;
 
   const mockOrder = {
@@ -62,6 +76,7 @@ describe('PaymentsService', () => {
         findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
         count: jest.fn(),
       },
       orderStatusHistory: {
@@ -1719,7 +1734,26 @@ describe('PaymentsService', () => {
 
   describe('handleGatewayWebhook', () => {
     let webhookService: PaymentsService;
-    let webhookPrisma: Record<string, jest.Mock>;
+    let webhookPrisma: {
+      order: {
+        findFirst: jest.Mock;
+        findUnique: jest.Mock;
+        update: jest.Mock;
+        updateMany: jest.Mock;
+      };
+      payment: {
+        findFirst: jest.Mock;
+        findMany: jest.Mock;
+        findUnique: jest.Mock;
+        create: jest.Mock;
+        update: jest.Mock;
+        updateMany: jest.Mock;
+        count: jest.Mock;
+      };
+      orderStatusHistory: { create: jest.Mock };
+      paymentWebhookReceipt: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
+      $transaction: jest.Mock;
+    };
 
     const pendingGatewayPayment = {
       ...mockPayment,
@@ -1750,6 +1784,7 @@ describe('PaymentsService', () => {
           findUnique: jest.fn(),
           create: jest.fn(),
           update: jest.fn(),
+          updateMany: jest.fn(),
           count: jest.fn(),
         },
         orderStatusHistory: {

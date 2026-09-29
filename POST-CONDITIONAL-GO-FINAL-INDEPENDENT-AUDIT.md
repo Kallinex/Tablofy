@@ -48,13 +48,13 @@ The Dockerfile entrypoint runs `npx prisma migrate deploy` at boot. With the led
 
 ## 7. Five-Gate Matrix
 
-| Gate | Area | Classification | Evidence |
-|------|------|---------------|----------|
-| **P0-A** | Payment reconciliation read-only / no DB writes | **CLOSED** | Code inspection + 12 contract tests (§8) |
-| **P0-F** | Inventory costing weighted-average | **CLOSED** | Bug fix + 8 tests (§9) |
-| **P0-H** | Recipe update atomicity | **CLOSED** | `$transaction` wrap + 6 tests (§10) |
-| **P0-I** | Dangling `PURCHASING` role strings | **CLOSED** | 6 routes cleaned + 3 tests + fixed tripwire (§11) |
-| **P0-J** | Client-price trust (forged order prices) | **PARTIAL** | 6 tests + bounded residual (§12) |
+| Gate     | Area                                            | Classification | Evidence                                          |
+| -------- | ----------------------------------------------- | -------------- | ------------------------------------------------- |
+| **P0-A** | Payment reconciliation read-only / no DB writes | **CLOSED**     | Code inspection + 12 contract tests (§8)          |
+| **P0-F** | Inventory costing weighted-average              | **CLOSED**     | Bug fix + 8 tests (§9)                            |
+| **P0-H** | Recipe update atomicity                         | **CLOSED**     | `$transaction` wrap + 6 tests (§10)               |
+| **P0-I** | Dangling `PURCHASING` role strings              | **CLOSED**     | 6 routes cleaned + 3 tests + fixed tripwire (§11) |
+| **P0-J** | Client-price trust (forged order prices)        | **PARTIAL**    | 6 tests + bounded residual (§12)                  |
 
 ---
 
@@ -169,12 +169,12 @@ The Dockerfile entrypoint runs `npx prisma migrate deploy` at boot. With the led
 
 ## 22. Deployment — Bundle Integrity
 
-| Artifact | md5 | Bytes |
-|----------|-----|-------|
-| Previously deployed bundle | `882f250e063111137ab35e4a7c880a78` | 2,580,995 |
+| Artifact                                        | md5                                | Bytes     |
+| ----------------------------------------------- | ---------------------------------- | --------- |
+| Previously deployed bundle                      | `882f250e063111137ab35e4a7c880a78` | 2,580,995 |
 | Local `nx build api --configuration=production` | `7411d739ed7dda141ef4126ec185c277` | 2,583,229 |
-| New image `docker-api:latest` `app/main.js` | `7411d739ed7dda141ef4126ec185c277` | 2,583,229 |
-| Running container `app/main.js` | `7411d739ed7dda141ef4126ec185c277` | 2,583,229 |
+| New image `docker-api:latest` `app/main.js`     | `7411d739ed7dda141ef4126ec185c277` | 2,583,229 |
+| Running container `app/main.js`                 | `7411d739ed7dda141ef4126ec185c277` | 2,583,229 |
 
 The deployed bundle is byte-identical to the locally built bundle produced from the audited source — the code that passed all gates is exactly the code now running.
 
@@ -195,6 +195,7 @@ The deployed bundle is byte-identical to the locally built bundle produced from 
 ## 25. STOP-Condition Audit
 
 No stop condition was triggered:
+
 - Bookkeeping was possible and completed non-destructively (no reset/recreate/fabrication).
 - No uncertain money math introduced: P0-F uses `Decimal` exact math; P0-J prices from catalog and totals via existing `Decimal` utilities.
 - Concurrency: P0-H relies on a single Prisma transaction; order update path retains its version-CAS; GRN retains its `FOR UPDATE` lock.

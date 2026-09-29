@@ -12,44 +12,44 @@
 
 ## Quality Gates
 
-| Gate | Status |
-|------|--------|
-| G1 Security scanning in CI (`npm audit` + CodeQL) | PASS |
-| G2 Docker publish workflow (login + build-push + SHA tagging) | PASS |
-| G3 Observability env vars (`SENTRY_*`/`METRICS_*`) in validation + `.env.example` | PASS |
-| G4 Prod `METRICS_AUTH_TOKEN` requirement (+ unit test) | PASS |
-| G5 Business metrics wiring (orders/inventory/kds) | PASS |
-| G6 Real disk health (`statfs`) + bull health decoupled from audit-log | PASS |
-| G7 Bull Board deps, route, OWNER auth | PASS |
-| G8 DLQ queue + failed listener + alert threshold | PASS |
-| G9 `enableShutdownHooks` + shutdown timeout + process handlers | PASS |
-| G10 Dockerfile `deps-prod` (`npm ci --omit=dev`) + prisma CLI preserved | PASS |
-| G11 Per-queue job options map with `timeout` | PASS |
-| G12 9 cron jobs wrapped in distributed locks | PASS |
-| G13 Real inventory processors (Prisma queries, not stubs) | PASS |
-| G14 Build (`nx build api`) | PASS |
-| G15 Lint (`nx lint api`) | PASS |
-| G16 Tests (`nx test api`) | PASS (49 suites, 405 tests) |
-| G17 `prisma validate` (schema sanity) | PASS |
+| Gate                                                                              | Status                      |
+| --------------------------------------------------------------------------------- | --------------------------- |
+| G1 Security scanning in CI (`npm audit` + CodeQL)                                 | PASS                        |
+| G2 Docker publish workflow (login + build-push + SHA tagging)                     | PASS                        |
+| G3 Observability env vars (`SENTRY_*`/`METRICS_*`) in validation + `.env.example` | PASS                        |
+| G4 Prod `METRICS_AUTH_TOKEN` requirement (+ unit test)                            | PASS                        |
+| G5 Business metrics wiring (orders/inventory/kds)                                 | PASS                        |
+| G6 Real disk health (`statfs`) + bull health decoupled from audit-log             | PASS                        |
+| G7 Bull Board deps, route, OWNER auth                                             | PASS                        |
+| G8 DLQ queue + failed listener + alert threshold                                  | PASS                        |
+| G9 `enableShutdownHooks` + shutdown timeout + process handlers                    | PASS                        |
+| G10 Dockerfile `deps-prod` (`npm ci --omit=dev`) + prisma CLI preserved           | PASS                        |
+| G11 Per-queue job options map with `timeout`                                      | PASS                        |
+| G12 9 cron jobs wrapped in distributed locks                                      | PASS                        |
+| G13 Real inventory processors (Prisma queries, not stubs)                         | PASS                        |
+| G14 Build (`nx build api`)                                                        | PASS                        |
+| G15 Lint (`nx lint api`)                                                          | PASS                        |
+| G16 Tests (`nx test api`)                                                         | PASS (49 suites, 405 tests) |
+| G17 `prisma validate` (schema sanity)                                             | PASS                        |
 
 ## Tasks Delivered
 
-| Task | Description | Verdict |
-|------|-------------|---------|
-| 7.5.1 | Docker build + push workflow (ghcr.io, git SHA/branch/semver tags) | Done |
-| 7.5.2 | Security scanning in CI: `npm audit` (SCA) + CodeQL (SAST) | Done |
-| 7.5.3 | `SENTRY_*` / `METRICS_*` env validation + `.env.example` | Done |
-| 7.5.4 | Prod requires `METRICS_AUTH_TOKEN` (min 16 chars) | Done |
-| 7.5.5 | Business metric counters wired into Orders, Inventory, Kitchen + gauge loop | Done |
-| 7.5.6 | Real disk-space health check (`fs.statfs`) | Done |
-| 7.5.7 | Bull Board at `/admin/queues` behind OWNER-role JWT auth | Done |
-| 7.5.8 | Dead letter queue for exhausted BullMQ jobs + depth alerting | Done |
-| 7.5.9 | `unhandledRejection`/`uncaughtException` handlers with fallback logging | Done (SentryFilter skipped — see Corrections) |
-| 7.5.10 | Dockerfile `deps-prod` stage (`npm ci --omit=dev`), prisma CLI preserved | Done |
-| 7.5.11 | Per-queue job timeouts/retries (`QUEUE_JOB_OPTIONS`) | Done |
-| 7.5.12 | Cron overlap prevention via Redis distributed locks (9 jobs) | Done |
-| 7.5.13 | Real inventory processors (low-stock, expiration, waste, sync) + specs | Done |
-| 7.5.14 | Graceful shutdown timeout + `enableShutdownHooks` | Done |
+| Task   | Description                                                                 | Verdict                                       |
+| ------ | --------------------------------------------------------------------------- | --------------------------------------------- |
+| 7.5.1  | Docker build + push workflow (ghcr.io, git SHA/branch/semver tags)          | Done                                          |
+| 7.5.2  | Security scanning in CI: `npm audit` (SCA) + CodeQL (SAST)                  | Done                                          |
+| 7.5.3  | `SENTRY_*` / `METRICS_*` env validation + `.env.example`                    | Done                                          |
+| 7.5.4  | Prod requires `METRICS_AUTH_TOKEN` (min 16 chars)                           | Done                                          |
+| 7.5.5  | Business metric counters wired into Orders, Inventory, Kitchen + gauge loop | Done                                          |
+| 7.5.6  | Real disk-space health check (`fs.statfs`)                                  | Done                                          |
+| 7.5.7  | Bull Board at `/admin/queues` behind OWNER-role JWT auth                    | Done                                          |
+| 7.5.8  | Dead letter queue for exhausted BullMQ jobs + depth alerting                | Done                                          |
+| 7.5.9  | `unhandledRejection`/`uncaughtException` handlers with fallback logging     | Done (SentryFilter skipped — see Corrections) |
+| 7.5.10 | Dockerfile `deps-prod` stage (`npm ci --omit=dev`), prisma CLI preserved    | Done                                          |
+| 7.5.11 | Per-queue job timeouts/retries (`QUEUE_JOB_OPTIONS`)                        | Done                                          |
+| 7.5.12 | Cron overlap prevention via Redis distributed locks (9 jobs)                | Done                                          |
+| 7.5.13 | Real inventory processors (low-stock, expiration, waste, sync) + specs      | Done                                          |
+| 7.5.14 | Graceful shutdown timeout + `enableShutdownHooks`                           | Done                                          |
 
 ## Forensic Finding Coverage (12/12 in-scope)
 
@@ -57,12 +57,12 @@ P0-14, P0-15, P0-16, P1-16, P1-17, P1-18, P1-19, P1-20, P2-14, P2-15, P2-1, P2-r
 
 ## Plan Corrections / Deviations (approved during implementation)
 
-| Plan value | Actual | Root cause |
-|------------|--------|------------|
-| 7.5.9 register `SentryFilter` | **Skipped** | `HttpExceptionFilter` (registered `APP_FILTER`) already captures 5xx → Sentry when enabled. Registering `SentryFilter` would double-capture. Process handlers (`unhandledRejection`/`uncaughtException`) delivered as planned. |
-| 7.5.6 use `@nestjs/terminus` `DiskHealthIndicator.checkDiskSpace` | **`fs.promises.statfs` + `HealthCheckError`** | Terminus v11 `DiskHealthIndicator.checkDiskSpace` is **private** (build error TS2341). Implemented a real disk-space check (`statfs`, config `HEALTH_DISK_PATH`/`HEALTH_DISK_THRESHOLD_MB`, default 200MB free) with the standard `HealthCheckError` contract. |
-| 7.5.12 lock service at `common/redis/redis-lock.service.ts` | **`redis/redis-lock.service.ts`** | Redis module (`RedisModule`) is Global; lock service placed alongside `RedisService` and exported from it. |
-| Bull Board auth (plan §3.3: dedicated JWT middleware) | **Middleware reusing `JwtService` + `RedisService.isTokenBlacklisted`** | Existing auth stack reused; OWNER-role requirement enforced at the Bull Board route only. |
+| Plan value                                                        | Actual                                                                  | Root cause                                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7.5.9 register `SentryFilter`                                     | **Skipped**                                                             | `HttpExceptionFilter` (registered `APP_FILTER`) already captures 5xx → Sentry when enabled. Registering `SentryFilter` would double-capture. Process handlers (`unhandledRejection`/`uncaughtException`) delivered as planned.                                 |
+| 7.5.6 use `@nestjs/terminus` `DiskHealthIndicator.checkDiskSpace` | **`fs.promises.statfs` + `HealthCheckError`**                           | Terminus v11 `DiskHealthIndicator.checkDiskSpace` is **private** (build error TS2341). Implemented a real disk-space check (`statfs`, config `HEALTH_DISK_PATH`/`HEALTH_DISK_THRESHOLD_MB`, default 200MB free) with the standard `HealthCheckError` contract. |
+| 7.5.12 lock service at `common/redis/redis-lock.service.ts`       | **`redis/redis-lock.service.ts`**                                       | Redis module (`RedisModule`) is Global; lock service placed alongside `RedisService` and exported from it.                                                                                                                                                     |
+| Bull Board auth (plan §3.3: dedicated JWT middleware)             | **Middleware reusing `JwtService` + `RedisService.isTokenBlacklisted`** | Existing auth stack reused; OWNER-role requirement enforced at the Bull Board route only.                                                                                                                                                                      |
 
 ## Docker Validation Note (7.5.10 / 7.5.1)
 

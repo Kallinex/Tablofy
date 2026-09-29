@@ -456,6 +456,7 @@ export class TransfersService {
     await this.cacheService.delete(tenantId, `transfer:${id}`);
     await this.cacheService.delete(tenantId, 'transfers:list');
     await this.cacheService.deletePattern(tenantId, 'movements:*');
+    await this.invalidateTouchedItemCache(tenantId, this.collectTransferItemIds(transfer.items));
     this.gateway.broadcastTransferUpdate(tenantId, 'transfer.started', updated);
 
     return updated;
@@ -639,6 +640,10 @@ export class TransfersService {
     await this.cacheService.delete(tenantId, `transfer:${id}`);
     await this.cacheService.delete(tenantId, 'transfers:list');
     await this.cacheService.deletePattern(tenantId, 'movements:*');
+    await this.invalidateTouchedItemCache(
+      tenantId,
+      dto.items.map((i) => i.inventoryItemId).filter(Boolean) as string[],
+    );
     this.gateway.broadcastTransferUpdate(tenantId, 'transfer.received', updated);
 
     return updated;
@@ -744,9 +749,30 @@ export class TransfersService {
     await this.cacheService.delete(tenantId, `transfer:${id}`);
     await this.cacheService.delete(tenantId, 'transfers:list');
     await this.cacheService.deletePattern(tenantId, 'movements:*');
+    await this.invalidateTouchedItemCache(tenantId, this.collectTransferItemIds(transfer.items));
     this.gateway.broadcastTransferUpdate(tenantId, 'transfer.cancelled', updated);
 
     return updated;
+  }
+
+  private async invalidateTouchedItemCache(tenantId: string, itemIds: string[]) {
+    for (const id of new Set(itemIds)) {
+      await this.cacheService.delete(tenantId, `item:${id}`);
+    }
+    await this.cacheService.deletePattern(tenantId, 'items:*');
+    await this.cacheService.deletePattern(tenantId, 'low-stock:*');
+    await this.cacheService.deletePattern(tenantId, 'critical-stock:*');
+    await this.cacheService.deletePattern(tenantId, 'out-of-stock:*');
+  }
+
+  private collectTransferItemIds(...arrays: Array<Array<{ inventoryItemId?: string | null }>>) {
+    const ids: string[] = [];
+    for (const arr of arrays) {
+      for (const it of arr) {
+        if (it.inventoryItemId) ids.push(it.inventoryItemId);
+      }
+    }
+    return ids;
   }
 
   // ============================================

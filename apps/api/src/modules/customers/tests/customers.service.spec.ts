@@ -111,7 +111,10 @@ describe('CustomersService', () => {
       prisma.customer.count.mockResolvedValue(1);
       cache.get.mockResolvedValue(null);
 
-      const result = await service.findAll({ page: 1, limit: 20 }, testTenantId);
+      const result = (await service.findAll(
+        { page: 1, limit: 20 } as never,
+        testTenantId as never,
+      )) as { data: unknown[] };
 
       expect(result.data).toHaveLength(1);
     });
@@ -205,7 +208,7 @@ describe('CustomersService', () => {
 
       const result = await service.earnPoints(
         'cust-1',
-        { points: 50, reason: 'Purchase' },
+        { points: 50, reason: 'Purchase' } as never,
         testTenantId,
         testUserId,
       );

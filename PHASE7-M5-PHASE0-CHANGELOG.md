@@ -7,6 +7,7 @@ and remain uncommitted.
 ## Docker
 
 ### Dockerfile prod log directory (modified)
+
 - `docker/Dockerfile` — added `RUN mkdir -p /app/logs && chown -R nestjs:nodejs /app/logs` in the `runner`
   stage **before** `USER nestjs`. Fixes runtime EACCES on winston daily-rotate-file target `/app/logs`.
   Boot now writes `/app/logs/app-*.log`, `/app/logs/error-*.log`, and audit JSON as `nestjs`.
@@ -14,6 +15,7 @@ and remain uncommitted.
 ## API Boot Blockers
 
 ### Payments per-provider mode (modified)
+
 - `apps/api/src/modules/payments/payments.module.ts` — `STRIPE_PROVIDER_OPTIONS` / `PAYMOB_PROVIDER_OPTIONS`
   now derive live/mock **from that provider's own credential** (live only when `stripeSecretKey` /
   `paymobApiKey` present; else mock). Previously the global `PAYMENTS_MODE=live` forced both providers
@@ -23,11 +25,13 @@ and remain uncommitted.
   Stripe-only prod now boots: Stripe live, Paymob mock.
 
 ### Logger resolve (modified)
+
 - `apps/api/src/main.ts` — `app.get(AppLoggerService)` → `await app.resolve(AppLoggerService)`.
   `AppLoggerService` is `@Injectable({ scope: Scope.TRANSIENT })`; `app.get()` on a scoped provider
   throws `InvalidClassScopeException`. Root `ConfigService` stays `app.get()` (default-scoped — safe).
 
 ### init() ordering + global prefix/versioning (modified — root-caused fix)
+
 - `apps/api/src/main.ts` — `await app.init()` was originally inserted before `setGlobalPrefix('api')` and
   `enableVersioning({ type: URI, prefix: 'v', defaultVersion: '1' })`. Because `init()` registers routes
   (nestjs/core `NestApplication.init()` → `registerRouter()`), the subsequent prefix/versioning calls were
@@ -38,6 +42,7 @@ and remain uncommitted.
 - Result: `/api/v1/health` 200, `/health` 404, `POST /api/v1/auth/login` reachable, container `(healthy)`.
 
 ### Bull Board mount order (modified — root-caused fix)
+
 - `apps/api/src/common/bull-board/bull-board.module.ts` — `ExpressAdapter` + board (`createBullBoard`)
   created in the **constructor** instead of `onModuleInit`, so `getRouter()` works before `init()`;
   `onModuleInit` keeps the queue listener + existing-queue registration + "Bull Board initialized" log.

@@ -42,7 +42,7 @@ describe('RolesGuard', () => {
       permissions: opts.permissions ?? null,
       anyAuthenticated: opts.anyAuthenticated ?? false,
     };
-    reflector.getAllAndOverride.mockImplementation((key: string) => map[key]);
+    reflector.getAllAndOverride.mockImplementation((key: unknown) => map[key as string]);
   }
 
   function createMockContext(role?: string) {

@@ -10,17 +10,17 @@
 
 ## 1. Executive Summary
 
-| Area | Result |
-|---|---|
-| P1-B webhook FK fix (live runtime) | **PASS** |
-| Unit / integration tests | **PASS — 808/808 (70 suites)**, incl. F1 concurrency specs |
-| E2E verify harnesses (CI set) | **PASS** — phase2a, m4, m5, m6, m7, m8; **m9 54/55** (1 known deviation, §6) |
-| TypeScript (`tsc --noEmit`) | **PASS** |
-| Build (`nx build api`) | **PASS** (dist fresh) |
-| Lint (`nx run api:lint`) | **PASS** (v8's 2704 pre-existing errors are resolved in this tree) |
-| Prisma validate / migrate status | **PASS** — schema valid, 20 migrations up to date |
-| HTTP health (container) | **PASS — 200** |
-| Test-data hygiene | Restored to baseline: 0 tenants / 1 pre-existing user |
+| Area                               | Result                                                                       |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| P1-B webhook FK fix (live runtime) | **PASS**                                                                     |
+| Unit / integration tests           | **PASS — 808/808 (70 suites)**, incl. F1 concurrency specs                   |
+| E2E verify harnesses (CI set)      | **PASS** — phase2a, m4, m5, m6, m7, m8; **m9 54/55** (1 known deviation, §6) |
+| TypeScript (`tsc --noEmit`)        | **PASS**                                                                     |
+| Build (`nx build api`)             | **PASS** (dist fresh)                                                        |
+| Lint (`nx run api:lint`)           | **PASS** (v8's 2704 pre-existing errors are resolved in this tree)           |
+| Prisma validate / migrate status   | **PASS** — schema valid, 20 migrations up to date                            |
+| HTTP health (container)            | **PASS — 200**                                                               |
+| Test-data hygiene                  | Restored to baseline: 0 tenants / 1 pre-existing user                        |
 
 ---
 
@@ -46,22 +46,22 @@ WEBHOOK FK RUNTIME VERIFY: PASS
 
 ## 3. Static Gates
 
-| Gate | Command | Result |
-|---|---|---|
-| TypeScript | `npx tsc --noEmit` (apps/api) | PASS (0 errors) |
-| Build | `nx build api` | PASS (dist `main.js` contains the fix) |
-| Lint | `npx nx run api:lint` | PASS (0 errors; v8's 2704 pre-existing errors gone) |
-| Prisma | `npx prisma validate` / `prisma migrate status` | PASS — schema valid; 20/20 migrations applied |
+| Gate       | Command                                         | Result                                              |
+| ---------- | ----------------------------------------------- | --------------------------------------------------- |
+| TypeScript | `npx tsc --noEmit` (apps/api)                   | PASS (0 errors)                                     |
+| Build      | `nx build api`                                  | PASS (dist `main.js` contains the fix)              |
+| Lint       | `npx nx run api:lint`                           | PASS (0 errors; v8's 2704 pre-existing errors gone) |
+| Prisma     | `npx prisma validate` / `prisma migrate status` | PASS — schema valid; 20/20 migrations applied       |
 
 ---
 
 ## 4. Test Gates
 
-| Gate | Result |
-|---|---|
-| Full jest suite (`nx test api --configuration=coverage`) | **PASS — 70 suites, 808 tests** |
-| F1 concurrency (in suite) | PASS — `RecipesService.deductInventoryForOrder` concurrent/retry idempotency |
-| Payments concurrency (in suite) | PASS — concurrent refund balance consumption, single-credit webhook delivery |
+| Gate                                                     | Result                                                                       |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Full jest suite (`nx test api --configuration=coverage`) | **PASS — 70 suites, 808 tests**                                              |
+| F1 concurrency (in suite)                                | PASS — `RecipesService.deductInventoryForOrder` concurrent/retry idempotency |
+| Payments concurrency (in suite)                          | PASS — concurrent refund balance consumption, single-credit webhook delivery |
 
 ---
 
@@ -69,15 +69,15 @@ WEBHOOK FK RUNTIME VERIFY: PASS
 
 Run against the current tree's own built server (`node dist/apps/api/main.js`, `NODE_ENV=testing`, scratch DB `tablofy_dev` created+migrated+then dropped). Port-3000 conflict with the container was avoided by stopping the container for these runs and restarting it after.
 
-| Script | Result |
-|---|---|
-| `verify-phase2a.js` | **37/37** PASS |
-| `verify-m4.js` | **132/132** PASS |
-| `verify-m5.js` | **38/38** PASS |
-| `verify-m6.js` | **32/32** PASS |
-| `verify-m7.js` | **41/41** PASS |
-| `verify-m8.js` | **38/38** PASS |
-| `verify-m9.js` | **54/55** — see §6 |
+| Script              | Result             |
+| ------------------- | ------------------ |
+| `verify-phase2a.js` | **37/37** PASS     |
+| `verify-m4.js`      | **132/132** PASS   |
+| `verify-m5.js`      | **38/38** PASS     |
+| `verify-m6.js`      | **32/32** PASS     |
+| `verify-m7.js`      | **41/41** PASS     |
+| `verify-m8.js`      | **38/38** PASS     |
+| `verify-m9.js`      | **54/55** — see §6 |
 
 ---
 

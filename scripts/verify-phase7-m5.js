@@ -70,7 +70,12 @@ checkContains('docker-publish.yml with git SHA tagging', '.github/workflows/dock
 
 console.log('\n=== G3: Observability env vars (P1-17) ===');
 const envValidation = read('apps/api/src/config/env.validation.ts');
-for (const key of ['SENTRY_DSN', 'SENTRY_ENABLED', 'METRICS_AUTH_TOKEN', 'METRICS_COLLECT_INTERVAL_MS']) {
+for (const key of [
+  'SENTRY_DSN',
+  'SENTRY_ENABLED',
+  'METRICS_AUTH_TOKEN',
+  'METRICS_COLLECT_INTERVAL_MS',
+]) {
   if (envValidation.includes(key)) {
     ok(`env.validation.ts declares ${key}`);
   } else {
@@ -78,7 +83,12 @@ for (const key of ['SENTRY_DSN', 'SENTRY_ENABLED', 'METRICS_AUTH_TOKEN', 'METRIC
   }
 }
 const envExample = read('.env.example');
-for (const key of ['SENTRY_DSN', 'SENTRY_ENABLED', 'METRICS_AUTH_TOKEN', 'METRICS_COLLECT_INTERVAL_MS']) {
+for (const key of [
+  'SENTRY_DSN',
+  'SENTRY_ENABLED',
+  'METRICS_AUTH_TOKEN',
+  'METRICS_COLLECT_INTERVAL_MS',
+]) {
   if (envExample.includes(key)) {
     ok(`.env.example documents ${key}`);
   } else {
@@ -87,9 +97,11 @@ for (const key of ['SENTRY_DSN', 'SENTRY_ENABLED', 'METRICS_AUTH_TOKEN', 'METRIC
 }
 
 console.log('\n=== G4: Prod METRICS_AUTH_TOKEN requirement (P0-14) ===');
-checkContains('production validation rejects missing token', 'apps/api/src/config/env.validation.ts', [
-  'Production environment requires METRICS_AUTH_TOKEN',
-]);
+checkContains(
+  'production validation rejects missing token',
+  'apps/api/src/config/env.validation.ts',
+  ['Production environment requires METRICS_AUTH_TOKEN'],
+);
 if (exists('apps/api/src/config/env.validation.spec.ts')) {
   ok('env.validation.spec.ts exists');
 } else {
@@ -97,16 +109,21 @@ if (exists('apps/api/src/config/env.validation.spec.ts')) {
 }
 
 console.log('\n=== G5: Business metrics wiring (P2-14) ===');
-checkContains('orders.service.ts wired to metrics', 'apps/api/src/modules/orders/orders.service.ts', [
-  'incrementOrdersCreated',
-  'incrementOrdersCompleted',
-]);
-checkContains('inventory.service.ts wired to metrics', 'apps/api/src/modules/inventory/inventory.service.ts', [
-  'incrementInventoryMovements',
-]);
-checkContains('kds.service.ts wired to kitchen metrics', 'apps/api/src/modules/kds/kds.service.ts', [
-  'incrementKitchenTickets',
-]);
+checkContains(
+  'orders.service.ts wired to metrics',
+  'apps/api/src/modules/orders/orders.service.ts',
+  ['incrementOrdersCreated', 'incrementOrdersCompleted'],
+);
+checkContains(
+  'inventory.service.ts wired to metrics',
+  'apps/api/src/modules/inventory/inventory.service.ts',
+  ['incrementInventoryMovements'],
+);
+checkContains(
+  'kds.service.ts wired to kitchen metrics',
+  'apps/api/src/modules/kds/kds.service.ts',
+  ['incrementKitchenTickets'],
+);
 
 console.log('\n=== G6: Real disk health + bull health (P2-15) ===');
 const diskHealth = read('apps/api/src/health/disk-health.indicator.ts');
@@ -131,19 +148,19 @@ for (const dep of ['@bull-board/api', '@bull-board/express']) {
     fail(`package.json MISSING ${dep}`);
   }
 }
-checkContains('bull-board module with auth + router', 'apps/api/src/common/bull-board/bull-board.module.ts', [
-  'createAuthMiddleware',
-  'getRouter',
-]);
+checkContains(
+  'bull-board module with auth + router',
+  'apps/api/src/common/bull-board/bull-board.module.ts',
+  ['createAuthMiddleware', 'getRouter'],
+);
 checkContains('bull-board mounted in main.ts', 'apps/api/src/main.ts', ['BULL_BOARD_PATH']);
 
 console.log('\n=== G8: Dead letter queue (P1-18) ===');
-checkContains('dead-letter queue + failed listener + threshold', 'apps/api/src/modules/queues/queue.service.ts', [
-  "'dead-letter'",
-  "worker.on('failed'",
-  'QUEUE_DLQ_ALERT_THRESHOLD',
-  'QUEUE_JOB_OPTIONS',
-]);
+checkContains(
+  'dead-letter queue + failed listener + threshold',
+  'apps/api/src/modules/queues/queue.service.ts',
+  ["'dead-letter'", "worker.on('failed'", 'QUEUE_DLQ_ALERT_THRESHOLD', 'QUEUE_JOB_OPTIONS'],
+);
 if (exists('apps/api/src/modules/queues/dead-letter.processor.ts')) {
   ok('dead-letter.processor.ts exists');
 } else {
@@ -173,29 +190,38 @@ if (/COPY --from=deps-prod[^\n]*node_modules/.test(dockerfile)) {
 if (dockerfile.includes('node_modules/prisma')) {
   ok('prisma CLI preserved for migrate deploy');
 } else if (/\"prisma\"\s*:\s*\"\^/.test(read('package.json'))) {
-  ok('prisma CLI preserved for migrate deploy (production dependency, shipped via deps-prod node_modules)');
+  ok(
+    'prisma CLI preserved for migrate deploy (production dependency, shipped via deps-prod node_modules)',
+  );
 } else {
   fail('prisma CLI not preserved in runner');
 }
 
 console.log('\n=== G11: Per-queue job options (P1-18 extended) ===');
 const queueService = read('apps/api/src/modules/queues/queue.service.ts');
-if (queueService.includes('timeout') && queueService.includes('email:') && queueService.includes('BASE_JOB_OPTIONS')) {
+if (
+  queueService.includes('timeout') &&
+  queueService.includes('email:') &&
+  queueService.includes('BASE_JOB_OPTIONS')
+) {
   ok('QUEUE_JOB_OPTIONS map with per-queue timeout merged over defaults');
 } else {
   fail('QUEUE_JOB_OPTIONS map/timeout MISSING');
 }
 
 console.log('\n=== G12: Cron overlap prevention (P2-related) ===');
-checkContains('scheduler uses RedisLockService', 'apps/api/src/modules/scheduler/scheduler.service.ts', [
-  'RedisLockService',
-  'runIfLocked',
-]);
+checkContains(
+  'scheduler uses RedisLockService',
+  'apps/api/src/modules/scheduler/scheduler.service.ts',
+  ['RedisLockService', 'runIfLocked'],
+);
 const scheduler = read('apps/api/src/modules/scheduler/scheduler.service.ts');
 const cronLocks = (scheduler.match(/this\.runLocked\(/g) || []).length;
 const cronDecorators = (scheduler.match(/@Cron\(/g) || []).length;
 if (cronLocks >= 9 || cronDecorators >= 9) {
-  ok(`${cronLocks} runLocked call sites (${cronDecorators} @Cron handlers) wrapped in distributed locks`);
+  ok(
+    `${cronLocks} runLocked call sites (${cronDecorators} @Cron handlers) wrapped in distributed locks`,
+  );
 } else {
   fail(`cron lock call sites=${cronLocks} (expected >= 9)`);
 }

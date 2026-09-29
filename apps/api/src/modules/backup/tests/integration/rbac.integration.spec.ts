@@ -4,7 +4,13 @@ import { BackupService } from '../../backup.service';
 
 describe('Backup RBAC — Integration', () => {
   let controller: BackupController;
-  let backupService: jest.Mocked<BackupService>;
+  let backupService: {
+    create: jest.Mock;
+    findAll: jest.Mock;
+    findOne: jest.Mock;
+    verify: jest.Mock;
+    restore: jest.Mock;
+  };
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -24,7 +30,7 @@ describe('Backup RBAC — Integration', () => {
     }).compile();
 
     controller = module.get<BackupController>(BackupController);
-    backupService = module.get(BackupService) as jest.Mocked<BackupService>;
+    backupService = module.get(BackupService) as unknown as typeof backupService;
   });
 
   beforeEach(() => {

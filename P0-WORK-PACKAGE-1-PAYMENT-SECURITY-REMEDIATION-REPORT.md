@@ -22,12 +22,12 @@ All four P0 findings in this work package were confirmed against source and reme
 
 ## 2. Work Package Scope
 
-| ID | Finding (audit) | Class |
-|---|---|---|
-| P0-A | Payments reconcile route always 404s (shadowed by `:id`) | IMPLEMENTED + TESTED |
-| P0-B | Provider `clientSecret` never returned → live card flow uncompletable | IMPLEMENTED + TESTED |
-| P0-C | `@Throttle` inert; `ThrottlerGuard` never registered | IMPLEMENTED + TESTED |
-| P0-D | `ApiKeyGuard` wired nowhere; Bearer branch passes any token | IMPLEMENTED + TESTED (guard implementation-ready; not wired — no route contract) |
+| ID   | Finding (audit)                                                       | Class                                                                            |
+| ---- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| P0-A | Payments reconcile route always 404s (shadowed by `:id`)              | IMPLEMENTED + TESTED                                                             |
+| P0-B | Provider `clientSecret` never returned → live card flow uncompletable | IMPLEMENTED + TESTED                                                             |
+| P0-C | `@Throttle` inert; `ThrottlerGuard` never registered                  | IMPLEMENTED + TESTED                                                             |
+| P0-D | `ApiKeyGuard` wired nowhere; Bearer branch passes any token           | IMPLEMENTED + TESTED (guard implementation-ready; not wired — no route contract) |
 
 Explicitly **out of scope** (not started): invitations, costing, supplier-performance, recipes rollback, `PURCHASING` role, orders client-price trust, sessions, notifications, privacy export, subscriptions, analytics, forecasting, backups, and all P0-E+ findings.
 
@@ -54,7 +54,7 @@ Explicitly **out of scope** (not started): invitations, costing, supplier-perfor
 
 ## 5. P0-A — Root Cause
 
-`payments.controller.ts` (before fix): `@Get()` findAll (line 31) → `@Get(':id')` findOne (**line 42**) → `@Get('reconcile')` (**line 104**). Express route resolution is declaration-order, so `GET /restaurants/:restaurantId/payments/reconcile` matched `:id` with `id='reconcile'` → `findOne('reconcile', tenantId)` → `NotFoundException` → **404**. The endpoint was *unwired* (shadowed), not intentionally disabled. `GET providers/:tenantId/status` (3 segments) was not shadowed by `:id` (1 segment) but is likewise a static route.
+`payments.controller.ts` (before fix): `@Get()` findAll (line 31) → `@Get(':id')` findOne (**line 42**) → `@Get('reconcile')` (**line 104**). Express route resolution is declaration-order, so `GET /restaurants/:restaurantId/payments/reconcile` matched `:id` with `id='reconcile'` → `findOne('reconcile', tenantId)` → `NotFoundException` → **404**. The endpoint was _unwired_ (shadowed), not intentionally disabled. `GET providers/:tenantId/status` (3 segments) was not shadowed by `:id` (1 segment) but is likewise a static route.
 
 ## 6. P0-A — Fix Applied
 
@@ -85,9 +85,9 @@ Explicitly **out of scope** (not started): invitations, costing, supplier-perfor
 
 ## 12. P0-D — Fix Applied (implementation-ready; not wired)
 
-Per the mission guardrail — *"if no intended API-key-protected route exists, do NOT invent one; make the guard implementation-ready and document the missing route contract"*:
+Per the mission guardrail — _"if no intended API-key-protected route exists, do NOT invent one; make the guard implementation-ready and document the missing route contract"_:
 
-1. **Removed the Bearer pass-through.** The guard now accepts only the `apikey` scheme; `bearer` → `UnauthorizedException('Invalid authorization scheme')`. A future route needing JWT-*or*-API-key auth must use a dedicated guard (documented, not invented here).
+1. **Removed the Bearer pass-through.** The guard now accepts only the `apikey` scheme; `bearer` → `UnauthorizedException('Invalid authorization scheme')`. A future route needing JWT-_or_-API-key auth must use a dedicated guard (documented, not invented here).
 2. **Strict scope enforcement.** Changed to `if (effectiveScopes.length > 0)` (removed the `&& result.scopes` bypass). A valid key with no/insufficient scopes now gets `ForbiddenException` as intended.
 3. **Kept unwired.** No controller was changed to use `ApiKeyGuard`. **Missing route contract (documented):** no route in the app is defined as API-key-authenticated; until product defines one, issuing keys remains DEAD_UNWIRED by design.
 4. **`rateLimitPerMin` enforcement: DEFERRED** (documented in §20). It requires a counter store (Redis or in-memory); with no protected route, adding enforcement infra would be invented scope. `validateApiKey` hash-lookup, expiry, active/deleted checks, and `lastUsedAt` update are unchanged and remain correct.
@@ -100,12 +100,12 @@ Per the mission guardrail — *"if no intended API-key-protected route exists, d
 
 ## 14. Test Evidence — Affected Suites (161 tests)
 
-| Suite | Coverage added |
-|---|---|
-| `payments.controller.spec.ts` (NEW) | Route binding: `GET reconcile` → `service.reconcile` and **not** `findOne`; `GET :id` still → `findOne`; `GET providers/:tenantId/status` → `providerStatus`; `POST` → `charge`. |
-| `payments.service.spec.ts` (+5) | PENDING + `gatewayData.clientSecret` → returned; COMPLETED/FAILED → omitted; PENDING without secret / null gatewayData → omitted. |
-| `api-key.guard.spec.ts` (NEW, 8) | missing header, malformed header, **bearer rejected (no key lookup)**, invalid key, valid key + default read scope, insufficient scope, no-scopes key, explicit `@Scopes` honored. |
-| Existing payments/api-keys suites | Full re-run, no regressions (state machine, providers, integration, service). |
+| Suite                               | Coverage added                                                                                                                                                                     |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `payments.controller.spec.ts` (NEW) | Route binding: `GET reconcile` → `service.reconcile` and **not** `findOne`; `GET :id` still → `findOne`; `GET providers/:tenantId/status` → `providerStatus`; `POST` → `charge`.   |
+| `payments.service.spec.ts` (+5)     | PENDING + `gatewayData.clientSecret` → returned; COMPLETED/FAILED → omitted; PENDING without secret / null gatewayData → omitted.                                                  |
+| `api-key.guard.spec.ts` (NEW, 8)    | missing header, malformed header, **bearer rejected (no key lookup)**, invalid key, valid key + default read scope, insufficient scope, no-scopes key, explicit `@Scopes` honored. |
+| Existing payments/api-keys suites   | Full re-run, no regressions (state machine, providers, integration, service).                                                                                                      |
 
 ## 15. Full Regression Results
 
@@ -135,15 +135,15 @@ Per the mission guardrail — *"if no intended API-key-protected route exists, d
 
 ## 20. Classifications Summary
 
-| Item | Classification |
-|---|---|
-| P0-A reconcile route | **IMPLEMENTED + TESTED** (unit route-binding spec) |
-| P0-B clientSecret exposure | **IMPLEMENTED + TESTED** (service spec, 5 cases) |
-| P0-C ThrottlerGuard registration | **IMPLEMENTED + TESTED** (guard wired; DI validated against package source; no live request exercise since running image predates change) |
-| P0-D ApiKeyGuard hardening | **IMPLEMENTED + TESTED** (guard spec, 8 cases); wiring intentionally **not done** — no route contract |
-| Live Stripe/Paymob card completion | **BLOCKED_EXTERNAL** — no provider credentials; `PAYMENTS_MODE` defaults mock; never mislabeled as LIVE VERIFIED |
-| Live health + Redis auth | **LIVE VERIFIED** (this session) |
-| `rateLimitPerMin` per-key enforcement | **DEFERRED** — no storage mechanism and no protected route; decision required |
+| Item                                  | Classification                                                                                                                            |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| P0-A reconcile route                  | **IMPLEMENTED + TESTED** (unit route-binding spec)                                                                                        |
+| P0-B clientSecret exposure            | **IMPLEMENTED + TESTED** (service spec, 5 cases)                                                                                          |
+| P0-C ThrottlerGuard registration      | **IMPLEMENTED + TESTED** (guard wired; DI validated against package source; no live request exercise since running image predates change) |
+| P0-D ApiKeyGuard hardening            | **IMPLEMENTED + TESTED** (guard spec, 8 cases); wiring intentionally **not done** — no route contract                                     |
+| Live Stripe/Paymob card completion    | **BLOCKED_EXTERNAL** — no provider credentials; `PAYMENTS_MODE` defaults mock; never mislabeled as LIVE VERIFIED                          |
+| Live health + Redis auth              | **LIVE VERIFIED** (this session)                                                                                                          |
+| `rateLimitPerMin` per-key enforcement | **DEFERRED** — no storage mechanism and no protected route; decision required                                                             |
 
 ## 21. Out-of-Scope / Deferred (documented, not acted on)
 

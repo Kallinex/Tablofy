@@ -10,9 +10,7 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('=== Payment.gatewayRef Precheck (webhook lookup path) ===\n');
 
-  const [total] = await prisma.$queryRawUnsafe(
-    `SELECT COUNT(*)::int AS n FROM "payments"`,
-  );
+  const [total] = await prisma.$queryRawUnsafe(`SELECT COUNT(*)::int AS n FROM "payments"`);
   const [withRef] = await prisma.$queryRawUnsafe(
     `SELECT COUNT(*)::int AS n FROM "payments" WHERE "gatewayRef" IS NOT NULL`,
   );
