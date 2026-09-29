@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { UsersService } from '../users/users.service';
+import { PlanLimitsService } from '../../common/services/plan-limits.service';
 import { CreateInvitationDto } from './dto/create-invitation.dto';
 import { Invitation, InvitationStatus, UserRole } from '@prisma/client';
 import * as crypto from 'crypto';
@@ -26,6 +27,7 @@ export class InvitationsService {
     private readonly redisService: RedisService,
     private readonly auditLogsService: AuditLogsService,
     private readonly usersService: UsersService,
+    private readonly planLimitsService: PlanLimitsService,
   ) {}
 
   async create(
@@ -58,6 +60,13 @@ export class InvitationsService {
 
     if (existingUser) {
       throw new ConflictException('A user with this email already exists in this tenant');
+    }
+
+    const limitCheck = await this.planLimitsService.checkLimit(tenantId, 'users');
+    if (!limitCheck.allowed) {
+      throw new BadRequestException(
+        `User limit reached. Current: ${limitCheck.current}, Limit: ${limitCheck.limit}. Please upgrade your plan.`,
+      );
     }
 
     const token = crypto.randomBytes(32).toString('hex');

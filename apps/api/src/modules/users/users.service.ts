@@ -3,12 +3,14 @@ import {
   NotFoundException,
   ConflictException,
   ForbiddenException,
+  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { PlanLimitsService } from '../../common/services/plan-limits.service';
 import { Prisma, UserRole, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { BCRYPT_ROUNDS } from '@tablofy/shared/constants';
@@ -21,6 +23,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly planLimitsService: PlanLimitsService,
   ) {}
 
   private readonly defaultSelect = {
@@ -60,6 +63,13 @@ export class UsersService {
 
     if (existingUser) {
       throw new ConflictException('A user with this email already exists');
+    }
+
+    const limitCheck = await this.planLimitsService.checkLimit(tenantId, 'users');
+    if (!limitCheck.allowed) {
+      throw new BadRequestException(
+        `User limit reached. Current: ${limitCheck.current}, Limit: ${limitCheck.limit}. Please upgrade your plan.`,
+      );
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);

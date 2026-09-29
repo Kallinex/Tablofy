@@ -11,6 +11,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { RedisService } from '../../../redis/redis.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
 import { UsersService } from '../../users/users.service';
+import { PlanLimitsService } from '../../../common/services/plan-limits.service';
 import { createMockPrisma, MockPrisma } from '../../../test/mocks/prisma.mock';
 import { createMockRedis } from '../../../test/mocks/redis.mock';
 import { createMockAuditLogs, MockAuditLogs } from '../../../test/mocks/audit-log.mock';
@@ -28,6 +29,7 @@ describe('InvitationsService', () => {
   let auditLogs: MockAuditLogs;
   let redis: ReturnType<typeof createMockRedis>;
   let usersService: { create: jest.Mock };
+  let planLimits: { checkLimit: jest.Mock };
 
   const baseInvitation = {
     id: 'inv-1',
@@ -44,6 +46,7 @@ describe('InvitationsService', () => {
 
   beforeAll(async () => {
     usersService = { create: jest.fn().mockResolvedValue({ id: 'user-1' }) };
+    planLimits = { checkLimit: jest.fn() };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InvitationsService,
@@ -51,6 +54,7 @@ describe('InvitationsService', () => {
         { provide: RedisService, useValue: createMockRedis() },
         { provide: AuditLogsService, useValue: createMockAuditLogs() },
         { provide: UsersService, useValue: usersService },
+        { provide: PlanLimitsService, useValue: { checkLimit: jest.fn() } },
       ],
     }).compile();
 
@@ -58,6 +62,7 @@ describe('InvitationsService', () => {
     prisma = module.get(PrismaService) as MockPrisma;
     auditLogs = module.get(AuditLogsService) as MockAuditLogs;
     redis = module.get(RedisService) as ReturnType<typeof createMockRedis>;
+    planLimits = module.get(PlanLimitsService) as unknown as { checkLimit: jest.Mock };
   });
 
   beforeEach(() => {
@@ -68,11 +73,65 @@ describe('InvitationsService', () => {
     (crypto.randomBytes as jest.Mock).mockImplementation(jest.requireActual('crypto').randomBytes);
     usersService.create.mockReset();
     usersService.create.mockResolvedValue({ id: 'user-1' });
+    planLimits.checkLimit.mockReset();
+    planLimits.checkLimit.mockResolvedValue({
+      allowed: true,
+      current: 1,
+      limit: 5,
+      resource: 'users',
+    });
     redis.deleteTemporaryToken.mockReset();
     redis.deleteTemporaryToken.mockResolvedValue(undefined);
     prisma.$transaction.mockImplementation(async (fn: (tx: MockPrisma) => Promise<unknown>) =>
       fn(prisma as unknown as MockPrisma),
     );
+  });
+
+  describe('create - plan user limit', () => {
+    it('refuses to invite once the plan user limit is reached, so the invite is not sent to fail later at accept-time', async () => {
+      prisma.invitation.findFirst.mockResolvedValue(null);
+      prisma.user.findFirst.mockResolvedValue(null);
+      planLimits.checkLimit.mockResolvedValue({
+        allowed: false,
+        current: 5,
+        limit: 5,
+        resource: 'users',
+      });
+
+      await expect(
+        service.create(
+          { email: 'new@example.com', role: UserRole.STAFF } as never,
+          testTenantId,
+          testUserId,
+          UserRole.OWNER,
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(planLimits.checkLimit).toHaveBeenCalledWith(testTenantId, 'users');
+      expect(prisma.invitation.create).not.toHaveBeenCalled();
+      expect(redis.setTemporaryToken).not.toHaveBeenCalled();
+    });
+
+    it('still invites while the tenant is under the limit', async () => {
+      prisma.invitation.findFirst.mockResolvedValue(null);
+      prisma.user.findFirst.mockResolvedValue(null);
+      planLimits.checkLimit.mockResolvedValue({
+        allowed: true,
+        current: 4,
+        limit: 5,
+        resource: 'users',
+      });
+      prisma.invitation.create.mockResolvedValue(baseInvitation);
+
+      await service.create(
+        { email: 'new@example.com', role: UserRole.STAFF } as never,
+        testTenantId,
+        testUserId,
+        UserRole.OWNER,
+      );
+
+      expect(prisma.invitation.create).toHaveBeenCalled();
+    });
   });
 
   describe('create', () => {

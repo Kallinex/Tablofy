@@ -285,6 +285,6 @@ export class AppModule implements NestModule {
         PrometheusMiddleware,
         TenantMiddleware,
       )
-      .forRoutes('*');
+      .forRoutes('{*path}');
   }
 }

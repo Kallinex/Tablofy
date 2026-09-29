@@ -1,9 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ForbiddenException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { UsersService } from '../users.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
+import { PlanLimitsService } from '../../../common/services/plan-limits.service';
 import { CacheService } from '../../../common/services/cache.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { createMockPrisma, MockPrisma } from '../../../test/mocks/prisma.mock';
@@ -19,6 +25,7 @@ describe('UsersService', () => {
   let prisma: MockPrisma;
   let auditLogs: MockAuditLogs;
   let cache: MockCache;
+  let planLimits: { checkLimit: jest.Mock };
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -28,6 +35,10 @@ describe('UsersService', () => {
         { provide: AuditLogsService, useValue: createMockAuditLogs() },
         { provide: CacheService, useValue: createMockCache() },
         { provide: EventEmitter2, useValue: createMockEventEmitter() },
+        {
+          provide: PlanLimitsService,
+          useValue: { checkLimit: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -35,6 +46,7 @@ describe('UsersService', () => {
     prisma = module.get(PrismaService) as MockPrisma;
     auditLogs = module.get(AuditLogsService) as MockAuditLogs;
     cache = module.get(CacheService) as MockCache;
+    planLimits = module.get(PlanLimitsService) as unknown as { checkLimit: jest.Mock };
   });
 
   beforeEach(() => {
@@ -42,6 +54,79 @@ describe('UsersService', () => {
     auditLogs.reset();
     cache.reset();
     jest.clearAllMocks();
+    // default: a tenant with room to spare
+    planLimits.checkLimit.mockResolvedValue({
+      allowed: true,
+      current: 1,
+      limit: 5,
+      resource: 'users',
+    });
+  });
+
+  describe('create - plan user limit', () => {
+    const dto: CreateUserDto = {
+      email: 'New.Staff@Tablofy.test',
+      password: 'Str0ngPass!2026',
+      firstName: 'New',
+      lastName: 'Staff',
+      role: 'STAFF' as never,
+    };
+
+    it('rejects creation once the plan user limit is reached', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+      planLimits.checkLimit.mockResolvedValue({
+        allowed: false,
+        current: 5,
+        limit: 5,
+        resource: 'users',
+      });
+
+      await expect(service.create(dto, testUserId, testTenantId, 'OWNER' as never)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      expect(planLimits.checkLimit).toHaveBeenCalledWith(testTenantId, 'users');
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('includes the current count and the limit in the error so the UI can upsell', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+      planLimits.checkLimit.mockResolvedValue({
+        allowed: false,
+        current: 15,
+        limit: 15,
+        resource: 'users',
+      });
+
+      await expect(service.create(dto, testUserId, testTenantId, 'OWNER' as never)).rejects.toThrow(
+        /Current: 15, Limit: 15/,
+      );
+    });
+
+    it('allows creation while under the limit', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+      planLimits.checkLimit.mockResolvedValue({
+        allowed: true,
+        current: 4,
+        limit: 5,
+        resource: 'users',
+      });
+      prisma.user.create.mockResolvedValue(buildUser());
+
+      await service.create(dto, testUserId, testTenantId, 'OWNER' as never);
+
+      expect(prisma.user.create).toHaveBeenCalled();
+    });
+
+    it('does not consume a seat check for a duplicate email', async () => {
+      prisma.user.findFirst.mockResolvedValue(buildUser());
+
+      await expect(service.create(dto, testUserId, testTenantId, 'OWNER' as never)).rejects.toThrow(
+        ConflictException,
+      );
+
+      expect(planLimits.checkLimit).not.toHaveBeenCalled();
+    });
   });
 
   describe('findAll', () => {
