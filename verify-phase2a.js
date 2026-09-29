@@ -33,6 +33,10 @@ function request(method, path, body, token) {
 }
 
 async function cleanupDatabase() {
+  // Guard: the deletes below have no `where` clause, so they would erase every
+  // row in those tables. Refuse to run unless the target is an opted-in
+  // throwaway database.
+  require('./prisma/scripts/assert-safe-wipe').assertDestructiveWipeAllowed('verify-phase2a.js');
   const { PrismaClient } = require('./node_modules/@prisma/client');
   const prisma = new PrismaClient();
   try {

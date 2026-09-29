@@ -71,7 +71,11 @@ export class AuthController {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
-    return tokens;
+    // login() answers with { user, tokens }, so a client that reads
+    // `tokens.accessToken` after a refresh would get undefined and sign the
+    // user out when the 15m access token expires. Return the same envelope
+    // while keeping the flat fields for clients already using them.
+    return { ...tokens, tokens };
   }
 
   @Post('logout')

@@ -76,6 +76,11 @@ async function cleanDB() {
       'User',
       'Tenant',
     ];
+    // Guard: this loop deletes every row of every table it lists.
+    require('./prisma/scripts/assert-safe-wipe').assertDestructiveWipeAllowed(
+      'verify-orders-m1.js',
+    );
+
     for (const t of tbls) {
       try {
         await p[t].deleteMany();

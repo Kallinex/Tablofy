@@ -95,6 +95,10 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  SWAGGER_ENABLED?: string;
+
+  @IsOptional()
+  @IsString()
   HEALTH_DISK_PATH?: string;
 
   @IsOptional()

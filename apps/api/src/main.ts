@@ -109,55 +109,69 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Tablofy API')
-    .setDescription('Enterprise Identity & Multi-Tenant Platform API')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .addTag('auth', 'Authentication & Authorization')
-    .addTag('tenants', 'Multi-Tenant Management')
-    .addTag('users', 'User Management')
-    .addTag('sessions', 'Session Management')
-    .addTag('invitations', 'Invitation Management')
-    .addTag('restaurants', 'Restaurant Management')
-    .addTag('branches', 'Branch Management')
-    .addTag('floors', 'Floor Management')
-    .addTag('dining-areas', 'Dining Area Management')
-    .addTag('tables', 'Table Management & Status')
-    .addTag('menu-categories', 'Menu Category Management')
-    .addTag('products', 'Product Management')
-    .addTag('product-images', 'Product Image Management')
-    .addTag('product-availability', 'Product Availability Schedules')
-    .addTag('variant-groups', 'Variant Group Management')
-    .addTag('product-variants', 'Product Variant Management')
-    .addTag('modifier-groups', 'Modifier Group Management')
-    .addTag('modifiers', 'Modifier Management')
-    .addTag('product-tags', 'Product Tag Management & Assignment')
-    .addTag('allergens', 'Allergen Management & Product Assignment')
-    .addTag('nutrition', 'Nutritional Information Management')
-    .addTag('business-hours', 'Business Hours Management')
-    .addTag('business-exceptions', 'Business Exceptions (Holidays/Special Hours)')
-    .addTag('restaurant-settings', 'Restaurant Settings')
-    .addTag('branch-settings', 'Branch Settings')
-    .addTag('tax-rates', 'Tax Rate Management')
-    .addTag('service-charges', 'Service Charge Management')
-    .addTag('units', 'Units of Measurement')
-    .addTag('queues', 'Job Queue Monitoring')
-    .addTag('ingredients', 'Ingredient Management')
-    .addTag('suppliers', 'Supplier Management')
-    .addTag('product-ingredients', 'Product-Ingredient Cost Tracking')
-    .addTag('usage', 'Usage Tracking & Analytics')
-    .addTag('health', 'Health Checks')
-    .addTag('metrics', 'Prometheus Metrics')
-    .addTag('webhooks', 'Webhook Registration & Delivery')
-    .addTag('api-keys', 'API Key Management')
-    .addTag('gift-cards', 'Gift Card Management')
-    .addTag('privacy', 'GDPR & Privacy Management')
-    .addTag('backup', 'Backup & Recovery')
-    .build();
+  // The OpenAPI document enumerates every endpoint, DTO and business concept
+  // (inventory, transfers, cycle counts, webhooks...). Serving it in production
+  // hands an attacker the full map of the API, so it is opt-in there.
+  // SWAGGER_ENABLED=true forces it on; unset/anything else means "off" in
+  // production and "on" everywhere else.
+  const swaggerEnv = (configService.get<string>('app.swaggerEnabled') ?? '').trim();
+  const swaggerEnabled = isProduction
+    ? swaggerEnv.toLowerCase() === 'true'
+    : swaggerEnv.toLowerCase() !== 'false';
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('docs', app, document);
+  if (swaggerEnabled) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Tablofy API')
+      .setDescription('Enterprise Identity & Multi-Tenant Platform API')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .addTag('auth', 'Authentication & Authorization')
+      .addTag('tenants', 'Multi-Tenant Management')
+      .addTag('users', 'User Management')
+      .addTag('sessions', 'Session Management')
+      .addTag('invitations', 'Invitation Management')
+      .addTag('restaurants', 'Restaurant Management')
+      .addTag('branches', 'Branch Management')
+      .addTag('floors', 'Floor Management')
+      .addTag('dining-areas', 'Dining Area Management')
+      .addTag('tables', 'Table Management & Status')
+      .addTag('menu-categories', 'Menu Category Management')
+      .addTag('products', 'Product Management')
+      .addTag('product-images', 'Product Image Management')
+      .addTag('product-availability', 'Product Availability Schedules')
+      .addTag('variant-groups', 'Variant Group Management')
+      .addTag('product-variants', 'Product Variant Management')
+      .addTag('modifier-groups', 'Modifier Group Management')
+      .addTag('modifiers', 'Modifier Management')
+      .addTag('product-tags', 'Product Tag Management & Assignment')
+      .addTag('allergens', 'Allergen Management & Product Assignment')
+      .addTag('nutrition', 'Nutritional Information Management')
+      .addTag('business-hours', 'Business Hours Management')
+      .addTag('business-exceptions', 'Business Exceptions (Holidays/Special Hours)')
+      .addTag('restaurant-settings', 'Restaurant Settings')
+      .addTag('branch-settings', 'Branch Settings')
+      .addTag('tax-rates', 'Tax Rate Management')
+      .addTag('service-charges', 'Service Charge Management')
+      .addTag('units', 'Units of Measurement')
+      .addTag('queues', 'Job Queue Monitoring')
+      .addTag('ingredients', 'Ingredient Management')
+      .addTag('suppliers', 'Supplier Management')
+      .addTag('product-ingredients', 'Product-Ingredient Cost Tracking')
+      .addTag('usage', 'Usage Tracking & Analytics')
+      .addTag('health', 'Health Checks')
+      .addTag('metrics', 'Prometheus Metrics')
+      .addTag('webhooks', 'Webhook Registration & Delivery')
+      .addTag('api-keys', 'API Key Management')
+      .addTag('gift-cards', 'Gift Card Management')
+      .addTag('privacy', 'GDPR & Privacy Management')
+      .addTag('backup', 'Backup & Recovery')
+      .build();
+
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('docs', app, document);
+  } else if (isProduction) {
+    logger.log('Swagger disabled (production default). Set SWAGGER_ENABLED=true to expose /docs.');
+  }
 
   const bullBoardModule = app.get(BullBoardModule);
   app.use(BULL_BOARD_PATH, bullBoardModule.createAuthMiddleware(), bullBoardModule.getRouter());
@@ -167,7 +181,9 @@ async function bootstrap(): Promise<void> {
   await app.listen(port);
 
   logger.log(`Application is running on: http://localhost:${port}/${apiPrefix}/v1`);
-  logger.log(`Swagger docs available at: http://localhost:${port}/docs`);
+  if (swaggerEnabled) {
+    logger.log(`Swagger docs available at: http://localhost:${port}/docs`);
+  }
 
   const shutdownSignals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
 
