@@ -1,4 +1,4 @@
-import { Controller, Get, Headers, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Header, Headers, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Public } from '../decorators/public.decorator';
 import { SkipTenantCheck } from '../decorators/skip-tenant.decorator';
@@ -18,6 +18,7 @@ export class MetricsController {
 
   @Get('metrics')
   @Public()
+  @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
   async getMetrics(@Headers('authorization') auth?: string): Promise<string> {
     if (this.authToken) {
       const expected = `Bearer ${this.authToken}`;

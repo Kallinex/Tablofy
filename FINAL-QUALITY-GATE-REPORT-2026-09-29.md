@@ -1,6 +1,6 @@
 # FINAL QUALITY-GATE REPORT â€” 2026-09-29
 
-Ø§Ù„Ù…Ø±Ø­Ù„Ø©: `feature/phase7-m5` â€” HEAD `735bf74` â€” worktree `tablofy-p4-01-clean`
+Ø§Ù„Ù…Ø±Ø­Ù„Ø©: `feature/phase7-m5` â€” HEAD `c1a7fa0` â€” worktree `tablofy-p4-01-clean`
 Ø§Ù„Ù†Ø·Ø§Ù‚: ÙØ­Øµ Ø´Ø§Ù…Ù„ ÙˆØ¥ØµÙ„Ø§Ø­ ÙƒÙ„ Ø§Ù„Ø£Ø®Ø·Ø§Ø¡ ÙˆØ§Ù„ØªØ­Ø°ÙŠØ±Ø§Øª (tsc / eslint / jest / prettier / build / npm audit) + Ø§Ø®ØªØ¨Ø§Ø±Runtime ÙˆØªÙƒØ§Ù…Ù„ DB + ØªØ´ØºÙŠÙ„ Ø³ÙƒØ±Ø¨ØªØ§Øª Ø§Ù„ØªØ­Ù‚Ù‚ Ø§Ù„Ù€11 + ØªÙˆØ«ÙŠÙ‚ Ø§Ù„Ø§Ø³ØªØ«Ù†Ø§Ø¡Ø§Øª.
 
 ## 1) Ø§Ù„Ø¨ÙˆØ§Ø¨Ø§Øª Ø§Ù„Ø«Ø§Ø¨ØªØ© (static gates) â€” before/after
@@ -87,7 +87,7 @@
 ## 7) Ù†Ø·Ø§Ù‚ Ø§Ù„ØªØºÙŠÙŠØ±
 
 - Ù…Ù„ÙØ§Øª Ø¬ÙˆÙ‡Ø±ÙŠØ©: `apps/api/src/**` (mocks + 29 Ù…Ù„Ù spec Ù…Ø­Ø¯Ù‘Ø«Ø§Ù‹)ØŒ `libs/shared/{types,constants,utils}/tsconfig.json`ØŒ `apps/api/jest.config.ts` + `apps/api/tsconfig.jest.json` (Ø¬Ø¯ÙŠØ¯)ØŒ `package.json`/`package-lock.json`ØŒ `tsconfig.base.json`ØŒ `nx.json`.
-- Ù„Ù… ÙŠÙÙ†ÙÙÙ‘Ø° Ø£ÙŠ commit ÙÙŠ Ù‡Ø°Ù‡ Ø§Ù„Ø¬ÙˆÙ„Ø© (Ù„Ù… ÙŠÙØ·Ù„Ø¨). Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ© Ù„Ù„Ø¹Ù…Ù„ ØªØ±Ø§ÙƒÙ…ÙŠØ© ÙÙˆÙ‚ HEAD `735bf74`.
+- Ù„Ù… ÙŠÙÙ†ÙÙÙ‘Ø° Ø£ÙŠ commit ÙÙŠ Ù‡Ø°Ù‡ Ø§Ù„Ø¬ÙˆÙ„Ø© (Ù„Ù… ÙŠÙØ·Ù„Ø¨). Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ© Ù„Ù„Ø¹Ù…Ù„ ØªØ±Ø§ÙƒÙ…ÙŠØ© ÙÙˆÙ‚ HEAD `c1a7fa0`.
 
 ## 8) Ø§Ù„Ø®Ù„Ø§ØµØ©
 
@@ -123,7 +123,7 @@
 ## 11) Ù…Ù„Ø§Ø­Ø¸Ø§Øª Ø§Ù„ØªØ³Ù„ÙŠÙ…
 
 - **Ù…Ù„Ù Ø¬Ø¯ÙŠØ¯ ÙŠØ¬Ø¨ Ø§Ù„Ø§Ù„ØªØ²Ø§Ù… Ø¨Ù‡**: `apps/api/tsconfig.jest.json` (Ùˆ `jest.config.ts` ÙŠØ´ÙŠØ± Ø¥Ù„ÙŠÙ‡). Ù‡Ùˆ Ø£Ø³Ø§Ø³ Ø¥Ø²Ø§Ù„Ø© ØªØ­Ø°ÙŠØ± ts-jestØ› Ø¨Ø¯ÙˆÙ† Ø¥Ø¯Ø±Ø§Ø¬Ù‡ ÙÙŠ Ø§Ù„Ø§Ù„ØªØ²Ø§Ù…ØŒ Ø§Ù„Ø¹Ù…Ù„ ØºÙŠØ± Ù…ÙƒØªÙ…Ù„.
-- Ø­Ø§Ù„Ø© Ø§Ù„Ø¹Ù…Ù„: `package.json`/`package-lock.json`/`tsconfig.base.json`/`nx.json`/`.gitignore` ÙˆÙƒÙ„ Ù…Ù„ÙØ§Øª Ø§Ù„Ù…ØµØ¯Ø± ÙˆØ§Ù„Ø§Ø®ØªØ¨Ø§Ø± ÙˆØ§Ù„Ù…Ø³ØªÙ†Ø¯Ø§Øª Ù…Ù†Ø³Ù‘Ù‚Ø© ÙˆÙ…Ø¹Ø¯Ù‘Ù„Ø© ÙÙˆÙ‚ HEAD `735bf74` â€” **Ù„Ù… ÙŠÙÙ†ÙÙÙ‘Ø° commit** (Ù„Ù… ÙŠÙØ·Ù„Ø¨). Ø§Ù„ØªØºÙŠÙŠØ±Ø§Øª Ø§Ù„Ù€`M` Ø§Ù„Ø¹Ø¯ÙŠØ¯Ø© ÙÙŠ `git status` Ù‡ÙŠ Ø§Ù„ØªØ·Ø¨ÙŠØ¹ Ø§Ù„Ø´Ø§Ù…Ù„ Ø§Ù„Ø°ÙŠ Ø·Ù„Ø¨Ù‡ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù….
+- Ø­Ø§Ù„Ø© Ø§Ù„Ø¹Ù…Ù„: `package.json`/`package-lock.json`/`tsconfig.base.json`/`nx.json`/`.gitignore` ÙˆÙƒÙ„ Ù…Ù„ÙØ§Øª Ø§Ù„Ù…ØµØ¯Ø± ÙˆØ§Ù„Ø§Ø®ØªØ¨Ø§Ø± ÙˆØ§Ù„Ù…Ø³ØªÙ†Ø¯Ø§Øª Ù…Ù†Ø³Ù‘Ù‚Ø© ÙˆÙ…Ø¹Ø¯Ù‘Ù„Ø© ÙÙˆÙ‚ HEAD `c1a7fa0` â€” **Ù„Ù… ÙŠÙÙ†ÙÙÙ‘Ø° commit** (Ù„Ù… ÙŠÙØ·Ù„Ø¨). Ø§Ù„ØªØºÙŠÙŠØ±Ø§Øª Ø§Ù„Ù€`M` Ø§Ù„Ø¹Ø¯ÙŠØ¯Ø© ÙÙŠ `git status` Ù‡ÙŠ Ø§Ù„ØªØ·Ø¨ÙŠØ¹ Ø§Ù„Ø´Ø§Ù…Ù„ Ø§Ù„Ø°ÙŠ Ø·Ù„Ø¨Ù‡ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù….
 - Ø§Ù„Ø¨ÙŠØ¦Ø© Ø§Ù„Ù…Ø­Ù„ÙŠØ©: Docker Desktop ÙŠØ¹Ù…Ù„ Ùˆ`tablofy-postgres`/`tablofy-redis` (5434/6381) healthyØ› Ø§Ù„Ù€API ÙŠÙØ´ØºÙÙ‘Ù„ Ø¨Ù€`node dist/apps/api/main.js`.
 
 ## 12) E2E Runtime Ø§Ù„ÙƒØ§Ù…Ù„ â€” 78/78 PASS (Ø¢Ø®Ø± ØªØ´ØºÙŠÙ„ 2026-09-29ØŒ ÙƒÙˆØ¯ Ø¨ÙÙ†ÙŠ Ù…Ù† HEAD + Ø§Ù„Ø¥ØµÙ„Ø§Ø­Ø§Øª Ø£Ø¯Ù†Ø§Ù‡)
@@ -456,3 +456,202 @@ immediately after pay    qty= 150  consumption=0
 | E2E ØªÙƒØ§Ù…Ù„       | **78/78 Ã— 3** Ù…ØªØªØ§Ù„ÙŠØ© âœ“                        |
 | Ø­ÙØ±Ù‘Ø§Ø³Ø© Ø§Ù„Ø¥Ù†ØªØ§Ø¬ | 5/5 âœ“                                         |
 | `git diff`      | 7 Ù…Ù„ÙØ§ØªØŒ 175+/4-ØŒ Ø¨Ù„Ø§ Ø£Ø³Ø±Ø§Ø± âœ“                  |
+
+## 17) ÇÓÊÚÇÏÉ ÇáØáÈÇÊ (orders restore) + ÍÏæÏ ÇáÎØÉ (2026-09-30)
+
+### Ã) ÚáøÉ ÌĞÈíÉ İí `BackupService.restore` — İŞÏÇä `id` ÚäÏ ÇáÇÓÊÚÇÏÉ
+
+ÇáÇÓÊÚÇÏÉ ßÇäÊ ÊäİøĞ `upsert` áßá ÌÏæá ÈáÇ `id` İí İÑÚ `create`. ÚäÏ ÍĞİ ÇáØáÈ ãä DB
+Ëã ÇáÇÓÊÚÇÏÉ¡ íæáøÏ Prisma `id` ÌÏíÏÇğ¡ İíäåÇÑ:
+
+- `order_items_orderId_fkey` (ãÑÌÚ Åáì ØáÈ ÛíÑ ãæÌæÏ).
+- ÊÚÇÑÖ İÑíÏ `(restaurantId, orderNumber)` áÃä ÑŞã ÇáØáÈ íÚæÏ Åáì ÇáÊÓáÓá ÇáÊáŞÇÆí.
+
+**ÇáÅÕáÇÍ:** ÅÖÇİÉ `id` Åáì `create` İí ßá ÇáÌÏÇæá (restaurant, branch, floor, diningArea,
+table, menuCategory, product, customer, order, orderItem, orderItemModifier,
+orderStatusHistory, orderNote, payment).
+
+### È) ãÑÇÌÚ FK ÇáÇÎÊíÇÑíÉ ÛíÑ ÇáãÓÊÚÇÏÉ
+
+ßÇäÊ ÊõäÓÎ ßÓáÇÓá İÇÑÛÉ/ÛíÑ ãæÌæÏÉ İíßÓÑ ÇáŞíÏ. ÇáŞÇÚÏÉ ÇáÂä: Ãí FK áÇ íæÌÏ İí
+ÇáÜbackupGraph íõßÊÈ `null` ÕÑÇÍÉğ:
+
+| ÇáÍŞá | ÇáÓáæß ÇáÌÏíÏ |
+| ----- | ------------- |
+| `order.userId` / `serviceChargeId` / `taxRateId` | `null` ÏÇÆãÇğ (ÛíÑ ãÓÊÚÇÏ) |
+| `order.tableId` | íõÍİÙ İŞØ ÅĞÇ ßÇä ÇáØÇæáÉ ãæÌæÏÉ İí `data.tables` |
+| `orderStatusHistory.changedByUserId` | `null` |
+| `orderNote.userId` | `null` |
+
+### Ì) ÎØÃ İí ÇÎÊÈÇÑ ÇáæÍÏÉ
+
+`prisma.upsert` íõÓÊÏÚì ÈßÇÆä æÇÍÏ¡ æÇáÇÎÊÈÇÑ ßÇä íİßøß ÇáãÚÇãá ÇáËÇäí
+(`const [, orderArgs]`) İíäåÇÑ ÈÜ `TypeError: Cannot read properties of undefined`.
+ÇáÕÍíÍ `[orderArgs]`. ÇáäÊíÌÉ: **7/7**.
+
+### Ï) ÇÓÊÚÇÏÉ ÍíøÉ ßÇãáÉ: `14/14`
+
+ÓíäÇÑíæ: ÊÓÌíá ãÓÊÃÌÑ ? ÈäÇÁ ÇáÑÓã ÇáÈíÇäí (ãØÚã/İÑÚ/ØÇÈŞ/ãäØŞÉ/ØÇæáÇÊ/İÆÇÊ/ãäÊÌÇÊ) ?
+ØáÈ ãÏİæÚ äŞÏÇğ (PENDING ? CONFIRMED ? IN_PREPARATION ? READY ? SERVED ? CASH) ?
+backup ? verify ? **ÍĞİ order graph ãä DB ãÈÇÔÑÉ** ? ÊäÙíİ ãİÇÊíÍ cache
+(`cache:{tenantId}:one:{orderId}` æ `cache:{tenantId}:list:*`) ? restore.
+
+| ÇáİÍÕ | ÇáäÊíÌÉ |
+| ----- | ------- |
+| `POST /backup` | ãáİ ßÇãá ãÚ checksum |
+| `GET /backup/:id/verify` | ãØÇÈŞ |
+| `GET /orders/:id` ÈÚÏ ÇáÍĞİ | 404 (áÇ ghost ãä Redis) |
+| `POST /backup/:id/restore` | ÊäİíĞ äÇÌÍ |
+| ÇáØáÈ íÚæÏ ÈäİÓ `id` æäİÓ ÇáÍŞæá | pass |
+| `orderItems` + `modifiers` + `payments` | totals ãØÇÈŞÉ |
+| `orderStatusHistory` + `orderNotes` | ãæÌæÏÉ ãÚ `userId = null` |
+| FKs ÇáÇÎÊíÇÑíÉ | `null` (áÇ crash) |
+| `updatedAt` / `createdAt` | ãÍİæÙÉ ãä ÇáÃÕá |
+| `GET /backups` | íÙåÑ ÇáÓÌá ÇáÌÏíÏ |
+
+### åÜ) ÍÏæÏ ÇáÎØÉ (products/tables) ÍíøÇğ: `11/11`
+
+| ÇáÎØÉ | ÇáãäÊÌÇÊ | ÇáØÇæáÇÊ |
+| ----- | -------- | -------- |
+| FREE | 100 | 10 |
+| BASIC | 500 | 30 |
+| STANDARD | 2000 | 100 |
+| PREMIUM | 10000 | 500 |
+| ENTERPRISE | -1 | -1 |
+
+- ÇáÍÏ ÚäÏ ÇáÍÏ: ÅäÔÇÁ ÇáÚäÕÑ ÑŞã `N` ? **201**.
+- ÊÌÇæÒ ÇáÍÏ: `400` ÈÇáÑÓÇáÉ: `Table limit reached. Current: 10, Limit: 10. Please upgrade your plan.`
+- ÇáÊÑŞíÉ Åáì BASIC ÊÊíÍ ÇáÚäÕÑ ÇáÊÇáí (ÊÍÏíË ÍÏæÏ ÇáÓÌá İí äİÓ ÇáÜtenant).
+- `cleanup`: ÍĞİ ßá ãÇ ÃäÔÃå ÇáÇÎÊÈÇÑ æÇáÊÍŞŞ ãä ÚÏøÇÏ DB.
+
+## 18) ÊßÑÇÑ ÇáÊØÈíŞ (HA/failover) + ÅÕáÇÍ `/metrics` (2026-09-30)
+
+### Ã) ËÛÑÉ ÅäÊÇÌíÉ: `Content-Type` ÎÇØÆ ãäÚ Prometheus ãä ÇáÓÍÈ
+
+ÇáÇÎÊÈÇÑ ÇáÍí ßÔİ Ãä `/api/v1/metrics` íÑÏ `text/html; charset=utf-8`¡ İíÑİÖ
+Prometheus ÇáåÏİ:
+
+```
+received unsupported Content-Type "text/html; charset=utf-8"
+and no fallback_scrape_protocol specified for target
+```
+
+ÓÈÈåÇ Ãä `Nest` íÚíÏ `string` ÈÊÑãíÒ `text/html` ÇİÊÑÇÖíÇğ.
+
+**ÇáÅÕáÇÍ** İí `apps/api/src/common/metrics/metrics.controller.ts`:
+
+```ts
+@Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
+```
+
+ãÚ spec ÌÏíÏ Úáì ãÓÊæì HTTP ÍŞíŞí (supertest) — **5/5**:
+ÕíÛÉ exposition ÕÍíÍÉ¡ content-type ÕÍíÍ¡ æÑİÖ ÇáÊæßä ÚäÏ ÛíÇÈ/ÎØÃ/ŞÈæá ÇáÊæßä ÇáÕÍíÍ.
+
+### È) ÇáÈäíÉ ÇáãÓÊÎÏãÉ İí ÇáÅÎáÇÁ
+
+- äÓÎÊÇä API Úáì `3100` æ `3200` (äİÓ DB æ Redis).
+- `nginx` ãæÇÒä ÊÍãíá Úáì `8090` ãÚ `max_fails=1 fail_timeout=3s` æ
+  `proxy_next_upstream error timeout http_502 http_503 http_504` æ `tries 2`.
+- ÊÑæíÓÉ `X-Served-By` ÚÈÑ `map $upstream_addr` áÊÍÏíÏ ÇáäÓÎÉ ÇáÊí ÎÏãÊ ÇáØáÈ.
+- `Prometheus` Úáì `9090` ÈÜÜ `scrape_interval: 5s`.
+- `nginx-prometheus-exporter` (áÃä `stub_status` áíÓ ÈÕíÛÉ Prometheus).
+
+ãáÇÍÙÉ ÈíÆÉ: Úáì Docker Desktop¡ `--network host` íÚØí ÇáÍÇæíÉ loopback ÇáÎÇÕ
+ÈÜLinux VM¡ áĞÇ `127.0.0.1:3100` ÏÇÎá ÇáÍÇæíÉ áÇ íÕá Åáì ÎÏãÇÊ Windows. ÇáÍá:
+ÔÈßÉ bridge + `host.docker.internal`.
+
+### Ì) ŞæÇÚÏ ÇáÊäÈíå ÇáãİÚøáÉ
+
+| ÇáÊäÈíå | ÇáÊÚÈíÑ | ÇáäÊíÌÉ İí ÇáÅÎáÇÁ |
+| ------- | ------- | ------------------ |
+| `TablofyAPIDown` | `up{job="tablofy-api"} == 0` (15s) | ÇÔÊÛá ÚäÏ ?ÇÁ äÓÎÉ |
+| `TablofyAllAPIDown` | `sum(up{job="tablofy-api"}) == 0` (10s) | ÇÔÊÛá ÚäÏ ÇäŞØÇÚ ßÇãá |
+| `TablofyAPIErrorRateHigh` | `http_errors_total / http_requests_total > 5%` | áã íÔÊÛá (áÇ ÃÎØÇÁ) |
+| `TablofyQueueDepthBacklog` | `bull_queue_depth > 1000` | áã íÔÊÛá |
+| `TablofyQueueDeadLetters` | `increase(bull_queue_dead_letter_total[15m]) > 0` | áã íÔÊÛá |
+| `TablofyNoMetricsScrape` | `absent(up{job="tablofy-api"})` | áã íÔÊÛá |
+
+### Ï) ÅÎáÇÁ HA: `19/19`
+
+| ÇáİÍÕ | ÇáäÊíÌÉ |
+| ----- | ------- |
+| ÇáäÓÎÊÇä Directly healthy | 200/200 |
+| ßá ÃåÏÇİ Prometheus `up` | 3/3 (api-a, api-b, nginx) |
+| áÇ ÊäÈíåÇÊ İí ÇáÍÇáÉ ÇáÃÓÇÓíÉ | pass |
+| ÇáÊæÒíÚ Úáì ÇáäÓÎÊíä | `{"replica-a":7,"replica-b":7}` |
+| **ŞÊá ÇáäÓÎÉ B** | `B down` |
+| **Òãä ÇäŞØÇÚ ÕİÑí ÈÚÏ ÇáÇäåíÇÑ** | **20/20 ØáÈ = 200**¡ ÇáÊæÒíÚ `{"replica-a":20}` |
+| `up{...3200} == 0` | pass |
+| `TablofyAPIDown` ÇÔÊÛá | pass |
+| `TablofyAllAPIDown` áã íÔÊÛá (A Íí) | pass |
+| ÅÚÇÏÉ ÊÔÛíá B (failback) | healthy + `{"replica-a":9,"replica-b":7}` |
+| `TablofyAPIDown` ÇäÍá | pass |
+| **ŞÊá ÇáäÓÎÊíä** | **ßá ÇáØáÈÇÊ 502** (áÇ äÌÇÍ ÕÇãÊ) |
+| `TablofyAllAPIDown` ÇÔÊÛá | pass |
+| ÇÓÊÚÇÏÉ ÇáÈíÆÉ | ßá ÇáÃåÏÇİ `up` æáÇ ÊäÈíåÇÊ |
+
+## 19) ÅÎáÇÁ clean clone + ÅÕáÇÍ `postinstall` (2026-09-30)
+
+### Ã) äÊíÌÉ ÇáÅÎáÇÁ: clone ÌÏíÏ áÇ íõÈäì
+
+ÇáÅÌÑÇÁ: `git clone` ãä ÇáÑíÈæ ÇáãÍáí Åáì ãÌáÏ ÌÏíÏ¡ ÊØÈíŞ ÇáÍÇáÉ ÇáÍÇáíÉ
+(3 ãáİÇÊ ãÚÏøáÉ + spec ÌÏíÏ)¡ Ëã `npm ci` Ëã `build:api`.
+
+**ÇáİÔá ÇáÃæá** — 1010 ÃÎØÇÁ ãä webpack:
+
+```
+TS2694: Namespace '.../node_modules/.prisma/client/default'.Prisma
+has no exported member 'Decimal'.
+```
+
+ÇáÓÈÈ: áÇ íæÌÏ `postinstall` İí `package.json`¡ İáÇ íõæáóøÏ Prisma Client ÈÚÏ
+`npm ci`. ÇáÜworktree ÇáÍÇáí ßÇä íÚãá áÃä ÇáÜclient ãæáóøÏ íÏæíÇğ ãä ŞÈá — Ãí Ãä
+Ãí ÚÖæ ÌÏíÏ İí ÇáİÑíŞ ÓíÍÕá Úáì build ãßÓæÑ.
+
+**ÇáÅÕáÇÍ** İí `package.json`:
+
+```json
+"postinstall": "prisma generate"
+```
+
+### È) ÇáÊÍŞŞ ÈÚÏ ÇáÅÕáÇÍ
+
+| ÇáÎØæÉ | ÇáäÊíÌÉ |
+| ------ | ------- |
+| `npm ci` İí clone äÙíİ | `added 1423 packages` + `prisma generate` ÊáŞÇÆí |
+| Prisma Client ãæáóøÏ | `.prisma/client/index.d.ts` ãæÌæÏ |
+| `npm run build:api` | `webpack compiled successfully` (ÈÏæä `prisma generate` íÏæí) |
+| `npm test` | ÇäÙÑ ÇáÌÏæá ÃÏäÇå |
+
+### Ì) ãáÇÍÙÇÊ ÊÔÛíá
+
+- `npm test` İí ÇáÜclone ÊÚØá ÊÍÊ ÖÛØ ÇáĞÇßÑÉ (568MB ÍÑÉ) ÈÓÈÈ ÊÔÛíá äÓÎÊíä API +
+  Prometheus + exporter + nginx ãÚÇğ. ÈÚÏ ÅíŞÇİ ÇáäÓÎÉ ÇáËÇäíÉ (ÍÑíÉ 2013MB) Êã
+  ÇáÊÔÛíá ÈÜ `--maxWorkers=2` ÈäÌÇÍ.
+
+### Ï) ÇáÈæÇÈÇÊ ÇáäåÇÆíÉ (2026-09-30¡ ÈÚÏ ßá ÇáÅÕáÇÍÇÊ)
+
+| ÇáÈæÇÈÉ | ŞÈá | ÈÚÏ |
+| ------- | ---- | ---- |
+| `npm test` (worktree) | 103 suites / 1373 | **104 suites / 1378** |
+| `npm test` (clean clone) | áÇ íÚãá (`prisma generate` ãİŞæÏ) | **104 suites / 1378** |
+| `build:api` (clean clone) | 1010 webpack errors | **webpack compiled successfully** |
+| `eslint` (api) | — | **exit 0** |
+| `prettier` | — | **ßá ÇáãáİÇÊ ãØÇÈŞÉ** |
+| `backup.service.spec` | 1/7 (ãßÓæÑ) | **7/7** |
+| `metrics.controller.spec` (ÌÏíÏ) | — | **5/5** |
+| ÇÎÊÈÇÑ Íí orders restore | — | **14/14** |
+| ÇÎÊÈÇÑ Íí ÍÏæÏ ÇáÎØÉ | — | **11/11** |
+| ÅÎáÇÁ HA/failover | — | **19/19** |
+| E2E | 78/78 | **78/78** (ÈíÇäÇÊ ÇáÇÎÊÈÇÑ ãÊØåíÉ) |
+
+### åÜ) ÍÇáÉ ÇáÏíÈæ
+
+- ÇáÊÚÏíáÇÊ ÇáãÚáŞÉ (áã ÊõÜcommit ÈÚÏ):
+  - `apps/api/src/modules/backup/backup.service.ts`
+  - `apps/api/src/modules/backup/tests/backup.service.spec.ts`
+  - `apps/api/src/common/metrics/metrics.controller.ts`
+  - `apps/api/src/common/metrics/tests/metrics.controller.spec.ts` (ÌÏíÏ)
+  - `package.json` (ÅÖÇİÉ `postinstall`)
+  - `FINAL-QUALITY-GATE-REPORT-2026-09-29.md` (ÇáÃŞÓÇã 17–19)
+- áÇ íæÌÏ `push`. ÇáãæÇİŞÉ Úáì commit ãØáæÈÉ.

@@ -126,16 +126,87 @@ export class BackupService {
       }
 
       const restored: Record<string, number> = {
+        restaurants: 0,
+        branches: 0,
+        floors: 0,
+        diningAreas: 0,
+        tables: 0,
         menuCategories: 0,
         products: 0,
         customers: 0,
+        orders: 0,
+        orderItems: 0,
+        orderItemModifiers: 0,
+        orderStatusHistory: 0,
+        orderNotes: 0,
+        payments: 0,
       };
+
+      if (Array.isArray(data.restaurants)) {
+        for (const restaurant of data.restaurants) {
+          const { id, ...rest } = restaurant;
+          await this.prisma.restaurant.upsert({
+            where: { id },
+            create: { ...rest, id, tenantId },
+            update: { ...rest, tenantId },
+          });
+          restored.restaurants++;
+        }
+      }
+
+      if (Array.isArray(data.branches)) {
+        for (const branch of data.branches) {
+          const { id, ...rest } = branch;
+          await this.prisma.branch.upsert({
+            where: { id },
+            create: { ...rest, id, tenantId },
+            update: { ...rest, tenantId },
+          });
+          restored.branches++;
+        }
+      }
+
+      if (Array.isArray(data.floors)) {
+        for (const floor of data.floors) {
+          const { id, ...rest } = floor;
+          await this.prisma.floor.upsert({
+            where: { id },
+            create: { ...rest, id, tenantId },
+            update: { ...rest, tenantId },
+          });
+          restored.floors++;
+        }
+      }
+
+      if (Array.isArray(data.diningAreas)) {
+        for (const area of data.diningAreas) {
+          const { id, ...rest } = area;
+          await this.prisma.diningArea.upsert({
+            where: { id },
+            create: { ...rest, id, tenantId },
+            update: { ...rest, tenantId },
+          });
+          restored.diningAreas++;
+        }
+      }
+
+      if (Array.isArray(data.tables)) {
+        for (const table of data.tables) {
+          const { id, ...rest } = table;
+          await this.prisma.table.upsert({
+            where: { id },
+            create: { ...rest, id, tenantId },
+            update: { ...rest, tenantId },
+          });
+          restored.tables++;
+        }
+      }
 
       if (Array.isArray(data.menuCategories)) {
         for (const cat of data.menuCategories) {
           await this.prisma.menuCategory.upsert({
             where: { id: cat.id },
-            create: { ...cat, tenantId },
+            create: { ...cat, id: cat.id, tenantId },
             update: { ...cat, tenantId },
           });
           restored.menuCategories++;
@@ -147,7 +218,7 @@ export class BackupService {
           const { id, ...rest } = product;
           await this.prisma.product.upsert({
             where: { id },
-            create: { ...rest, tenantId },
+            create: { ...rest, id, tenantId },
             update: { ...rest, tenantId },
           });
           restored.products++;
@@ -159,20 +230,107 @@ export class BackupService {
           const { id, ...rest } = customer;
           await this.prisma.customer.upsert({
             where: { id },
-            create: { ...rest, tenantId },
+            create: { ...rest, id, tenantId },
             update: { ...rest, tenantId },
           });
           restored.customers++;
         }
       }
 
-      // Order history is captured in the backup file but is NOT restored: orders
-      // cannot be re-inserted safely without their child rows (items, payments,
-      // invoices), so restoring the header alone would create referential garbage.
-      // The response reports this explicitly instead of silently dropping data.
-      const notRestored: Record<string, number> = {
-        orders: Array.isArray(data.orders) ? data.orders.length : 0,
-      };
+      if (Array.isArray(data.orders)) {
+        const restoredTableIds = new Set<string>();
+        for (const table of data.tables ?? []) {
+          if (table?.id) restoredTableIds.add(table.id);
+        }
+        for (const order of data.orders) {
+          const { id, ...rest } = order;
+          const tableId =
+            order.tableId && restoredTableIds.has(order.tableId) ? order.tableId : null;
+          await this.prisma.order.upsert({
+            where: { id },
+            create: {
+              ...rest,
+              id,
+              tenantId,
+              userId: null,
+              serviceChargeId: null,
+              taxRateId: null,
+              tableId,
+            },
+            update: {
+              ...rest,
+              tenantId,
+              userId: null,
+              serviceChargeId: null,
+              taxRateId: null,
+              tableId,
+            },
+          });
+          restored.orders++;
+        }
+      }
+
+      if (Array.isArray(data.orderItems)) {
+        for (const item of data.orderItems) {
+          const { id, ...rest } = item;
+          await this.prisma.orderItem.upsert({
+            where: { id },
+            create: { ...rest, id, tenantId },
+            update: { ...rest, tenantId },
+          });
+          restored.orderItems++;
+        }
+      }
+
+      if (Array.isArray(data.orderItemModifiers)) {
+        for (const modifier of data.orderItemModifiers) {
+          const { id, ...rest } = modifier;
+          await this.prisma.orderItemModifier.upsert({
+            where: { id },
+            create: { ...rest, id, tenantId },
+            update: { ...rest, tenantId },
+          });
+          restored.orderItemModifiers++;
+        }
+      }
+
+      if (Array.isArray(data.orderStatusHistory)) {
+        for (const entry of data.orderStatusHistory) {
+          const { id, ...rest } = entry;
+          await this.prisma.orderStatusHistory.upsert({
+            where: { id },
+            create: { ...rest, id, tenantId, changedByUserId: null },
+            update: { ...rest, tenantId, changedByUserId: null },
+          });
+          restored.orderStatusHistory++;
+        }
+      }
+
+      if (Array.isArray(data.orderNotes)) {
+        for (const note of data.orderNotes) {
+          const { id, ...rest } = note;
+          await this.prisma.orderNote.upsert({
+            where: { id },
+            create: { ...rest, id, tenantId, userId: null },
+            update: { ...rest, tenantId, userId: null },
+          });
+          restored.orderNotes++;
+        }
+      }
+
+      if (Array.isArray(data.payments)) {
+        for (const payment of data.payments) {
+          const { id, ...rest } = payment;
+          await this.prisma.payment.upsert({
+            where: { id },
+            create: { ...rest, id, tenantId },
+            update: { ...rest, tenantId },
+          });
+          restored.payments++;
+        }
+      }
+
+      const notRestored: Record<string, number> = {};
 
       // Restored rows would otherwise stay hidden behind the cached menu/customer
       // lists until their TTL expires.
@@ -187,6 +345,10 @@ export class BackupService {
         await this.cacheService.deletePattern(tenantId, `menu:${restaurantId}:*`);
       }
       await this.cacheService.delete(tenantId, 'customers:list');
+      await this.cacheService.deletePattern(tenantId, 'list:*');
+      for (const order of data.orders ?? []) {
+        if (order.id) await this.cacheService.delete(tenantId, `one:${order.id}`);
+      }
 
       await this.prisma.backupRecord.update({
         where: { id },
@@ -226,19 +388,52 @@ export class BackupService {
   }
 
   private async collectBackupData(tenantId: string) {
-    const [menuCategories, products, customers, orders] = await Promise.all([
+    const [
+      restaurants,
+      branches,
+      floors,
+      diningAreas,
+      tables,
+      menuCategories,
+      products,
+      customers,
+      orders,
+    ] = await Promise.all([
+      this.prisma.restaurant.findMany({ where: { tenantId } }),
+      this.prisma.branch.findMany({ where: { tenantId } }),
+      this.prisma.floor.findMany({ where: { tenantId } }),
+      this.prisma.diningArea.findMany({ where: { tenantId } }),
+      this.prisma.table.findMany({ where: { tenantId } }),
       this.prisma.menuCategory.findMany({ where: { tenantId } }),
       this.prisma.product.findMany({ where: { tenantId } }),
       this.prisma.customer.findMany({ where: { tenantId } }),
       this.prisma.order.findMany({ where: { tenantId }, take: 1000 }),
     ]);
+    const [orderItems, orderItemModifiers, orderStatusHistory, orderNotes, payments] =
+      await Promise.all([
+        this.prisma.orderItem.findMany({ where: { tenantId }, take: 3000 }),
+        this.prisma.orderItemModifier.findMany({ where: { tenantId }, take: 3000 }),
+        this.prisma.orderStatusHistory.findMany({ where: { tenantId }, take: 3000 }),
+        this.prisma.orderNote.findMany({ where: { tenantId }, take: 1000 }),
+        this.prisma.payment.findMany({ where: { tenantId }, take: 3000 }),
+      ]);
     return {
       exportedAt: new Date().toISOString(),
       tenantId,
+      restaurants,
+      branches,
+      floors,
+      diningAreas,
+      tables,
       menuCategories,
       products,
       customers,
       orders,
+      orderItems,
+      orderItemModifiers,
+      orderStatusHistory,
+      orderNotes,
+      payments,
     };
   }
 }

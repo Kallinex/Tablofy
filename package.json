@@ -4,6 +4,7 @@
   "license": "MIT",
   "scripts": {
     "nx": "nx",
+    "postinstall": "prisma generate",
     "start:api": "nx serve api",
     "build:api": "nx build api",
     "prisma:generate": "npx prisma generate",
