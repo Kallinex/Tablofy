@@ -29,6 +29,10 @@ const MANAGED_ENV = [
   'TRUST_PROXY',
   'HEALTH_MEMORY_RSS_LIMIT_MB',
   'SWAGGER_ENABLED',
+  'SWAGGER_AUTH_USER',
+  'SWAGGER_AUTH_PASSWORD',
+  'COMPRESSION_ENABLED',
+  'COMPRESSION_THRESHOLD_BYTES',
   'DATABASE_URL',
   'JWT_SECRET',
   'JWT_EXPIRATION',
@@ -123,7 +127,25 @@ describe('appConfig', () => {
       trustProxy: '',
       healthMemoryRssLimitMb: 300,
       swaggerEnabled: '',
+      swaggerAuthUser: '',
+      swaggerAuthPassword: '',
+      compressionEnabled: true,
+      compressionThreshold: 1024,
     });
+  });
+
+  it('parses swagger auth and compression overrides', () => {
+    process.env.SWAGGER_AUTH_USER = 'admin';
+    process.env.SWAGGER_AUTH_PASSWORD = 's3cret';
+    process.env.COMPRESSION_ENABLED = 'false';
+    process.env.COMPRESSION_THRESHOLD_BYTES = '2048';
+
+    const config = appConfig();
+
+    expect(config.swaggerAuthUser).toBe('admin');
+    expect(config.swaggerAuthPassword).toBe('s3cret');
+    expect(config.compressionEnabled).toBe(false);
+    expect(config.compressionThreshold).toBe(2048);
   });
 
   it('reads overrides from the environment', () => {
@@ -463,6 +485,35 @@ describe('smtpConfig', () => {
 
     expect(smtpConfig()).toMatchObject({ host: 'smtp.example.com', port: 465, secure: true });
   });
+
+  it('refuses to boot in production without SMTP_HOST and SMTP_FROM', () => {
+    process.env.NODE_ENV = 'production';
+
+    expect(() => smtpConfig()).toThrow(/SMTP_HOST and SMTP_FROM/);
+  });
+
+  it('refuses to boot in production without SMTP_FROM', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.SMTP_HOST = 'smtp.example.com';
+
+    expect(() => smtpConfig()).toThrow(/SMTP_FROM/);
+  });
+
+  it('accepts a configured relay in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.SMTP_HOST = 'smtp.example.com';
+    process.env.SMTP_FROM = 'no-reply@tablofy.com';
+
+    expect(smtpConfig()).toMatchObject({
+      host: 'smtp.example.com',
+      from: 'no-reply@tablofy.com',
+    });
+  });
+
+  it('does not require SMTP outside production', () => {
+    process.env.NODE_ENV = 'test';
+    expect(() => smtpConfig()).not.toThrow();
+  });
 });
 
 describe('apiKeysConfig', () => {
@@ -492,6 +543,7 @@ describe('paymentsConfig', () => {
   it('defaults to live mode in production when credentials exist', () => {
     process.env.NODE_ENV = 'production';
     process.env.STRIPE_SECRET_KEY = 'sk_live_abc';
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_live';
 
     expect(paymentsConfig().mode).toBe('live');
   });
@@ -536,6 +588,8 @@ describe('paymentsConfig', () => {
   it('accepts paymob as the only live credential', () => {
     process.env.PAYMENTS_MODE = 'live';
     process.env.PAYMOB_API_KEY = 'paymob-key';
+    process.env.PAYMOB_INTEGRATION_ID = '55';
+    process.env.PAYMOB_WEBHOOK_SECRET = 'paymob-webhook-secret';
 
     expect(paymentsConfig().mode).toBe('live');
   });
@@ -543,8 +597,40 @@ describe('paymentsConfig', () => {
   it('rejects a stripe test key in live mode', () => {
     process.env.PAYMENTS_MODE = 'live';
     process.env.STRIPE_SECRET_KEY = 'sk_test_leaked';
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec';
 
     expect(() => paymentsConfig()).toThrow(/forbids Stripe test keys/);
+  });
+
+  it('rejects a non-live stripe key in live mode', () => {
+    process.env.PAYMENTS_MODE = 'live';
+    process.env.STRIPE_SECRET_KEY = 'pk_something';
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec';
+
+    expect(() => paymentsConfig()).toThrow(/must start with "sk_live"/);
+  });
+
+  it('requires a stripe webhook secret in live mode', () => {
+    process.env.PAYMENTS_MODE = 'live';
+    process.env.STRIPE_SECRET_KEY = 'sk_live_abc';
+
+    expect(() => paymentsConfig()).toThrow(/STRIPE_WEBHOOK_SECRET/);
+  });
+
+  it('requires a paymob integration id in live mode', () => {
+    process.env.PAYMENTS_MODE = 'live';
+    process.env.PAYMOB_API_KEY = 'paymob-key';
+    process.env.PAYMOB_WEBHOOK_SECRET = 'paymob-webhook-secret';
+
+    expect(() => paymentsConfig()).toThrow(/PAYMOB_INTEGRATION_ID/);
+  });
+
+  it('requires a paymob webhook secret in live mode', () => {
+    process.env.PAYMENTS_MODE = 'live';
+    process.env.PAYMOB_API_KEY = 'paymob-key';
+    process.env.PAYMOB_INTEGRATION_ID = '55';
+
+    expect(() => paymentsConfig()).toThrow(/PAYMOB_WEBHOOK_SECRET/);
   });
 
   it('requires a stripe test key in test mode', () => {

@@ -61,9 +61,9 @@ services:
       REDIS_URL: redis://redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
       REDIS_TLS: ${REDIS_TLS:-false}
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set (min 32 chars)}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-15m}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set (min 32 chars)}
       JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4200}
       CORS_CREDENTIALS: 'true'
@@ -74,6 +74,15 @@ services:
       AUDIT_LOG_RETENTION_DAYS: ${AUDIT_LOG_RETENTION_DAYS:-365}
       HEALTH_DISK_PATH: ${HEALTH_DISK_PATH:-/}
       HEALTH_DISK_THRESHOLD_MB: ${HEALTH_DISK_THRESHOLD_MB:-200}
+      HEALTH_MEMORY_RSS_LIMIT_MB: ${HEALTH_MEMORY_RSS_LIMIT_MB:-512}
+      # Trust the reverse proxy (nginx/ALB) so X-Forwarded-For drives the per-IP
+      # rate limiter. Use the hop count (1 for a single proxy).
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      SWAGGER_AUTH_USER: ${SWAGGER_AUTH_USER:-}
+      SWAGGER_AUTH_PASSWORD: ${SWAGGER_AUTH_PASSWORD:-}
+      COMPRESSION_ENABLED: ${COMPRESSION_ENABLED:-true}
+      COMPRESSION_THRESHOLD_BYTES: ${COMPRESSION_THRESHOLD_BYTES:-1024}
       EXPORT_DIR: ${EXPORT_DIR:-/app/exports}
       REPORT_EXPORT_RETENTION_DAYS: ${REPORT_EXPORT_RETENTION_DAYS:-30}
       QUEUE_DLQ_ALERT_THRESHOLD: ${QUEUE_DLQ_ALERT_THRESHOLD:-50}
@@ -98,7 +107,7 @@ services:
       SENTRY_PROFILES_SAMPLE_RATE: ${SENTRY_PROFILES_SAMPLE_RATE:-0.1}
       METRICS_ENABLED: ${METRICS_ENABLED:-true}
       METRICS_ENDPOINT: ${METRICS_ENDPOINT:-metrics}
-      METRICS_AUTH_TOKEN: ${METRICS_AUTH_TOKEN}
+      METRICS_AUTH_TOKEN: ${METRICS_AUTH_TOKEN:?METRICS_AUTH_TOKEN must be set to secure /metrics}
       METRICS_COLLECT_DEFAULT: ${METRICS_COLLECT_DEFAULT:-true}
       METRICS_COLLECT_INTERVAL_MS: ${METRICS_COLLECT_INTERVAL_MS:-10000}
       PAYMENTS_MODE: ${PAYMENTS_MODE:-live}
@@ -109,7 +118,7 @@ services:
       PAYMOB_INTEGRATION_ID: ${PAYMOB_INTEGRATION_ID:-0}
       PAYMOB_API_BASE: ${PAYMOB_API_BASE:-https://accept.paymob.com/api}
       PAYMOB_WEBHOOK_SECRET: ${PAYMOB_WEBHOOK_SECRET:-}
-      WEBHOOK_ENCRYPTION_KEY: ${WEBHOOK_ENCRYPTION_KEY:-}
+      WEBHOOK_ENCRYPTION_KEY: ${WEBHOOK_ENCRYPTION_KEY:?WEBHOOK_ENCRYPTION_KEY must be set (min 32 chars)}
       WEBHOOK_MAX_RETRIES: ${WEBHOOK_MAX_RETRIES:-5}
       WEBHOOK_INITIAL_BACKOFF_MS: ${WEBHOOK_INITIAL_BACKOFF_MS:-1000}
       WEBHOOK_BACKOFF_FACTOR: ${WEBHOOK_BACKOFF_FACTOR:-2}
@@ -117,12 +126,12 @@ services:
       WEBHOOK_DELIVERY_TIMEOUT_MS: ${WEBHOOK_DELIVERY_TIMEOUT_MS:-30000}
       WEBHOOK_MAX_REGISTRATIONS_PER_TENANT: ${WEBHOOK_MAX_REGISTRATIONS_PER_TENANT:-50}
       WEBHOOK_SECRET_ROTATION_DAYS: ${WEBHOOK_SECRET_ROTATION_DAYS:-90}
-      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST must be set (production requires a mail transport)}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_FROM: ${SMTP_FROM:?SMTP_FROM must be set (production requires a sender address)}
     volumes:
       - exports_data:/app/exports
     depends_on:
@@ -138,6 +147,55 @@ services:
       timeout: 10s
       start_period: 15s
       retries: 3
+
+  # TLS termination + load balancing in front of the api replicas. Terminates
+  # HTTPS, redirects HTTP, upgrades WebSockets and forwards X-Forwarded-For so
+  # the API's per-IP rate limiting works. Scale the api service with
+  # `docker compose ... up -d --scale api=3`; nginx balances across replicas.
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: tablofy-nginx
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      SERVER_NAME: ${SERVER_NAME:-api.example.com}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ${TLS_CERT_PATH:-./nginx/certs/fullchain.pem}:/etc/nginx/certs/fullchain.pem:ro
+      - ${TLS_KEY_PATH:-./nginx/certs/privkey.pem}:/etc/nginx/certs/privkey.pem:ro
+      - ./nginx/webroot:/var/www/certbot
+    depends_on:
+      - api
+    networks:
+      - tablofy-network
+
+  # Nightly encrypted pg_dump uploaded offsite via rclone (S3/B2/GDrive/Spaces).
+  # Provide an rclone config at ${RCLONE_CONFIG_HOST:-./rclone} and a remote
+  # named ${RCLONE_REMOTE:-offsite}. Manual run:
+  #   docker compose -f docker/docker-compose.prod.yml run --rm --entrypoint /usr/local/bin/run-backup.sh backup
+  backup:
+    build:
+      context: ./backup
+      dockerfile: Dockerfile
+    container_name: tablofy-backup
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://tablofy:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/tablofy_prod?schema=public
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-true}
+      BACKUP_CRON: ${BACKUP_CRON:-0 2 * * *}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      RCLONE_REMOTE: ${RCLONE_REMOTE:-offsite}
+      RCLONE_PATH: ${RCLONE_PATH:-tablofy/backups}
+      RCLONE_CONFIG: /config/rclone/rclone.conf
+    volumes:
+      - ${RCLONE_CONFIG_HOST:-./rclone}:/config/rclone:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - tablofy-network
 
 volumes:
   postgres_data:

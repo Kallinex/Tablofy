@@ -64,5 +64,30 @@ describe('docker-compose hardening (P1-09)', () => {
       expect(compose.services.redis.environment?.REDIS_PASSWORD).toContain(':?');
       expect(compose.services.api.environment?.REDIS_PASSWORD).toContain(':?');
     });
+
+    it('fails fast unless production secrets and the mail transport are provided', () => {
+      const env = compose.services.api.environment ?? {};
+      expect(env.JWT_SECRET).toContain(':?');
+      expect(env.JWT_REFRESH_SECRET).toContain(':?');
+      expect(env.METRICS_AUTH_TOKEN).toContain(':?');
+      expect(env.WEBHOOK_ENCRYPTION_KEY).toContain(':?');
+      expect(env.SMTP_HOST).toContain(':?');
+      expect(env.SMTP_FROM).toContain(':?');
+    });
+
+    it('trusts exactly one reverse-proxy hop by default', () => {
+      expect(compose.services.api.environment?.TRUST_PROXY).toContain(':-1');
+    });
+
+    it('ships a TLS-terminating nginx reverse proxy fronting the api', () => {
+      expect(compose.services.nginx).toBeDefined();
+      expect(compose.services.nginx.environment?.SERVER_NAME).toContain('SERVER_NAME');
+    });
+
+    it('ships an offsite backup sidecar', () => {
+      expect(compose.services.backup).toBeDefined();
+      expect(compose.services.backup.environment?.RCLONE_REMOTE).toContain('RCLONE_REMOTE');
+      expect(compose.services.backup.environment?.BACKUP_CRON).toContain('BACKUP_CRON');
+    });
   });
 });

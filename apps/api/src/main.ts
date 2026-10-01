@@ -4,10 +4,12 @@ import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
+import compression from 'compression';
 import { AppModule } from './app/app.module';
 import { AppLoggerService } from './common/logger/logger.service';
 import { SocketIoAdapter } from './common/ws/socket-io.adapter';
 import { BullBoardModule, BULL_BOARD_PATH } from './common/bull-board/bull-board.module';
+import { createSwaggerBasicAuthMiddleware } from './common/security/swagger-auth.middleware';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
@@ -98,6 +100,14 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  // Compress JSON/text responses over the threshold. Disabled with
+  // COMPRESSION_ENABLED=false (e.g. when a CDN/reverse proxy already compresses).
+  const compressionEnabled = configService.get<boolean>('app.compressionEnabled') ?? true;
+  const compressionThreshold = configService.get<number>('app.compressionThreshold') ?? 1024;
+  if (compressionEnabled) {
+    app.use(compression({ threshold: compressionThreshold }));
+  }
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -118,6 +128,23 @@ async function bootstrap(): Promise<void> {
   const swaggerEnabled = isProduction
     ? swaggerEnv.toLowerCase() === 'true'
     : swaggerEnv.toLowerCase() !== 'false';
+
+  if (swaggerEnabled && isProduction) {
+    const swaggerAuthUser = configService.get<string>('app.swaggerAuthUser') ?? '';
+    const swaggerAuthPassword = configService.get<string>('app.swaggerAuthPassword') ?? '';
+    if (!swaggerAuthUser || !swaggerAuthPassword) {
+      throw new Error(
+        'SWAGGER_ENABLED=true in production requires SWAGGER_AUTH_USER and SWAGGER_AUTH_PASSWORD. ' +
+          'The OpenAPI document enumerates every endpoint and must not be publicly reachable.',
+      );
+    }
+    // Protect /docs, /docs-json and /docs-yaml before the UI is mounted.
+    app.use(
+      ['/docs', '/docs-json', '/docs-yaml'],
+      createSwaggerBasicAuthMiddleware(swaggerAuthUser, swaggerAuthPassword),
+    );
+    logger.log('Swagger docs enabled in production behind HTTP Basic auth.');
+  }
 
   if (swaggerEnabled) {
     const swaggerConfig = new DocumentBuilder()

@@ -13,4 +13,8 @@ export const appConfig = registerAs('app', () => ({
   trustProxy: process.env.TRUST_PROXY || '',
   healthMemoryRssLimitMb: parseInt(process.env.HEALTH_MEMORY_RSS_LIMIT_MB || '300', 10),
   swaggerEnabled: process.env.SWAGGER_ENABLED || '',
+  swaggerAuthUser: process.env.SWAGGER_AUTH_USER || '',
+  swaggerAuthPassword: process.env.SWAGGER_AUTH_PASSWORD || '',
+  compressionEnabled: process.env.COMPRESSION_ENABLED !== 'false',
+  compressionThreshold: parseInt(process.env.COMPRESSION_THRESHOLD_BYTES || '1024', 10),
 }));

@@ -47,11 +47,19 @@ describe('payments.config', () => {
   });
 
   it('accepts an explicit live mode with a live Stripe key', () => {
-    withEnv({ NODE_ENV: 'test', PAYMENTS_MODE: 'live', STRIPE_SECRET_KEY: 'sk_live_123' }, () => {
-      const config = paymentsConfig();
-      expect(config.mode).toBe('live');
-      expect(config.stripeSecretKey).toBe('sk_live_123');
-    });
+    withEnv(
+      {
+        NODE_ENV: 'test',
+        PAYMENTS_MODE: 'live',
+        STRIPE_SECRET_KEY: 'sk_live_123',
+        STRIPE_WEBHOOK_SECRET: 'whsec_live_123',
+      },
+      () => {
+        const config = paymentsConfig();
+        expect(config.mode).toBe('live');
+        expect(config.stripeSecretKey).toBe('sk_live_123');
+      },
+    );
   });
 
   it('accepts live mode satisfied by a Paymob key alone', () => {
@@ -61,6 +69,8 @@ describe('payments.config', () => {
         PAYMENTS_MODE: 'live',
         STRIPE_SECRET_KEY: undefined,
         PAYMOB_API_KEY: 'paymob_test_123',
+        PAYMOB_INTEGRATION_ID: '42',
+        PAYMOB_WEBHOOK_SECRET: 'paymob-whsec',
       },
       () => {
         expect(paymentsConfig().mode).toBe('live');
@@ -69,9 +79,77 @@ describe('payments.config', () => {
   });
 
   it('rejects live mode with a Stripe test key', () => {
-    withEnv({ NODE_ENV: 'test', PAYMENTS_MODE: 'live', STRIPE_SECRET_KEY: 'sk_test_123' }, () => {
-      expect(() => paymentsConfig()).toThrow(/forbids Stripe test keys/);
-    });
+    withEnv(
+      {
+        NODE_ENV: 'test',
+        PAYMENTS_MODE: 'live',
+        STRIPE_SECRET_KEY: 'sk_test_123',
+        STRIPE_WEBHOOK_SECRET: 'whsec',
+      },
+      () => {
+        expect(() => paymentsConfig()).toThrow(/forbids Stripe test keys/);
+      },
+    );
+  });
+
+  it('rejects a Stripe key that is neither live nor test in live mode', () => {
+    withEnv(
+      {
+        NODE_ENV: 'test',
+        PAYMENTS_MODE: 'live',
+        STRIPE_SECRET_KEY: 'pk_live_something',
+        STRIPE_WEBHOOK_SECRET: 'whsec',
+      },
+      () => {
+        expect(() => paymentsConfig()).toThrow(/must start with "sk_live"/);
+      },
+    );
+  });
+
+  it('rejects live Stripe without a webhook secret', () => {
+    withEnv(
+      {
+        NODE_ENV: 'test',
+        PAYMENTS_MODE: 'live',
+        STRIPE_SECRET_KEY: 'sk_live_123',
+        STRIPE_WEBHOOK_SECRET: undefined,
+      },
+      () => {
+        expect(() => paymentsConfig()).toThrow(/STRIPE_WEBHOOK_SECRET/);
+      },
+    );
+  });
+
+  it('rejects live Paymob without an integration id', () => {
+    withEnv(
+      {
+        NODE_ENV: 'test',
+        PAYMENTS_MODE: 'live',
+        STRIPE_SECRET_KEY: undefined,
+        PAYMOB_API_KEY: 'paymob_test_123',
+        PAYMOB_INTEGRATION_ID: undefined,
+        PAYMOB_WEBHOOK_SECRET: 'paymob-whsec',
+      },
+      () => {
+        expect(() => paymentsConfig()).toThrow(/PAYMOB_INTEGRATION_ID/);
+      },
+    );
+  });
+
+  it('rejects live Paymob without a webhook secret', () => {
+    withEnv(
+      {
+        NODE_ENV: 'test',
+        PAYMENTS_MODE: 'live',
+        STRIPE_SECRET_KEY: undefined,
+        PAYMOB_API_KEY: 'paymob_test_123',
+        PAYMOB_INTEGRATION_ID: '42',
+        PAYMOB_WEBHOOK_SECRET: undefined,
+      },
+      () => {
+        expect(() => paymentsConfig()).toThrow(/PAYMOB_WEBHOOK_SECRET/);
+      },
+    );
   });
 
   it('accepts test mode with a Stripe test key', () => {

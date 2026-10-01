@@ -1,0 +1,1 @@
+Place fullchain.pem and privkey.pem here (or point TLS_CERT_PATH/TLS_KEY_PATH at certbot output).

@@ -99,6 +99,22 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  SWAGGER_AUTH_USER?: string;
+
+  @IsOptional()
+  @IsString()
+  SWAGGER_AUTH_PASSWORD?: string;
+
+  @IsOptional()
+  @IsString()
+  COMPRESSION_ENABLED?: string;
+
+  @IsOptional()
+  @IsNumber()
+  COMPRESSION_THRESHOLD_BYTES?: number;
+
+  @IsOptional()
+  @IsString()
   HEALTH_DISK_PATH?: string;
 
   @IsOptional()
