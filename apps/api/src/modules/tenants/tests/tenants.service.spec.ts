@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { TenantsService } from '../tenants.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
@@ -104,6 +104,37 @@ describe('TenantsService', () => {
       expect(prisma.tenant.update).toHaveBeenCalled();
       expect(auditLogs.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'TENANT_DELETED' }),
+      );
+    });
+  });
+
+  describe('restore', () => {
+    it('throws NotFoundException when the tenant is missing', async () => {
+      prisma.tenant.findUnique.mockResolvedValue(null);
+
+      await expect(service.restore('missing', testUserId)).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects restoring a tenant that was not deleted', async () => {
+      prisma.tenant.findUnique.mockResolvedValue(buildTenant({ id: 'tenant-1' }));
+
+      await expect(service.restore('tenant-1', testUserId)).rejects.toThrow(ConflictException);
+    });
+
+    it('clears deletedAt, reactivates the tenant, and audits the restore', async () => {
+      const deleted = { ...buildTenant({ id: 'tenant-1' }), deletedAt: new Date() };
+      prisma.tenant.findUnique.mockResolvedValue(deleted);
+      prisma.tenant.update.mockResolvedValue({ ...deleted, deletedAt: null });
+
+      const result = await service.restore('tenant-1', testUserId);
+
+      expect(result).toBeDefined();
+      expect(prisma.tenant.update).toHaveBeenCalledWith({
+        where: { id: 'tenant-1' },
+        data: { deletedAt: null, status: 'ACTIVE' },
+      });
+      expect(auditLogs.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'TENANT_RESTORED' }),
       );
     });
   });

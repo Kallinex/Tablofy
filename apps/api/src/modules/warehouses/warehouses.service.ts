@@ -247,7 +247,7 @@ export class WarehousesService {
     });
     if (!warehouse) throw new NotFoundException('Warehouse not found');
 
-    const [updated] = await this.prisma.$transaction([
+    const [, updated] = await this.prisma.$transaction([
       this.prisma.warehouse.updateMany({
         where: { tenantId, isDefault: true, id: { not: id } },
         data: { isDefault: false },
@@ -627,7 +627,7 @@ export class WarehousesService {
     if (cached) return cached;
 
     const branches = await this.prisma.warehouseBranch.findMany({
-      where: { warehouseId },
+      where: { warehouseId, tenantId },
       include: { branch: true },
     });
 
@@ -637,7 +637,7 @@ export class WarehousesService {
 
   async removeBranch(warehouseId: string, branchId: string, tenantId: string, userId: string) {
     const mapping = await this.prisma.warehouseBranch.findFirst({
-      where: { warehouseId, branchId },
+      where: { warehouseId, branchId, tenantId },
     });
     if (!mapping) throw new NotFoundException('Branch mapping not found');
 
@@ -725,7 +725,7 @@ export class WarehousesService {
   private async invalidateCache(id: string, tenantId: string) {
     await this.cacheService.delete(tenantId, `warehouse:${id}`);
     await this.cacheService.delete(tenantId, `warehouse:${id}:zones`);
-    await this.cacheService.delete(tenantId, `warehouse:${id}:bins:all`);
+    await this.cacheService.deletePattern(tenantId, `warehouse:${id}:bins:*`);
     await this.cacheService.delete(tenantId, `warehouse:${id}:branches`);
     await this.cacheService.delete(tenantId, `warehouse:${id}:stats`);
     await this.invalidateListCache(tenantId);

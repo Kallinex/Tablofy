@@ -349,3 +349,35 @@ Milestones 7.4, 7.5, and 7.6 can run in parallel with 7.1, 7.2, and 7.3.
 
 **Minimum acceptable score before production: 6.0/10 overall**  
 **Target: 8.0/10**
+
+---
+
+## Session Update - 2026-10-02
+
+**Verification snapshot (working tree, no commit):**
+
+- Full test suite: 197 suites / 4399 tests passing (`--maxWorkers=1`).
+- Coverage: Statements 96.06%, Branches 72.60%, Functions 99.41%, Lines 97.33%.
+- `nx lint api` exit 0; `nx build api` webpack compiled successfully.
+- Zero-hit functions reduced 72 -> 16 (462 files / 2737 functions).
+
+**Milestone 7.2 (Testing Foundation) progress:** the regression safety net now covers
+integration + unit flows across auth, tenant isolation, orders, RBAC, analytics DTOs,
+error filter, Redis lifecycle, scheduler, payments, webhooks, usage-tracking, export
+storage, scheduled-reports and transfers. Cumulative coverage thresholds are effectively
+satisfied for the backend; the remaining 16 zero-hit functions are single callbacks and a
+handful of low-traffic methods.
+
+**Production fixes in this session (already described in the quality-gate report, section 20):**
+
+- Redis `error` handler hardened for non-Error payloads.
+- Scheduled-report audit attribution no longer records the tenant id as the acting user.
+- Transfer list-cache invalidation uses a wildcard `deletePattern`.
+- Scheduler `getRegisteredJobs()` now includes `cleanup_expired_tokens_2am`.
+
+**Still blocking production (unchanged):** Stripe/Paymob/SMTP credentials,
+`WEBHOOK_ENCRYPTION_KEY`, production PostgreSQL/Redis endpoints, DNS/TLS/LB/HA/offsite
+backup, compression/multer, SAML/OIDC, and a production Docker image.
+**Follow-up (2026-10-02):** the remaining 16 zero-hit functions were closed with the tests
+listed in the quality-gate report, section 21. Full suite: 199 suites / 4427 tests,
+Functions 100%, Lines 97.78%, Statements 96.52%, Branches 72.91%; lint and build exit 0.

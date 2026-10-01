@@ -158,7 +158,7 @@ export class SupplierPerformanceService {
     const cost = dto.costScore ?? 0;
     const delivery =
       dto.deliveryAccuracy ??
-      (dto.onTimeDeliveries != null && dto.totalOrders != null
+      (dto.onTimeDeliveries != null && dto.totalOrders != null && dto.totalOrders > 0
         ? (dto.onTimeDeliveries / dto.totalOrders) * 100
         : 0);
     const fillRate = dto.fillRate ?? 0;

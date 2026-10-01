@@ -28,3 +28,42 @@ export function createMockQueue() {
 }
 
 export type MockQueue = ReturnType<typeof createMockQueue>;
+
+/**
+ * QueueService test double that also records the BullMQ worker handlers
+ * registered by processor constructors, so specs can invoke them directly.
+ */
+export function createMockQueueService() {
+  const handlers = new Map<string, (job: unknown) => Promise<unknown>>();
+
+  const service = {
+    registerWorker: jest.fn((name: string, handler: (job: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    }),
+    add: jest.fn().mockResolvedValue({ id: 'mock-job-1', data: {} }),
+    addJob: jest.fn().mockResolvedValue({ id: 'mock-job-1', data: {} }),
+    addBulk: jest.fn().mockResolvedValue([]),
+    getJob: jest.fn().mockResolvedValue(null),
+    getHandler(name: string): (job: unknown) => Promise<unknown> {
+      const handler = handlers.get(name);
+      if (!handler) {
+        throw new Error(`No worker registered for queue: ${name}`);
+      }
+      return handler;
+    },
+    registeredNames(): string[] {
+      return Array.from(handlers.keys());
+    },
+    reset() {
+      for (const key of Object.keys(service)) {
+        if (jest.isMockFunction((service as Record<string, unknown>)[key])) {
+          ((service as Record<string, unknown>)[key] as jest.Mock).mockClear();
+        }
+      }
+    },
+  };
+
+  return service;
+}
+
+export type MockQueueService = ReturnType<typeof createMockQueueService>;

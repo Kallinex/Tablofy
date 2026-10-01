@@ -1,4 +1,5 @@
-import { IsOptional, IsString, IsEnum, IsInt, Min } from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsInt, Min, Max } from 'class-validator';
+import { PAGINATION_DEFAULTS } from '@tablofy/shared/constants';
 import { Type } from 'class-transformer';
 import { PromotionType, PromotionStatus } from '@prisma/client';
 
@@ -12,6 +13,7 @@ export class PromotionQueryDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(PAGINATION_DEFAULTS.MAX_LIMIT)
   @Type(() => Number)
   limit?: number;
 

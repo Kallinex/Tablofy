@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+﻿import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -99,7 +99,7 @@ export class ScheduledReportsService {
     return report;
   }
 
-  async update(tenantId: string, id: string, dto: UpdateScheduledReportDto) {
+  async update(tenantId: string, id: string, dto: UpdateScheduledReportDto, userId?: string) {
     const existing = await this.prisma.scheduledReport.findFirst({
       where: { id, tenantId, deletedAt: null },
     });
@@ -124,7 +124,7 @@ export class ScheduledReportsService {
       action: 'SCHEDULED_REPORT_UPDATED',
       resource: 'ScheduledReport',
       resourceId: id,
-      userId: tenantId,
+      userId,
       tenantId,
       oldValues: { name: existing.name, type: existing.type },
       newValues: { name: updated.name, type: updated.type },
@@ -134,7 +134,7 @@ export class ScheduledReportsService {
     return updated;
   }
 
-  async remove(tenantId: string, id: string) {
+  async remove(tenantId: string, id: string, userId?: string) {
     const existing = await this.prisma.scheduledReport.findFirst({
       where: { id, tenantId, deletedAt: null },
     });
@@ -149,7 +149,7 @@ export class ScheduledReportsService {
       action: 'SCHEDULED_REPORT_DELETED',
       resource: 'ScheduledReport',
       resourceId: id,
-      userId: tenantId,
+      userId,
       tenantId,
       oldValues: { name: existing.name },
     });

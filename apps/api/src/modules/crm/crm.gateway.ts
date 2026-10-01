@@ -59,14 +59,14 @@ export class CrmGateway implements OnGatewayInit, OnGatewayConnection, OnGateway
   }
 
   broadcastTimelineUpdate(tenantId: string, event: string, data: Record<string, unknown>) {
-    this.server.to(`tenant:${tenantId}`).emit(event, data);
+    this.server?.to(`tenant:${tenantId}`)?.emit(event, data);
   }
 
   broadcastCommunicationUpdate(tenantId: string, event: string, data: Record<string, unknown>) {
-    this.server.to(`tenant:${tenantId}`).emit(event, data);
+    this.server?.to(`tenant:${tenantId}`)?.emit(event, data);
   }
 
   broadcastEventRuleUpdate(tenantId: string, event: string, data: Record<string, unknown>) {
-    this.server.to(`tenant:${tenantId}`).emit(event, data);
+    this.server?.to(`tenant:${tenantId}`)?.emit(event, data);
   }
 }

@@ -193,4 +193,43 @@ describe('BarcodeService', () => {
       expect(result).toBeDefined();
     });
   });
+
+  describe('getBarcodesForItem', () => {
+    it('throws NotFoundException when the inventory item does not exist', async () => {
+      prisma.inventoryItem.findFirst.mockResolvedValue(null);
+
+      await expect(service.getBarcodesForItem('item-1', testTenantId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('returns cached barcodes without hitting the database', async () => {
+      prisma.inventoryItem.findFirst.mockResolvedValue({ id: 'item-1' });
+      cache.get.mockResolvedValue([{ id: 'bar-1' }]);
+
+      const result = await service.getBarcodesForItem('item-1', testTenantId);
+
+      expect(result).toEqual([{ id: 'bar-1' }]);
+      expect(prisma.barcode.findMany).not.toHaveBeenCalled();
+    });
+
+    it('loads and caches barcodes on a cache miss', async () => {
+      prisma.inventoryItem.findFirst.mockResolvedValue({ id: 'item-1' });
+      cache.get.mockResolvedValue(null);
+      prisma.barcode.findMany.mockResolvedValue([{ id: 'bar-1', isPrimary: true }]);
+
+      const result = await service.getBarcodesForItem('item-1', testTenantId);
+
+      expect(result).toHaveLength(1);
+      expect(prisma.barcode.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { inventoryItemId: 'item-1', tenantId: testTenantId } }),
+      );
+      expect(cache.set).toHaveBeenCalledWith(
+        testTenantId,
+        'barcodes:item:item-1',
+        expect.any(Array),
+        120,
+      );
+    });
+  });
 });

@@ -59,6 +59,24 @@ describe('PlanLimitsService', () => {
     });
   });
 
+  describe('enforceLimit', () => {
+    it('resolves silently while the tenant is under the limit', async () => {
+      prisma.subscription.findUnique.mockResolvedValue({ plan: 'FREE' });
+      prisma.user.count.mockResolvedValue(0);
+
+      await expect(service.enforceLimit('tenant-1', 'users')).resolves.toBeUndefined();
+    });
+
+    it('throws when the plan limit is reached', async () => {
+      prisma.subscription.findUnique.mockResolvedValue({ plan: 'FREE' });
+      prisma.user.count.mockResolvedValue(999);
+
+      await expect(service.enforceLimit('tenant-1', 'users')).rejects.toThrow(
+        'Plan limit exceeded',
+      );
+    });
+  });
+
   describe('getResourceCounts', () => {
     it('should return counts for all resources', async () => {
       prisma.user.count.mockResolvedValue(5);

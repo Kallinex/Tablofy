@@ -1,4 +1,4 @@
-import { Test, TestingModule } from '@nestjs/testing';
+﻿import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { GiftCardsService } from '../gift-cards.service';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -9,6 +9,9 @@ import { testTenantId } from '../../../test/fixtures/auth.fixture';
 describe('GiftCardsService', () => {
   let service: GiftCardsService;
   let prisma: MockPrisma;
+  let i18n: { t: jest.Mock };
+
+  const FIXED_DATE = new Date('2026-01-01T00:00:00.000Z');
 
   const fakeGiftCard = (overrides: Record<string, unknown> = {}) => ({
     id: 'gc-1',
@@ -21,8 +24,8 @@ describe('GiftCardsService', () => {
     issueType: 'MANUAL',
     expiresAt: null,
     deletedAt: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    createdAt: FIXED_DATE,
+    updatedAt: FIXED_DATE,
     ...overrides,
   });
 
@@ -59,6 +62,7 @@ describe('GiftCardsService', () => {
 
     service = module.get<GiftCardsService>(GiftCardsService);
     prisma = module.get(PrismaService) as MockPrisma;
+    i18n = module.get(I18nService) as unknown as { t: jest.Mock };
   });
 
   beforeEach(() => {
@@ -136,6 +140,205 @@ describe('GiftCardsService', () => {
       await expect(
         service.redeem(testTenantId, 'gc-other-tenant', { amount: 10 } as never, 'en'),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('create', () => {
+    it('generates a GC-prefixed code and seeds the opening transaction', async () => {
+      prisma.giftCard.create.mockResolvedValue(fakeGiftCard());
+
+      await service.create(testTenantId, { initialBalance: 250 } as never, 'en', 'user-1');
+
+      expect(prisma.giftCard.create).toHaveBeenCalledTimes(1);
+      expect(prisma.giftCard.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          code: expect.stringMatching(/^GC-[0-9A-F]{12}$/),
+          tenantId: testTenantId,
+          initialBalance: 250,
+          currentBalance: 250,
+          currency: 'USD',
+          issuedById: 'user-1',
+          transactions: {
+            create: {
+              tenantId: testTenantId,
+              type: 'ISSUE',
+              amount: 250,
+              balanceBefore: 0,
+              balanceAfter: 250,
+              currency: 'USD',
+            },
+          },
+        }),
+      });
+    });
+
+    it('defaults the issue type to MANUAL and leaves an absent expiry null', async () => {
+      prisma.giftCard.create.mockResolvedValue(fakeGiftCard());
+
+      await service.create(testTenantId, { initialBalance: 10 } as never, 'en');
+
+      const data = prisma.giftCard.create.mock.calls[0][0].data;
+      expect(data.issueType).toBe('MANUAL');
+      expect(data.expiresAt).toBeNull();
+      expect(data.issuedById).toBeUndefined();
+    });
+
+    it('preserves an explicit currency, issue type and expiry', async () => {
+      prisma.giftCard.create.mockResolvedValue(fakeGiftCard());
+      const expiresAt = '2030-01-01T00:00:00.000Z';
+
+      await service.create(
+        testTenantId,
+        { initialBalance: 10, currency: 'EGP', issueType: 'PROMOTIONAL', expiresAt } as never,
+        'en',
+      );
+
+      const data = prisma.giftCard.create.mock.calls[0][0].data;
+      expect(data.currency).toBe('EGP');
+      expect(data.issueType).toBe('PROMOTIONAL');
+      expect(data.expiresAt).toEqual(new Date(expiresAt));
+    });
+
+    it('issues a distinct code per gift card', async () => {
+      prisma.giftCard.create.mockResolvedValue(fakeGiftCard());
+
+      await service.create(testTenantId, { initialBalance: 1 } as never, 'en');
+      await service.create(testTenantId, { initialBalance: 1 } as never, 'en');
+
+      const [first, second] = prisma.giftCard.create.mock.calls.map((call) => call[0].data.code);
+      expect(first).not.toBe(second);
+    });
+  });
+
+  describe('findAll', () => {
+    it('paginates and totals gift cards for the tenant', async () => {
+      prisma.giftCard.findMany.mockResolvedValue([fakeGiftCard()]);
+      prisma.giftCard.count.mockResolvedValue(1);
+
+      await expect(service.findAll(testTenantId)).resolves.toEqual({
+        data: [fakeGiftCard()],
+        total: 1,
+        page: 1,
+        limit: 20,
+      });
+      expect(prisma.giftCard.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { tenantId: testTenantId }, skip: 0, take: 20 }),
+      );
+    });
+
+    it('honours an explicit page and limit', async () => {
+      await service.findAll(testTenantId, 4, 10);
+
+      expect(prisma.giftCard.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 30, take: 10 }),
+      );
+      expect(prisma.giftCard.count).toHaveBeenCalledWith({
+        where: { tenantId: testTenantId },
+      });
+    });
+  });
+
+  describe('findOne', () => {
+    it('scopes the lookup to the tenant', async () => {
+      prisma.giftCard.findFirst.mockResolvedValue(fakeGiftCard());
+
+      await expect(service.findOne(testTenantId, 'gc-1', 'en')).resolves.toEqual(fakeGiftCard());
+      expect(prisma.giftCard.findFirst).toHaveBeenCalledWith({
+        where: { id: 'gc-1', tenantId: testTenantId },
+      });
+    });
+
+    it('throws NotFound when the card does not belong to the tenant', async () => {
+      prisma.giftCard.findFirst.mockResolvedValue(null);
+
+      await expect(service.findOne(testTenantId, 'gc-other', 'en')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('findByCode', () => {
+    it('scopes the code lookup to the tenant', async () => {
+      prisma.giftCard.findFirst.mockResolvedValue(fakeGiftCard({ code: 'GC-ABC123' }));
+
+      await expect(service.findByCode(testTenantId, 'GC-ABC123', 'en')).resolves.toEqual(
+        fakeGiftCard({ code: 'GC-ABC123' }),
+      );
+      expect(prisma.giftCard.findFirst).toHaveBeenCalledWith({
+        where: { code: 'GC-ABC123', tenantId: testTenantId },
+      });
+    });
+
+    it('throws NotFound for an unknown code', async () => {
+      prisma.giftCard.findFirst.mockResolvedValue(null);
+
+      await expect(service.findByCode(testTenantId, 'GC-NOPE', 'en')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('does not resolve a code that belongs to another tenant', async () => {
+      prisma.giftCard.findFirst.mockResolvedValue(null);
+
+      await expect(service.findByCode('tenant-other', 'GC-ABC123', 'en')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(prisma.giftCard.findFirst).toHaveBeenCalledWith({
+        where: { code: 'GC-ABC123', tenantId: 'tenant-other' },
+      });
+    });
+  });
+
+  describe('getTransactions', () => {
+    it('paginates transactions scoped to the tenant and card', async () => {
+      prisma.giftCardTransaction.findMany.mockResolvedValue([{ id: 'tx-1' }]);
+      prisma.giftCardTransaction.count.mockResolvedValue(1);
+
+      await expect(service.getTransactions(testTenantId, 'gc-1')).resolves.toEqual({
+        data: [{ id: 'tx-1' }],
+        total: 1,
+        page: 1,
+        limit: 20,
+      });
+      expect(prisma.giftCardTransaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { giftCardId: 'gc-1', tenantId: testTenantId },
+          skip: 0,
+          take: 20,
+        }),
+      );
+    });
+
+    it('honours an explicit page and limit', async () => {
+      await service.getTransactions(testTenantId, 'gc-1', 2, 5);
+
+      expect(prisma.giftCardTransaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 5, take: 5 }),
+      );
+    });
+  });
+
+  describe('deactivate', () => {
+    it('marks the card DEACTIVATED and returns a localized message', async () => {
+      prisma.giftCard.findFirst.mockResolvedValue(fakeGiftCard());
+      prisma.giftCard.update.mockResolvedValue(fakeGiftCard({ status: 'DEACTIVATED' }));
+
+      await service.deactivate(testTenantId, 'gc-1', 'en');
+
+      expect(prisma.giftCard.update).toHaveBeenCalledWith({
+        where: { id: 'gc-1' },
+        data: { status: 'DEACTIVATED' },
+      });
+      expect(i18n.t).toHaveBeenCalledWith('giftCard.deactivated', 'en');
+    });
+
+    it('refuses to deactivate a card owned by another tenant', async () => {
+      prisma.giftCard.findFirst.mockResolvedValue(null);
+
+      await expect(service.deactivate('tenant-other', 'gc-1', 'en')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(prisma.giftCard.update).not.toHaveBeenCalled();
     });
   });
 

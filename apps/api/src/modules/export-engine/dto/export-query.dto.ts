@@ -1,4 +1,5 @@
-import { IsOptional, IsEnum, IsNumber, Min } from 'class-validator';
+import { IsOptional, IsEnum, IsNumber, Min, Max } from 'class-validator';
+import { PAGINATION_DEFAULTS } from '@tablofy/shared/constants';
 import { Type } from 'class-transformer';
 import { ReportType, ReportExportStatus } from '@prisma/client';
 import { ExportType } from './generate-export.dto';
@@ -28,5 +29,6 @@ export class ExportQueryDto {
   @Type(() => Number)
   @IsNumber()
   @Min(1)
+  @Max(PAGINATION_DEFAULTS.MAX_LIMIT)
   limit?: number;
 }

@@ -1,4 +1,5 @@
-import { IsOptional, IsEnum, IsString, IsNumber, Min } from 'class-validator';
+import { IsOptional, IsEnum, IsString, IsNumber, Min, Max } from 'class-validator';
+import { PAGINATION_DEFAULTS } from '@tablofy/shared/constants';
 import { Type } from 'class-transformer';
 import { ReportType } from './create-scheduled-report.dto';
 
@@ -21,5 +22,6 @@ export class ScheduledReportQueryDto {
   @Type(() => Number)
   @IsNumber()
   @Min(1)
+  @Max(PAGINATION_DEFAULTS.MAX_LIMIT)
   limit?: number;
 }

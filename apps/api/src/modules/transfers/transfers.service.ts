@@ -1,4 +1,4 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   BadRequestException,
@@ -102,7 +102,7 @@ export class TransfersService {
       },
     });
 
-    await this.cacheService.delete(tenantId, 'transfers:list');
+    await this.cacheService.deletePattern(tenantId, 'transfers:list:*');
     this.gateway.broadcastTransferUpdate(tenantId, 'transfer.created', transfer);
 
     return this.getTransfer(transfer.id, tenantId);
@@ -242,7 +242,7 @@ export class TransfersService {
     });
 
     await this.cacheService.delete(tenantId, `transfer:${id}`);
-    await this.cacheService.delete(tenantId, 'transfers:list');
+    await this.cacheService.deletePattern(tenantId, 'transfers:list:*');
     this.gateway.broadcastTransferUpdate(tenantId, 'transfer.updated', updated);
 
     return updated;
@@ -272,7 +272,7 @@ export class TransfersService {
     });
 
     await this.cacheService.delete(tenantId, `transfer:${id}`);
-    await this.cacheService.delete(tenantId, 'transfers:list');
+    await this.cacheService.deletePattern(tenantId, 'transfers:list:*');
     this.gateway.broadcastTransferUpdate(tenantId, 'transfer.deleted', { id });
   }
 
@@ -309,7 +309,7 @@ export class TransfersService {
     });
 
     await this.cacheService.delete(tenantId, `transfer:${id}`);
-    await this.cacheService.delete(tenantId, 'transfers:list');
+    await this.cacheService.deletePattern(tenantId, 'transfers:list:*');
     this.gateway.broadcastTransferUpdate(tenantId, 'transfer.submitted', updated);
 
     return updated;
@@ -348,7 +348,7 @@ export class TransfersService {
     });
 
     await this.cacheService.delete(tenantId, `transfer:${id}`);
-    await this.cacheService.delete(tenantId, 'transfers:list');
+    await this.cacheService.deletePattern(tenantId, 'transfers:list:*');
     this.gateway.broadcastTransferUpdate(tenantId, 'transfer.approved', updated);
 
     return updated;
@@ -454,7 +454,7 @@ export class TransfersService {
     });
 
     await this.cacheService.delete(tenantId, `transfer:${id}`);
-    await this.cacheService.delete(tenantId, 'transfers:list');
+    await this.cacheService.deletePattern(tenantId, 'transfers:list:*');
     await this.cacheService.deletePattern(tenantId, 'movements:*');
     await this.invalidateTouchedItemCache(tenantId, this.collectTransferItemIds(transfer.items));
     this.gateway.broadcastTransferUpdate(tenantId, 'transfer.started', updated);
@@ -476,7 +476,7 @@ export class TransfersService {
     // source stock for *all* lines, and receiving flips the transfer to RECEIVED
     // in one shot, after which both the 470-472 guard and `cancelTransfer` refuse
     // any further action. A line missing from the payload therefore left the
-    // stock gone from both branches with no reversal path — a normal shortage
+    // stock gone from both branches with no reversal path â€” a normal shortage
     // posting would silently destroy inventory. The clerk must now state each
     // line explicitly, and a shortage is declared with `quantityReceived: 0`.
     const reportedIds = new Set<string | null>(dto.items.map((item) => item.inventoryItemId));
@@ -638,7 +638,7 @@ export class TransfersService {
     }
 
     await this.cacheService.delete(tenantId, `transfer:${id}`);
-    await this.cacheService.delete(tenantId, 'transfers:list');
+    await this.cacheService.deletePattern(tenantId, 'transfers:list:*');
     await this.cacheService.deletePattern(tenantId, 'movements:*');
     await this.invalidateTouchedItemCache(
       tenantId,
@@ -747,7 +747,7 @@ export class TransfersService {
     });
 
     await this.cacheService.delete(tenantId, `transfer:${id}`);
-    await this.cacheService.delete(tenantId, 'transfers:list');
+    await this.cacheService.deletePattern(tenantId, 'transfers:list:*');
     await this.cacheService.deletePattern(tenantId, 'movements:*');
     await this.invalidateTouchedItemCache(tenantId, this.collectTransferItemIds(transfer.items));
     this.gateway.broadcastTransferUpdate(tenantId, 'transfer.cancelled', updated);

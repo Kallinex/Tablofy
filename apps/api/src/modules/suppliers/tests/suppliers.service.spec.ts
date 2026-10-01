@@ -123,6 +123,45 @@ describe('SuppliersService', () => {
     });
   });
 
+  describe('findAll', () => {
+    it('applies the search filter and returns pagination meta', async () => {
+      prisma.supplier.findMany.mockResolvedValue([baseSupplier]);
+      prisma.supplier.count.mockResolvedValue(1);
+
+      const result = await service.findAll({
+        tenantId: testTenantId,
+        search: 'Fresh',
+        page: 1,
+        limit: 20,
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.meta.total).toBe(1);
+      expect(prisma.supplier.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            tenantId: testTenantId,
+            deletedAt: null,
+            OR: expect.any(Array),
+          }),
+        }),
+      );
+    });
+
+    it('filters by isActive when provided', async () => {
+      prisma.supplier.findMany.mockResolvedValue([]);
+      prisma.supplier.count.mockResolvedValue(0);
+
+      await service.findAll({ tenantId: testTenantId, isActive: false });
+
+      expect(prisma.supplier.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ isActive: false }),
+        }),
+      );
+    });
+  });
+
   describe('softDelete and restore', () => {
     it('should soft-delete and deactivate', async () => {
       prisma.supplier.findFirst.mockResolvedValue(baseSupplier);

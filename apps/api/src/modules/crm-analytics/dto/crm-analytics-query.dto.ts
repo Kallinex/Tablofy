@@ -1,4 +1,5 @@
-import { IsOptional, IsString, IsDateString, IsInt, Min } from 'class-validator';
+import { IsOptional, IsString, IsDateString, IsInt, Min, Max } from 'class-validator';
+import { PAGINATION_DEFAULTS } from '@tablofy/shared/constants';
 import { Type } from 'class-transformer';
 
 export class CrmAnalyticsQueryDto {
@@ -26,6 +27,7 @@ export class CrmAnalyticsQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(PAGINATION_DEFAULTS.MAX_LIMIT)
   limit?: number;
 
   @IsOptional()

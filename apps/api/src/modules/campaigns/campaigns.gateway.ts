@@ -59,10 +59,10 @@ export class CampaignsGateway implements OnGatewayInit, OnGatewayConnection, OnG
   }
 
   broadcastCampaignUpdate(tenantId: string, event: string, data: Record<string, unknown>) {
-    this.server.to(`tenant:${tenantId}`).emit(event, data);
+    this.server?.to(`tenant:${tenantId}`)?.emit(event, data);
   }
 
   broadcastPromotionUpdate(tenantId: string, event: string, data: Record<string, unknown>) {
-    this.server.to(`tenant:${tenantId}`).emit(event, data);
+    this.server?.to(`tenant:${tenantId}`)?.emit(event, data);
   }
 }

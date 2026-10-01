@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
@@ -23,10 +24,9 @@ const UNAUTHENTICATED_LIMIT = 100;
 const UNAUTHENTICATED_WINDOW_SECONDS = 60;
 
 export const PLAN_THROTTLE_KEY = 'planThrottle';
-// eslint-disable-next-line @typescript-eslint/no-empty-function
-const noop = (): void => {};
+/** Marks a handler (or an entire controller) as exempt from plan-based throttling. */
 export const SkipPlanThrottle = (): PropertyDecorator & MethodDecorator =>
-  noop as unknown as PropertyDecorator & MethodDecorator;
+  SetMetadata(PLAN_THROTTLE_KEY, true);
 
 @Injectable()
 export class PlanThrottleGuard implements CanActivate {
@@ -39,6 +39,12 @@ export class PlanThrottleGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const skipped = this.reflector.getAllAndOverride<boolean>(PLAN_THROTTLE_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (skipped) return true;
+
     const request = context.switchToHttp().getRequest();
     const user = request.user as CurrentUserData | undefined;
 

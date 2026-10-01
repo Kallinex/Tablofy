@@ -707,9 +707,9 @@ export class PurchasingService {
 
     const result = {
       counts: Object.fromEntries(counts.map((c) => [c.status, c.count])),
-      totalValue: aggregate._sum.total ?? 0,
-      averageValue: aggregate._avg.total ?? 0,
-      totalOrders: aggregate._count.id ?? 0,
+      totalValue: aggregate._sum?.total ?? 0,
+      averageValue: aggregate._avg?.total ?? 0,
+      totalOrders: aggregate._count?.id ?? 0,
     };
 
     await this.cacheService.set(tenantId, cacheKey, result, 300);

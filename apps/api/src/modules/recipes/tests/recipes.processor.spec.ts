@@ -25,6 +25,7 @@ describe('RecipesProcessor (inventory deduction queue)', () => {
       timestamp: new Date(),
     }),
     reverseConsumptionForRefund: jest.fn().mockResolvedValue({ created: 1, skipped: 0 }),
+    rollbackDeduction: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeAll(async () => {
@@ -163,5 +164,81 @@ describe('RecipesProcessor (inventory deduction queue)', () => {
         amount: 25,
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it('rolls back consumption when order.cancelled fires', async () => {
+    await processor.onOrderCancelled({ orderId: 'order-1', tenantId: 'tenant-1' });
+
+    expect(recipesServiceMock.rollbackDeduction).toHaveBeenCalledWith('order-1', 'tenant-1');
+  });
+
+  it('rolls back consumption when order.refunded fires', async () => {
+    await processor.onOrderRefunded({ orderId: 'order-1', tenantId: 'tenant-1' });
+
+    expect(recipesServiceMock.rollbackDeduction).toHaveBeenCalledWith('order-1', 'tenant-1');
+  });
+
+  it('does not rethrow cancellation rollback failures', async () => {
+    recipesServiceMock.rollbackDeduction.mockRejectedValueOnce(new Error('db unavailable'));
+
+    await expect(
+      processor.onOrderCancelled({ orderId: 'order-1', tenantId: 'tenant-1' }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('does not rethrow refund rollback failures', async () => {
+    recipesServiceMock.rollbackDeduction.mockRejectedValueOnce(new Error('db unavailable'));
+
+    await expect(
+      processor.onOrderRefunded({ orderId: 'order-1', tenantId: 'tenant-1' }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('coerces string amounts before reversing consumption', async () => {
+    await processor.onPaymentsRefunded({
+      tenantId: 'tenant-1',
+      orderId: 'order-1',
+      paymentId: 'payment-1',
+      amount: '25.5',
+      amountRefunded: '10',
+    });
+
+    expect(recipesServiceMock.reverseConsumptionForRefund).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
+      orderId: 'order-1',
+      paymentId: 'payment-1',
+      amount: 25.5,
+      amountRefunded: 10,
+    });
+  });
+
+  it('defaults a missing refund amount to zero', async () => {
+    await processor.onPaymentsRefunded({
+      tenantId: 'tenant-1',
+      orderId: 'order-1',
+      paymentId: 'payment-1',
+    });
+
+    expect(recipesServiceMock.reverseConsumptionForRefund).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 0, amountRefunded: undefined }),
+    );
+  });
+
+  it('skips reversal when the order id is missing', async () => {
+    await processor.onPaymentsRefunded({
+      tenantId: 'tenant-1',
+      paymentId: 'payment-1',
+    } as never);
+
+    expect(recipesServiceMock.reverseConsumptionForRefund).not.toHaveBeenCalled();
+  });
+
+  it('skips reversal when the tenant id is missing', async () => {
+    await processor.onPaymentsRefunded({
+      orderId: 'order-1',
+      paymentId: 'payment-1',
+    } as never);
+
+    expect(recipesServiceMock.reverseConsumptionForRefund).not.toHaveBeenCalled();
   });
 });

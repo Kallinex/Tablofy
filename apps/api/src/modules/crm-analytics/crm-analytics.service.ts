@@ -46,6 +46,7 @@ export class CrmAnalyticsService {
         this.prisma.promotion.count({ where: promotionWhere }),
         this.prisma.promotion.count({ where: { ...promotionWhere, status: 'ACTIVE' } }),
         this.prisma.campaignAnalytics.aggregate({
+          where: { tenantId },
           _sum: { revenueGenerated: true, sentCount: true, conversionCount: true },
         }),
       ]);
@@ -398,10 +399,15 @@ export class CrmAnalyticsService {
       include: { analytics: true },
     });
 
+    const isAutomatedMetadata = (metadata: unknown): boolean => {
+      if (metadata === null || metadata === undefined) return false;
+      if (typeof metadata === 'object')
+        return (metadata as { automated?: unknown }).automated === true;
+      return /"?automated"?\s*:\s*true/.test(String(metadata));
+    };
+
     const automated = campaigns.filter(
-      (c) =>
-        c.type?.toLowerCase().includes('auto') ||
-        c.metadata?.toString().includes('"automated":true'),
+      (c) => c.type?.toLowerCase().includes('auto') || isAutomatedMetadata(c.metadata),
     );
     const manual = campaigns.filter((c) => !automated.includes(c));
 

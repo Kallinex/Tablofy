@@ -1,6 +1,6 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { CreateScheduledReportDto } from '../dto/create-scheduled-report.dto';
+import { CreateScheduledReportDto, IsCronExpression } from '../dto/create-scheduled-report.dto';
 
 function baseDto() {
   return {
@@ -47,6 +47,20 @@ describe('CreateScheduledReportDto validation', () => {
     const errors = validateSync(dto);
     expect(errors.length).toBeGreaterThan(0);
     expect(errors[0].property).toBe('recipients');
+  });
+
+  it('exposes a default message when the cron decorator is used without an override', () => {
+    class CronProbe {
+      @IsCronExpression()
+      schedule!: string;
+    }
+
+    const errors = validateSync(plainToInstance(CronProbe, { schedule: 'not a cron' }));
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].constraints?.isCronExpression).toBe(
+      'schedule must be a valid cron expression',
+    );
   });
 
   it('rejects invalid recipient email addresses', () => {

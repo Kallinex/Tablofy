@@ -286,6 +286,13 @@ export class ProductTagsService {
     userId: string,
     meta?: { ipAddress?: string; userAgent?: string },
   ): Promise<void> {
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, tenantId, deletedAt: null },
+    });
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
     const assignment = await this.prisma.productTagAssignment.findUnique({
       where: { productId_tagId: { productId, tagId } },
     });

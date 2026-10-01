@@ -8,5 +8,5 @@ export { createMockAuditLogs } from './audit-log.mock';
 export type { MockAuditLogs } from './audit-log.mock';
 export { createMockEventEmitter } from './event-emitter.mock';
 export type { MockEventEmitter } from './event-emitter.mock';
-export { createMockQueue } from './queue.mock';
-export type { MockQueue } from './queue.mock';
+export { createMockQueue, createMockQueueService } from './queue.mock';
+export type { MockQueue, MockQueueService } from './queue.mock';

@@ -24,8 +24,10 @@ describe('AuthService', () => {
 
   let redis: MockRedis;
   let auditLogs: MockAuditLogs;
+  let queueService: { addJob: jest.Mock };
 
   beforeAll(async () => {
+    queueService = { addJob: jest.fn().mockResolvedValue({ id: 'email-1' }) };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -34,7 +36,7 @@ describe('AuthService', () => {
         { provide: AuditLogsService, useValue: createMockAuditLogs() },
         {
           provide: QueueService,
-          useValue: { addJob: jest.fn().mockResolvedValue({ id: 'email-1' }) },
+          useValue: queueService,
         },
         {
           provide: JwtService,
@@ -918,6 +920,54 @@ describe('AuthService', () => {
           BadRequestException,
         );
       });
+    });
+  });
+
+  describe('resendVerificationEmail', () => {
+    it('throws UnauthorizedException when the user does not exist', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(service.resendVerificationEmail('u-missing')).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('throws BadRequestException when the email is already verified', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'u-1',
+        email: 'a@b.com',
+        emailVerified: true,
+        tenantId: 't-1',
+      });
+
+      await expect(service.resendVerificationEmail('u-1')).rejects.toThrow(BadRequestException);
+    });
+
+    it('rotates the verification token and enqueues a fresh email', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'u-1',
+        email: 'a@b.com',
+        emailVerified: false,
+        tenantId: 't-1',
+      });
+      prisma.verificationToken.deleteMany.mockResolvedValue({ count: 1 });
+      prisma.verificationToken.create.mockResolvedValue({ id: 'vt-1' });
+
+      await service.resendVerificationEmail('u-1');
+
+      expect(prisma.verificationToken.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'u-1', type: 'EMAIL_VERIFICATION' },
+      });
+      expect(prisma.verificationToken.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ userId: 'u-1', type: 'EMAIL_VERIFICATION' }),
+        }),
+      );
+      expect(queueService.addJob).toHaveBeenCalledWith(
+        'email',
+        'send-email',
+        expect.objectContaining({ payload: expect.objectContaining({ to: 'a@b.com' }) }),
+      );
     });
   });
 });

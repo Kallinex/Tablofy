@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  HttpCode,
+  HttpStatus,
+  ForbiddenException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -58,8 +68,12 @@ export class PaymentsController {
   async providerStatus(
     @Param('restaurantId') restaurantId: string,
     @Param('tenantId') tenantId: string,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    const provider = await this.paymentsService.getProviderForTenant(tenantId);
+    if (tenantId !== user.tenantId) {
+      throw new ForbiddenException('Cannot query the payment provider of another tenant');
+    }
+    const provider = await this.paymentsService.getProviderForTenant(user.tenantId!);
     if (!provider) {
       return { status: 'unavailable', message: 'No payment provider configured' };
     }

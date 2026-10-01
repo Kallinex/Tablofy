@@ -1,4 +1,5 @@
-import { IsOptional, IsString, IsEnum, IsNumber, Min } from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsNumber, Min, Max } from 'class-validator';
+import { PAGINATION_DEFAULTS } from '@tablofy/shared/constants';
 import { Type } from 'class-transformer';
 import { ConsumptionPeriodDto } from './generate-forecast.dto';
 
@@ -17,6 +18,7 @@ export class QueryForecastDto {
   @Type(() => Number)
   @IsNumber()
   @Min(1)
+  @Max(PAGINATION_DEFAULTS.MAX_LIMIT)
   limit?: number;
 
   @IsOptional()

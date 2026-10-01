@@ -547,17 +547,20 @@ export class ForecastingDashboardService {
       where: { tenantId, ...(Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {}) },
     });
 
+    const salesTrend = calculateTrend(revenues);
+    const volumeTrend = calculateTrend(counts);
+
     const result = {
       sales: {
-        ...calculateTrend(salesValues.map((s) => s.revenue)),
+        ...salesTrend,
         label: 'Sales Revenue',
-        description: `Revenue trending ${calculateTrend(revenues).direction} with ${Math.round(calculateTrend(revenues).strength * 100)}% confidence`,
+        description: `Revenue trending ${salesTrend.direction} with ${Math.round(salesTrend.strength)}% confidence`,
         data: salesValues,
       },
       orderVolume: {
-        ...calculateTrend(counts),
+        ...volumeTrend,
         label: 'Order Volume',
-        description: `Order count trending ${calculateTrend(counts).direction} with ${Math.round(calculateTrend(counts).strength * 100)}% confidence`,
+        description: `Order count trending ${volumeTrend.direction} with ${Math.round(volumeTrend.strength)}% confidence`,
         data: salesValues.map((s) => ({ date: s.date, count: s.orderCount })),
       },
       customerGrowth: {

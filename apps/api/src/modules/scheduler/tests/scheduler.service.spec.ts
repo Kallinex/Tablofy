@@ -25,6 +25,7 @@ const CRON_HANDLERS: Array<[string, string, string]> = [
   ['handleCleanupExpiredBackups', 'cleanup_expired_backups', 'expired_backups'],
   ['handleCleanupStaleGiftCards', 'cleanup_stale_gift_cards', 'stale_gift_cards'],
   ['handleCleanupExpiredReportExports', 'cleanup_expired_report_exports', 'expired_report_exports'],
+  ['handleReconcilePendingPayments', 'reconcile_pending_payments', 'reconcile_pending_payments'],
 ];
 
 describe('SchedulerService', () => {
@@ -64,5 +65,20 @@ describe('SchedulerService', () => {
     redisLockMock.runIfLocked.mockResolvedValueOnce(false);
     await service.handleCleanupExpiredSessions();
     expect(queueServiceMock.addJob).not.toHaveBeenCalled();
+  });
+
+  it('does not reconcile payments when another replica holds the lock', async () => {
+    redisLockMock.runIfLocked.mockResolvedValueOnce(false);
+    await service.handleReconcilePendingPayments();
+    expect(queueServiceMock.addJob).not.toHaveBeenCalled();
+  });
+
+  it('advertises every registered job with a description', () => {
+    const jobs = service.getRegisteredJobs();
+
+    expect(jobs.length).toBe(CRON_HANDLERS.length);
+    expect(jobs.map((job) => job.name)).toEqual(CRON_HANDLERS.map(([, jobName]) => jobName));
+    expect(jobs.every((job) => job.description.length > 0)).toBe(true);
+    expect(jobs.map((job) => job.name)).toContain('reconcile_pending_payments');
   });
 });

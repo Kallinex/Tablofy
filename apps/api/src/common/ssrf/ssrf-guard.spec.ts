@@ -1,3 +1,9 @@
+﻿import * as dns from 'node:dns';
+
+jest.mock('node:dns', () => ({
+  promises: { lookup: jest.fn() },
+}));
+
 import {
   assertSafeOutboundUrl,
   DnsResolver,
@@ -263,5 +269,62 @@ describe('assertSafeOutboundUrl - allowed targets', () => {
   it('normalizes a trailing-dot hostname', async () => {
     const safe = await assertSafeOutboundUrl('https://example.com./hook', {}, publicResolver);
     expect(safe.hostname).toBe('example.com');
+  });
+});
+
+describe('default DNS resolver', () => {
+  const lookup = dns.promises.lookup as jest.MockedFunction<typeof dns.promises.lookup>;
+
+  afterEach(() => {
+    lookup.mockReset();
+  });
+
+  it('resolves through the OS resolver with verbatim ordering and every record', async () => {
+    lookup.mockResolvedValue([
+      { address: '93.184.216.34', family: 4 },
+      { address: '2606:2800:220:1::248', family: 6 },
+    ] as never);
+
+    const safe = await assertSafeOutboundUrl('https://example.com/hook');
+
+    expect(lookup).toHaveBeenCalledWith('example.com', { all: true, verbatim: true });
+    expect(safe.addresses).toEqual(['93.184.216.34', '2606:2800:220:1::248']);
+  });
+
+  it('treats a resolver failure as a blocked request', async () => {
+    lookup.mockRejectedValue(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }));
+
+    await expect(assertSafeOutboundUrl('https://unresolvable.example.com/hook')).rejects.toThrow(
+      SsrfBlockedError,
+    );
+    await expect(assertSafeOutboundUrl('https://unresolvable.example.com/hook')).rejects.toThrow(
+      /Could not resolve hostname "unresolvable.example.com"/,
+    );
+  });
+
+  it('rejects a hostname the OS resolver answers with no records', async () => {
+    lookup.mockResolvedValue([] as never);
+
+    await expect(assertSafeOutboundUrl('https://empty.example.com/hook')).rejects.toThrow(
+      /resolved to no addresses/,
+    );
+  });
+
+  it('rejects when the OS resolver returns a private address', async () => {
+    lookup.mockResolvedValue([{ address: '169.254.169.254', family: 4 }] as never);
+
+    await expect(assertSafeOutboundUrl('https://metadata.example.com/hook')).rejects.toThrow(
+      /resolves to a blocked address/,
+    );
+  });
+
+  it('does not hit the resolver for an IP literal target', async () => {
+    lookup.mockResolvedValue([] as never);
+
+    const safe = await assertSafeOutboundUrl('https://93.184.216.34/hook');
+
+    expect(lookup).not.toHaveBeenCalled();
+    expect(safe.addresses).toEqual(['93.184.216.34']);
+    expect(safe.hostname).toBe('93.184.216.34');
   });
 });

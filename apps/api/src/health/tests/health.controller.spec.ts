@@ -115,3 +115,81 @@ describe('HealthController', () => {
     expect(checkRSS).toHaveBeenCalledWith('memory_rss', 1024 * 1024 * 1024);
   });
 });
+
+describe('HealthController aggregate handlers', () => {
+  function buildDetailedController() {
+    const prismaHealth = { isHealthy: jest.fn().mockResolvedValue({ database: { status: 'up' } }) };
+    const redisHealth = { isHealthy: jest.fn().mockResolvedValue({ redis: { status: 'up' } }) };
+    const bullHealth = { isHealthy: jest.fn().mockResolvedValue({ bullmq: { status: 'up' } }) };
+    const diskHealth = { isHealthy: jest.fn().mockResolvedValue({ disk: { status: 'up' } }) };
+    const checkRSS = jest.fn().mockResolvedValue({ memory_rss: { status: 'up' } });
+    const check = jest.fn().mockResolvedValue({ status: 'ok' });
+    const controller = new HealthController(
+      { check } as unknown as HealthCheckService,
+      prismaHealth as unknown as PrismaHealthIndicator,
+      redisHealth as unknown as RedisHealthIndicator,
+      { checkRSS } as unknown as MemoryHealthIndicator,
+      bullHealth as unknown as BullHealthIndicator,
+      diskHealth as unknown as DiskHealthIndicator,
+      { get: jest.fn().mockReturnValue(undefined) } as unknown as ConfigService,
+    );
+    return { controller, check, prismaHealth, redisHealth, bullHealth, diskHealth, checkRSS };
+  }
+
+  it('runs exactly five indicators for the aggregate check and invokes each one', async () => {
+    const ctx = buildDetailedController();
+
+    await expect(ctx.controller.check()).resolves.toEqual({ status: 'ok' });
+
+    const indicators = ctx.check.mock.calls[0][0] as (() => Promise<unknown>)[];
+    expect(indicators).toHaveLength(5);
+    for (const indicator of indicators) await expect(indicator()).resolves.toBeDefined();
+
+    expect(ctx.prismaHealth.isHealthy).toHaveBeenCalledWith('database');
+    expect(ctx.redisHealth.isHealthy).toHaveBeenCalledWith('redis');
+    expect(ctx.bullHealth.isHealthy).toHaveBeenCalledWith('bullmq');
+    expect(ctx.diskHealth.isHealthy).toHaveBeenCalledWith('disk');
+    expect(ctx.checkRSS).toHaveBeenCalledWith('memory_rss', 300 * 1024 * 1024);
+  });
+
+  it('runs only the database and redis indicators for the liveness probe', async () => {
+    const ctx = buildDetailedController();
+
+    await expect(ctx.controller.live()).resolves.toEqual({ status: 'ok' });
+
+    const indicators = ctx.check.mock.calls[0][0] as (() => Promise<unknown>)[];
+    expect(indicators).toHaveLength(2);
+    for (const indicator of indicators) await indicator();
+
+    expect(ctx.prismaHealth.isHealthy).toHaveBeenCalledWith('database');
+    expect(ctx.redisHealth.isHealthy).toHaveBeenCalledWith('redis');
+    expect(ctx.bullHealth.isHealthy).not.toHaveBeenCalled();
+    expect(ctx.diskHealth.isHealthy).not.toHaveBeenCalled();
+    expect(ctx.checkRSS).not.toHaveBeenCalled();
+  });
+
+  it('runs every indicator for the readiness probe', async () => {
+    const ctx = buildDetailedController();
+
+    await expect(ctx.controller.ready()).resolves.toEqual({ status: 'ok' });
+
+    const indicators = ctx.check.mock.calls[0][0] as (() => Promise<unknown>)[];
+    expect(indicators).toHaveLength(5);
+    for (const indicator of indicators) await indicator();
+
+    expect(ctx.prismaHealth.isHealthy).toHaveBeenCalledWith('database');
+    expect(ctx.redisHealth.isHealthy).toHaveBeenCalledWith('redis');
+    expect(ctx.bullHealth.isHealthy).toHaveBeenCalledWith('bullmq');
+    expect(ctx.diskHealth.isHealthy).toHaveBeenCalledWith('disk');
+  });
+
+  it('surfaces an unhealthy result from the aggregate check unchanged', async () => {
+    const ctx = buildDetailedController();
+    ctx.check.mockResolvedValue({ status: 'error', error: { database: { status: 'down' } } });
+
+    await expect(ctx.controller.check()).resolves.toEqual({
+      status: 'error',
+      error: { database: { status: 'down' } },
+    });
+  });
+});

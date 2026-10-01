@@ -54,24 +54,28 @@ export class KitchenAnalyticsService {
     const where = this.getTicketItemWhere(tenantId, query);
     const items = await this.prisma.kitchenTicketItem.findMany({
       where,
-      select: { stationId: true, id: true },
+      select: { stationId: true, ticketId: true },
     });
 
     const grouped = new Map<
       string,
-      { stationId: string; totalTickets: number; totalItems: number }
+      { stationId: string; totalTickets: number; totalItems: number; ticketIds: Set<string> }
     >();
     for (const item of items) {
       const sid = item.stationId ?? 'unassigned';
-      if (!grouped.has(sid)) grouped.set(sid, { stationId: sid, totalTickets: 0, totalItems: 0 });
+      if (!grouped.has(sid)) {
+        grouped.set(sid, { stationId: sid, totalTickets: 0, totalItems: 0, ticketIds: new Set() });
+      }
       const g = grouped.get(sid)!;
       g.totalItems++;
-      g.totalTickets = new Set(
-        items.filter((i) => (i.stationId ?? 'unassigned') === sid).map((i) => i.id),
-      ).size;
+      g.ticketIds.add(item.ticketId);
     }
 
-    const result = Array.from(grouped.values());
+    const result = Array.from(grouped.values()).map((g) => ({
+      stationId: g.stationId,
+      totalTickets: g.ticketIds.size,
+      totalItems: g.totalItems,
+    }));
     await this.cacheService.set(tenantId, cacheKey, result, 300);
     return result;
   }
@@ -338,8 +342,9 @@ export class KitchenAnalyticsService {
       m.totalTimeMs += item.completedAt!.getTime() - item.startedAt!.getTime();
     }
 
+    const pendingWhere = this.getTicketItemWhere(tenantId, query);
     const allItems = await this.prisma.kitchenTicketItem.findMany({
-      where: { ...where, status: { in: ['PENDING', 'QUEUED'] } },
+      where: { ...pendingWhere, status: { in: ['PENDING', 'QUEUED'] } },
       select: { stationId: true },
     });
 

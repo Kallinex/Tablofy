@@ -655,3 +655,91 @@ has no exported member 'Decimal'.
   - `package.json` (≈÷«›… `postinstall`)
   - `FINAL-QUALITY-GATE-REPORT-2026-09-29.md` («·√ﬁ”«„ 17ñ19)
 - ·« ÌÊÃœ `push`. «·„Ê«›ﬁ… ⁄·Ï commit „ÿ·Ê»….
+
+---
+
+## 20) Coverage campaign + production hardening (2026-10-02)
+
+**Scope:** residual unit/function-coverage gaps for KDS, recipes, inventory-analytics,
+forecasting, export-engine/export-storage, Redis, inventory catalogue, scheduled-reports,
+transfers, usage-tracking, webhooks, logger, scheduler and payments.
+
+**Full repository gate (clean, `--maxWorkers=1`, `npm run test:coverage --silent`):**
+
+| Gate | Result |
+| ---- | ------ |
+| Test suites | 197 passed / 197 |
+| Tests | 4399 passed / 4399 |
+| Statements | 96.06% |
+| Branches | 72.60% |
+| Functions | 99.41% |
+| Lines | 97.33% |
+| `nx lint api` | exit 0 |
+| `nx build api` | webpack compiled successfully |
+
+**Function-coverage inventory (`coverage/lcov.info`):** 462 files, 2737 functions,
+16 zero-hit functions (down from 72). Remaining zero-hit items are single callbacks
+(GC observer, sort comparators, `.catch`, DTO default message, `validateStatus`) plus a
+few untested methods (`enforceLimit`, `resendVerificationEmail`, api-keys `findAll`/`update`,
+`getBarcodesForItem`, invitations/suppliers `findAll`, tenants `restore`).
+
+**Production fixes landed:**
+
+- `apps/api/src/redis/redis.service.ts` ó connection `error` handler accepts `unknown`
+  and logs a safe detail string instead of throwing on non-Error events.
+- `apps/api/src/modules/scheduled-reports/scheduled-reports.service.ts` + controller ó
+  audit `userId` no longer falls back to the tenant id; acting user is optional and
+  passed from the authenticated request.
+- `apps/api/src/modules/transfers/transfers.service.ts` ó list-cache invalidation now
+  uses `deletePattern(tenantId, 'transfers:list:*')` on every mutation path.
+- `apps/api/src/modules/scheduler/scheduler.service.ts` ó added the missing
+  `cleanup_expired_tokens_2am` entry to `getRegisteredJobs()`.
+
+**Test-only stabilization:**
+
+- `apps/api/src/common/tests/request-pipeline.spec.ts` ó `prom-client` default
+  collectors are mocked so the Windows/V8 `AsyncWrap::GetOwner` abort from
+  `process_handles` cannot kill the jest run; the registration contract is still asserted.
+
+**Notes:** no commit and no push were performed; working tree left uncommitted.
+---
+
+## 21) Function coverage completion (2026-10-02)
+
+**Objective:** close the last 16 zero-hit functions reported in section 20.
+
+**Added tests (13 existing suites extended, 3 new/updated specs):**
+
+- `orders/tests/order-state-machine.spec.ts` (new) - `isKitchenTracked`.
+- `common/metrics/tests/metrics.service.spec.ts` (new) - GC `PerformanceObserver`
+  callback, major/minor split, missing `kind` fallback.
+- `scheduled-reports/tests/create-scheduled-report.dto.spec.ts` - `IsCronExpression`
+  default message.
+- `forecasting-dashboard/tests/forecasting-dashboard.service.spec.ts` - `periodsToDays`.
+- `api-keys/tests/api-keys.service.spec.ts` - `findAll`, `update`.
+- `common/services/tests/plan-limits.service.spec.ts` - `enforceLimit`.
+- `barcodes/tests/barcode.service.spec.ts` - `getBarcodesForItem`.
+- `suppliers/tests/suppliers.service.spec.ts` - `findAll`.
+- `invitations/tests/invitations.service.spec.ts` - `findAllByTenant`.
+- `tenants/tests/tenants.service.spec.ts` - `restore`.
+- `auth/tests/auth.service.spec.ts` - `resendVerificationEmail`.
+- `webhooks/tests/webhook-processor.spec.ts` - `validateStatus` callback.
+- `executive-dashboard` and `financial-analytics` specs - category sort comparators.
+- `payments/tests/payments.gift-cards.spec.ts` - ambiguity-marker `.catch` path.
+
+**Full repository gate (clean, `--maxWorkers=1`, `npm run test:coverage --silent`):**
+
+| Gate | Before (section 20) | After |
+| ---- | ------------------- | ----- |
+| Test suites | 197 | 199 |
+| Tests | 4399 | 4427 |
+| Statements | 96.06% | 96.52% |
+| Branches | 72.60% | 72.91% |
+| Functions | 99.41% | 100% |
+| Lines | 97.33% | 97.78% |
+| Zero-hit functions | 16 | 0 |
+| `nx lint api` | exit 0 | exit 0 |
+| `nx build api` | exit 0 | exit 0 |
+
+**Notes:** `coverage/lcov.info` regenerated (462 files / 2737 functions / 0 zero-hit).
+No commit and no push were performed.

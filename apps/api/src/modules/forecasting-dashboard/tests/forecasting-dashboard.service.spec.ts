@@ -70,4 +70,17 @@ describe('ForecastingDashboardService', () => {
       expect(projections[0].avgDailyConsumption).toBe(-20);
     });
   });
+
+  describe('periodsToDays', () => {
+    it('maps named periods to their day span and defaults to a single day', () => {
+      const days = (
+        service as unknown as { periodsToDays: (period?: string) => number }
+      ).periodsToDays.bind(service);
+
+      expect(days('WEEKLY')).toBe(7);
+      expect(days('MONTHLY')).toBe(30);
+      expect(days('DAILY')).toBe(1);
+      expect(days(undefined)).toBe(1);
+    });
+  });
 });

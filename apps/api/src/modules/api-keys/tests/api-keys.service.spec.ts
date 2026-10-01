@@ -199,4 +199,63 @@ describe('ApiKeysService', () => {
       );
     });
   });
+
+  describe('findAll', () => {
+    it('filters by active flag and scope and returns pagination meta', async () => {
+      prisma.apiKey.findMany.mockResolvedValue([{ id: 'key-1' }]);
+      prisma.apiKey.count.mockResolvedValue(1);
+
+      const result = await service.findAll(
+        { isActive: true, scope: 'orders', page: 2, limit: 5 } as never,
+        testTenantId,
+      );
+
+      expect(prisma.apiKey.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            tenantId: testTenantId,
+            deletedAt: null,
+            isActive: true,
+            scopes: { has: 'orders' },
+          }),
+          skip: 5,
+          take: 5,
+        }),
+      );
+      expect(result.meta.total).toBe(1);
+    });
+  });
+
+  describe('update', () => {
+    it('throws NotFoundException when the key does not exist', async () => {
+      prisma.apiKey.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.update('missing', {} as never, testTenantId, testUserId),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('persists only the provided fields and records an audit event', async () => {
+      prisma.apiKey.findFirst.mockResolvedValue({ id: 'key-1', keyPrefix: 'tab_abc' });
+      prisma.apiKey.update.mockResolvedValue({ id: 'key-1', keyPrefix: 'tab_abc' });
+
+      const result = await service.update(
+        'key-1',
+        { rateLimitPerMin: 120 } as never,
+        testTenantId,
+        testUserId,
+      );
+
+      expect(result).toEqual(expect.objectContaining({ id: 'key-1' }));
+      expect(prisma.apiKey.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'key-1' },
+          data: { rateLimitPerMin: 120 },
+        }),
+      );
+      expect(auditLogs.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'API_KEY_UPDATED' }),
+      );
+    });
+  });
 });

@@ -132,7 +132,7 @@ export class CostingService {
     }
 
     const goodsReceipts = await this.prisma.goodsReceiptItem.findMany({
-      where: { inventoryItemId },
+      where: { inventoryItemId, tenantId, deletedAt: null },
       orderBy: { createdAt: 'asc' },
       take: 1,
     });

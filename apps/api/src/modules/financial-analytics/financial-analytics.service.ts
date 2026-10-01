@@ -288,7 +288,7 @@ export class FinancialAnalyticsService {
 
     const orderWhere = this.getOrderWhere(tenantId, query);
     const items = await this.prisma.orderItem.findMany({
-      where: { order: orderWhere },
+      where: { order: { ...orderWhere, status: 'COMPLETED' } },
       select: { productId: true, quantity: true, unitPrice: true, total: true },
     });
 
@@ -374,7 +374,7 @@ export class FinancialAnalyticsService {
 
     const orderWhere = this.getOrderWhere(tenantId, query);
     const items = await this.prisma.orderItem.findMany({
-      where: { order: orderWhere },
+      where: { order: { ...orderWhere, status: 'COMPLETED' } },
       select: { productId: true, productName: true, quantity: true, unitPrice: true, total: true },
     });
 
@@ -449,13 +449,13 @@ export class FinancialAnalyticsService {
 
     const totalTax = orders.reduce((s, o) => s + Number(o.taxAmount ?? 0), 0);
     const totalRevenue = orders.reduce((s, o) => s + Number(o.total ?? 0), 0);
-    const avgTaxRate = totalRevenue > 0 ? (totalTax / totalRevenue) * 100 : 0;
+    const taxRatio = totalRevenue > 0 ? totalTax / totalRevenue : 0;
     const ordersWithTax = orders.filter((o) => Number(o.taxAmount) > 0);
 
     const result = {
       totalTaxCollected: Math.round(totalTax * 100) / 100,
       totalRevenue: Math.round(totalRevenue * 100) / 100,
-      avgTaxRate: Math.round(avgTaxRate * 10000) / 100,
+      avgTaxRate: Math.round(taxRatio * 10000) / 100,
       ordersWithTax: ordersWithTax.length,
       ordersWithoutTax: orders.length - ordersWithTax.length,
     };
@@ -518,7 +518,7 @@ export class FinancialAnalyticsService {
       where: { ...orderWhere, status: { in: ['COMPLETED', 'REFUNDED'] } },
     });
 
-    const refundRate = allOrders > 0 ? (orders.length / allOrders) * 100 : 0;
+    const refundRatio = allOrders > 0 ? orders.length / allOrders : 0;
 
     const byPeriod = new Map<
       string,
@@ -535,7 +535,7 @@ export class FinancialAnalyticsService {
       totalRefunded: Math.round(totalRefunded * 100) / 100,
       refundCount: orders.length,
       totalCompletedOrRefunded: allOrders,
-      refundRate: Math.round(refundRate * 10000) / 100,
+      refundRate: Math.round(refundRatio * 10000) / 100,
       byPeriod: Array.from(byPeriod.values()),
     };
 

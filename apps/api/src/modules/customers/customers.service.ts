@@ -1522,7 +1522,7 @@ export class CustomersService {
         const membership =
           (c.memberships as Array<Record<string, unknown>> | undefined)?.[0] ?? null;
         const analytics = c.analytics as Record<string, unknown> | null;
-        return `"${c.id}","${c.firstName}","${c.lastName}","${c.email ?? ''}","${c.phone ?? ''}","${c.status}","${membership?.tier ?? ''}",${membership?.points ?? 0},${analytics?.totalSpend ?? 0},${analytics?.totalVisits ?? 0},"${analytics?.lastVisitAt ? new Date(analytics.lastVisitAt as string).toISOString() : ''}","${new Date(c.createdAt as string).toISOString()}"`;
+        return `"${c.id}","${c.firstName ?? ''}","${c.lastName ?? ''}","${c.email ?? ''}","${c.phone ?? ''}","${c.status}","${membership?.tier ?? ''}",${membership?.points ?? 0},${analytics?.totalSpend ?? 0},${analytics?.totalVisits ?? 0},"${analytics?.lastVisitAt ? new Date(analytics.lastVisitAt as string).toISOString() : ''}","${new Date(c.createdAt as string).toISOString()}"`;
       });
       return [header, ...rows].join('\n');
     }

@@ -137,6 +137,10 @@ export class SchedulerService {
       },
       { name: 'archive_old_audit_logs', description: 'Daily at midnight - archive old audit logs' },
       {
+        name: 'cleanup_expired_tokens_2am',
+        description: 'Daily at 2am - remove expired verification tokens',
+      },
+      {
         name: 'cleanup_failed_webhooks',
         description: 'Every 6 hours - remove failed webhook deliveries',
       },

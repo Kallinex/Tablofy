@@ -59,7 +59,12 @@ export class WebhookDeliveryService {
 
   verifySignature(payload: string, signature: string, secret: string): boolean {
     const expected = this.signPayload(payload, secret);
-    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+    const expectedBuffer = Buffer.from(expected);
+    const signatureBuffer = Buffer.from(signature);
+    if (expectedBuffer.length !== signatureBuffer.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(expectedBuffer, signatureBuffer);
   }
 
   calculateBackoff(attempt: number): number {

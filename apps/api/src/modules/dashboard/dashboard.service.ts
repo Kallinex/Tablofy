@@ -119,7 +119,7 @@ export class DashboardService {
       0,
     );
 
-    const avgInventory = items.length > 0 ? totalInventoryValue / items.length : 1;
+    const avgInventory = totalInventoryValue;
     const turnoverRate = avgInventory > 0 ? cogs / avgInventory : 0;
 
     const result = { cogs, averageInventoryValue: avgInventory, turnoverRate, periodMonths: 3 };
@@ -132,31 +132,31 @@ export class DashboardService {
     const cached = await this.cacheService.get(tenantId, cacheKey);
     if (cached) return cached;
 
-    const metrics = await this.prisma.supplierPerformanceMetric.findMany({
-      where: { tenantId, overallScore: { not: null } },
-      orderBy: { overallScore: 'desc' },
-      include: { supplier: { select: { id: true, name: true } } },
-      take: 10,
-    });
+    const [topMetrics, bottomMetrics] = await Promise.all([
+      this.prisma.supplierPerformanceMetric.findMany({
+        where: { tenantId, overallScore: { not: null } },
+        orderBy: { overallScore: 'desc' },
+        include: { supplier: { select: { id: true, name: true } } },
+        take: 5,
+      }),
+      this.prisma.supplierPerformanceMetric.findMany({
+        where: { tenantId, overallScore: { not: null } },
+        orderBy: { overallScore: 'asc' },
+        include: { supplier: { select: { id: true, name: true } } },
+        take: 5,
+      }),
+    ]);
 
-    const topPerformers = metrics.slice(0, 5).map((m) => ({
+    const toSummary = (m: (typeof topMetrics)[number]) => ({
       supplierId: m.supplierId,
       supplierName: m.supplier?.name ?? 'Unknown',
       overallScore: Number(m.overallScore),
       qualityScore: Number(m.qualityScore ?? 0),
       costScore: Number(m.costScore ?? 0),
-    }));
+    });
 
-    const bottomPerformers = [...metrics]
-      .reverse()
-      .slice(0, 5)
-      .map((m) => ({
-        supplierId: m.supplierId,
-        supplierName: m.supplier?.name ?? 'Unknown',
-        overallScore: Number(m.overallScore),
-        qualityScore: Number(m.qualityScore ?? 0),
-        costScore: Number(m.costScore ?? 0),
-      }));
+    const topPerformers = topMetrics.map(toSummary);
+    const bottomPerformers = bottomMetrics.map(toSummary);
 
     const result = { topPerformers, bottomPerformers };
     await this.cacheService.set(tenantId, cacheKey, result, 300);

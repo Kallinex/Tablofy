@@ -66,11 +66,20 @@ describe('PaymentsController routes', () => {
 
   it('should route GET providers/:tenantId/status to providerStatus', async () => {
     const response = await request(app.getHttpServer()).get(
-      '/restaurants/restaurant-1/payments/providers/tenant-9/status',
+      '/restaurants/restaurant-1/payments/providers/tenant-1/status',
     );
 
     expect(response.statusCode).toBe(200);
-    expect(service.getProviderForTenant).toHaveBeenCalledWith('tenant-9');
+    expect(service.getProviderForTenant).toHaveBeenCalledWith('tenant-1');
+  });
+
+  it('should reject a provider status lookup for another tenant', async () => {
+    const response = await request(app.getHttpServer()).get(
+      '/restaurants/restaurant-1/payments/providers/tenant-9/status',
+    );
+
+    expect(response.statusCode).toBe(403);
+    expect(service.getProviderForTenant).not.toHaveBeenCalled();
   });
 
   it('should route POST to charge', async () => {

@@ -1,7 +1,11 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+﻿import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as os from 'os';
+import * as crypto from 'crypto';
 import { BackupService } from '../backup.service';
+import { BackupRecordType } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { I18nService } from '../../../common/i18n/i18n.service';
 import { CacheService } from '../../../common/services/cache.service';
@@ -351,5 +355,289 @@ describe('BackupService.restore', () => {
     await expect(service.restore(TENANT, 'backup-1', 'en')).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+});
+
+describe('BackupService.create/find/verify/deleteExpired', () => {
+  const TENANT = 'tenant-a';
+  const lang = 'en';
+
+  let service: BackupService;
+  let prisma: Record<string, Record<string, jest.Mock>>;
+  let cache: Record<string, jest.Mock>;
+  let i18n: { t: jest.Mock };
+  let backupDir: string;
+  let originalCwd: string;
+
+  const collectModels = [
+    'restaurant',
+    'branch',
+    'floor',
+    'diningArea',
+    'table',
+    'menuCategory',
+    'product',
+    'customer',
+    'order',
+    'orderItem',
+    'orderItemModifier',
+    'orderStatusHistory',
+    'orderNote',
+    'payment',
+  ];
+
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    backupDir = await fs.mkdtemp(path.join(os.tmpdir(), 'backup-create-'));
+    process.chdir(backupDir);
+
+    prisma = {
+      backupRecord: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'backup-1', tenantId: TENANT }),
+        update: jest.fn().mockImplementation(async (args: { data: Record<string, unknown> }) => ({
+          id: 'backup-1',
+          ...args.data,
+        })),
+        updateMany: jest.fn().mockResolvedValue({ count: 2 }),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    };
+    for (const model of collectModels) {
+      prisma[model] = { findMany: jest.fn().mockResolvedValue([]) };
+    }
+    cache = { delete: jest.fn(), deletePattern: jest.fn() };
+    i18n = { t: jest.fn().mockReturnValue('backup error') };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        BackupService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: I18nService, useValue: i18n },
+        { provide: CacheService, useValue: cache },
+      ],
+    }).compile();
+
+    service = module.get(BackupService);
+  });
+
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    await fs.rm(backupDir, { recursive: true, force: true });
+  });
+
+  describe('create', () => {
+    it('refuses to start a second backup while one is still running', async () => {
+      prisma.backupRecord.findFirst.mockResolvedValueOnce({
+        id: 'backup-0',
+        status: 'IN_PROGRESS',
+      });
+
+      await expect(service.create(TENANT, BackupRecordType.FULL, lang)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.backupRecord.create).not.toHaveBeenCalled();
+    });
+
+    it('writes a checksummed archive and marks the record COMPLETED', async () => {
+      const result = await service.create(TENANT, BackupRecordType.FULL, lang);
+
+      expect(result.status).toBe('COMPLETED');
+      expect(result.checksum).toMatch(/^[a-f0-9]{64}$/);
+      expect(result.fileSize).toBeGreaterThan(0);
+
+      const written = await fs.readFile(result.filePath as string, 'utf-8');
+      expect(JSON.parse(written).tenantId).toBe(TENANT);
+      expect(JSON.parse(written).restaurants).toEqual([]);
+    });
+
+    it('collects every model listed in the archive', async () => {
+      await service.create(TENANT, BackupRecordType.INCREMENTAL, lang);
+
+      for (const model of collectModels) {
+        expect(prisma[model].findMany).toHaveBeenCalled();
+      }
+      expect(prisma.backupRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            tenantId: TENANT,
+            type: BackupRecordType.INCREMENTAL,
+            status: 'IN_PROGRESS',
+            retentionDays: 30,
+          }),
+        }),
+      );
+    });
+
+    it('marks the record FAILED and stores the error when writing fails', async () => {
+      prisma.restaurant.findMany.mockRejectedValueOnce(new Error('database offline'));
+
+      const result = await service.create(TENANT, BackupRecordType.FULL, lang);
+
+      expect(result.status).toBe('FAILED');
+      expect(result.errorMessage).toBe('database offline');
+    });
+
+    it('normalises a non-Error rejection into a stored error message', async () => {
+      prisma.restaurant.findMany.mockRejectedValueOnce('socket hang up');
+
+      const result = await service.create(TENANT, BackupRecordType.FULL, lang);
+
+      expect(result.status).toBe('FAILED');
+      expect(result.errorMessage).toBe('Unknown error');
+    });
+  });
+
+  describe('findAll', () => {
+    it('paginates and totals records for the tenant', async () => {
+      prisma.backupRecord.findMany.mockResolvedValueOnce([{ id: 'b1' }, { id: 'b2' }]);
+      prisma.backupRecord.count.mockResolvedValueOnce(2);
+
+      await expect(service.findAll(TENANT)).resolves.toEqual({
+        data: [{ id: 'b1' }, { id: 'b2' }],
+        total: 2,
+        page: 1,
+        limit: 20,
+      });
+      expect(prisma.backupRecord.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 20 }),
+      );
+    });
+
+    it('honours an explicit page and limit', async () => {
+      await service.findAll(TENANT, 3, 5);
+
+      expect(prisma.backupRecord.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 10, take: 5 }),
+      );
+    });
+  });
+
+  describe('findOne', () => {
+    it('throws NotFound for a record that does not belong to the tenant', async () => {
+      prisma.backupRecord.findFirst.mockResolvedValueOnce(null);
+
+      await expect(service.findOne(TENANT, 'missing', lang)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(prisma.backupRecord.findFirst).toHaveBeenCalledWith({
+        where: { id: 'missing', tenantId: TENANT },
+      });
+    });
+  });
+
+  describe('verify', () => {
+    it('marks an intact archive VALID', async () => {
+      const content = JSON.stringify({ tenantId: TENANT });
+      const checksum = crypto.createHash('sha256').update(content).digest('hex');
+      await fs.writeFile(path.join(backupDir, 'archive.json'), content);
+      prisma.backupRecord.findFirst.mockResolvedValueOnce({
+        id: 'backup-1',
+        tenantId: TENANT,
+        filePath: path.join(backupDir, 'archive.json'),
+        checksum,
+      });
+
+      const result = await service.verify(TENANT, 'backup-1', lang);
+
+      expect(result).toEqual({ valid: true, checksum, expectedChecksum: checksum });
+      expect(prisma.backupRecord.update).toHaveBeenCalledWith({
+        where: { id: 'backup-1' },
+        data: { verifiedAt: expect.any(Date), verificationStatus: 'VALID' },
+      });
+    });
+
+    it('marks a tampered archive INVALID', async () => {
+      await fs.writeFile(path.join(backupDir, 'archive.json'), '{"tampered":true}');
+      prisma.backupRecord.findFirst.mockResolvedValueOnce({
+        id: 'backup-1',
+        tenantId: TENANT,
+        filePath: path.join(backupDir, 'archive.json'),
+        checksum: 'a'.repeat(64),
+      });
+
+      const result = await service.verify(TENANT, 'backup-1', lang);
+
+      expect(result.valid).toBe(false);
+      expect(prisma.backupRecord.update).toHaveBeenCalledWith({
+        where: { id: 'backup-1' },
+        data: { verifiedAt: expect.any(Date), verificationStatus: 'INVALID' },
+      });
+    });
+
+    it('rejects a record that has no stored file path', async () => {
+      prisma.backupRecord.findFirst.mockResolvedValueOnce({
+        id: 'backup-1',
+        tenantId: TENANT,
+        filePath: null,
+      });
+
+      await expect(service.verify(TENANT, 'backup-1', lang)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('rejects when the archive file is unreadable', async () => {
+      prisma.backupRecord.findFirst.mockResolvedValueOnce({
+        id: 'backup-1',
+        tenantId: TENANT,
+        filePath: path.join(backupDir, 'does-not-exist.json'),
+        checksum: 'a'.repeat(64),
+      });
+
+      await expect(service.verify(TENANT, 'backup-1', lang)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.backupRecord.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteExpired', () => {
+    it('unlinks each expired file and marks the records EXPIRED', async () => {
+      const first = path.join(backupDir, 'expired-1.json');
+      const second = path.join(backupDir, 'expired-2.json');
+      await fs.writeFile(first, '{}');
+      await fs.writeFile(second, '{}');
+      prisma.backupRecord.findMany.mockResolvedValueOnce([
+        { id: 'b1', filePath: first },
+        { id: 'b2', filePath: second },
+      ]);
+
+      const removed = await service.deleteExpired();
+
+      expect(removed).toBe(2);
+      await expect(fs.stat(first)).rejects.toThrow();
+      await expect(fs.stat(second)).rejects.toThrow();
+      expect(prisma.backupRecord.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['b1', 'b2'] } },
+        data: { status: 'EXPIRED' },
+      });
+    });
+
+    it('still expires records whose file is already missing or pathless', async () => {
+      prisma.backupRecord.findMany.mockResolvedValueOnce([
+        { id: 'b1', filePath: path.join(backupDir, 'gone.json') },
+        { id: 'b2', filePath: null },
+      ]);
+
+      const removed = await service.deleteExpired();
+
+      expect(removed).toBe(2);
+      expect(prisma.backupRecord.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['b1', 'b2'] } },
+        data: { status: 'EXPIRED' },
+      });
+    });
+
+    it('issues no update filter when nothing expired', async () => {
+      const removed = await service.deleteExpired();
+
+      expect(removed).toBe(0);
+      expect(prisma.backupRecord.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [] } },
+        data: { status: 'EXPIRED' },
+      });
+    });
   });
 });

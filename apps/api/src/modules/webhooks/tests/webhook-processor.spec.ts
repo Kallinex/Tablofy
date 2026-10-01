@@ -1,4 +1,4 @@
-import { Test, TestingModule } from '@nestjs/testing';
+﻿import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { WebhookProcessor } from '../webhook-processor';
 import { QueueService } from '../../queues/queue.service';
@@ -157,6 +157,22 @@ describe('WebhookProcessor', () => {
     expect(result).toEqual({ delivered: true, statusCode: 200 });
   });
 
+  it('accepts every status in validateStatus so non-2xx responses can be inspected and retried', async () => {
+    let capturedValidateStatus: ((status: number) => boolean) | undefined;
+    ssrfClientMock.postJson.mockImplementation(
+      (_url: string, _body: unknown, options: { validateStatus: (status: number) => boolean }) => {
+        capturedValidateStatus = options.validateStatus;
+        return Promise.resolve({ status: 200, data: {} });
+      },
+    );
+
+    await processor.processDelivery(job);
+
+    expect(capturedValidateStatus).toBeDefined();
+    expect(capturedValidateStatus!(204)).toBe(true);
+    expect(capturedValidateStatus!(500)).toBe(true);
+  });
+
   it('schedules a retry on non-2xx response when attempts remain', async () => {
     ssrfClientMock.postJson.mockResolvedValue({ status: 500, data: { error: 'boom' } });
 
@@ -303,5 +319,101 @@ describe('WebhookProcessor', () => {
     });
     await processor.processDelivery(job);
     expect(deliveryServiceMock.decryptSecret).toHaveBeenCalledWith('iv:tag:enc');
+  });
+
+  it('marks delivery as failed without retry when attempts exhausted', async () => {
+    ssrfClientMock.postJson.mockResolvedValue({ status: 503, data: { error: 'down' } });
+    prismaMock.webhookDelivery.findUnique.mockResolvedValueOnce({ ...delivery, attemptCount: 4 });
+
+    const result = await processor.processDelivery(job);
+
+    expect(deliveryServiceMock.markFailed).toHaveBeenCalled();
+    expect(queueServiceMock.addJob).not.toHaveBeenCalled();
+    expect(result).toEqual({ delivered: false, statusCode: 503 });
+  });
+
+  it('marks delivery failed when SSRF blocks the request', async () => {
+    ssrfClientMock.postJson.mockRejectedValue(new SsrfBlockedError('blocked private address'));
+
+    const result = await processor.processDelivery(job);
+
+    expect(deliveryServiceMock.markFailed).toHaveBeenCalledWith(
+      'del-1',
+      expect.stringContaining('Blocked by SSRF guard'),
+      null,
+      expect.any(Number),
+    );
+    expect(queueServiceMock.addJob).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      delivered: false,
+      error: expect.stringContaining('blocked private address'),
+      ssrfBlocked: true,
+    });
+  });
+
+  it('marks delivery failed on generic network error and schedules retry when possible', async () => {
+    ssrfClientMock.postJson.mockRejectedValue(new Error('ECONNREFUSED'));
+    prismaMock.webhookDelivery.findUnique.mockResolvedValueOnce({ ...delivery, attemptCount: 1 });
+
+    const result = await processor.processDelivery(job);
+
+    expect(deliveryServiceMock.markFailed).toHaveBeenCalledWith(
+      'del-1',
+      'ECONNREFUSED',
+      null,
+      expect.any(Number),
+    );
+    expect(queueServiceMock.addJob).toHaveBeenCalled();
+    expect(result).toEqual({ delivered: false, error: 'ECONNREFUSED' });
+  });
+
+  it('marks delivery failed on non-Error rejection', async () => {
+    ssrfClientMock.postJson.mockRejectedValue('timeout');
+
+    const result = await processor.processDelivery(job);
+
+    expect(deliveryServiceMock.markFailed).toHaveBeenCalledWith(
+      'del-1',
+      'timeout',
+      null,
+      expect.any(Number),
+    );
+    expect(result).toEqual({ delivered: false, error: 'timeout' });
+  });
+
+  describe('processRetry', () => {
+    it('skips retry if the delivery no longer exists', async () => {
+      prismaMock.webhookDelivery.findUnique.mockResolvedValueOnce(null);
+
+      const result = await processor.processRetry(job);
+
+      expect(result).toEqual({ skipped: true, reason: 'not_retrying' });
+      expect(ssrfClientMock.postJson).not.toHaveBeenCalled();
+    });
+
+    it('skips retry if the delivery is not in RETRYING status', async () => {
+      prismaMock.webhookDelivery.findUnique.mockResolvedValueOnce({
+        ...delivery,
+        status: 'FAILED',
+      });
+
+      const result = await processor.processRetry(job);
+
+      expect(result).toEqual({ skipped: true, reason: 'not_retrying' });
+      expect(ssrfClientMock.postJson).not.toHaveBeenCalled();
+    });
+
+    it('delegates to processDelivery when the retry is valid', async () => {
+      prismaMock.webhookDelivery.findUnique.mockResolvedValueOnce({
+        ...delivery,
+        status: 'RETRYING',
+      });
+      ssrfClientMock.postJson.mockResolvedValue({ status: 200, data: { ok: true } });
+
+      const result = await processor.processRetry(job);
+
+      expect(result).toEqual({ delivered: true, statusCode: 200 });
+      expect(ssrfClientMock.postJson).toHaveBeenCalled();
+    });
   });
 });

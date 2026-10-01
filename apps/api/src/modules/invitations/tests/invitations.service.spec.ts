@@ -484,4 +484,43 @@ describe('InvitationsService', () => {
       );
     });
   });
+
+  describe('findAllByTenant', () => {
+    it('filters by status and paginates the tenant invitations', async () => {
+      prisma.invitation.findMany.mockResolvedValue([baseInvitation]);
+      prisma.invitation.count.mockResolvedValue(1);
+
+      const result = await service.findAllByTenant({
+        tenantId: testTenantId,
+        status: InvitationStatus.PENDING,
+        page: 2,
+        limit: 10,
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.meta.total).toBe(1);
+      expect(prisma.invitation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            tenantId: testTenantId,
+            status: InvitationStatus.PENDING,
+          }),
+          skip: 10,
+          take: 10,
+        }),
+      );
+    });
+
+    it('omits the status filter when none is supplied', async () => {
+      prisma.invitation.findMany.mockResolvedValue([]);
+      prisma.invitation.count.mockResolvedValue(0);
+
+      await service.findAllByTenant({ tenantId: testTenantId });
+
+      const call = prisma.invitation.findMany.mock.calls[0][0] as {
+        where: Record<string, unknown>;
+      };
+      expect(call.where).not.toHaveProperty('status');
+    });
+  });
 });

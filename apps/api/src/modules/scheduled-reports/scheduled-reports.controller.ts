@@ -47,14 +47,14 @@ export class ScheduledReportsController {
     @Body() dto: UpdateScheduledReportDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    return this.scheduledReportsService.update(user.tenantId!, id, dto);
+    return this.scheduledReportsService.update(user.tenantId!, id, dto, user.id);
   }
 
   @Delete(':id')
   @Roles('OWNER', 'MANAGER')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
-    await this.scheduledReportsService.remove(user.tenantId!, id);
+    await this.scheduledReportsService.remove(user.tenantId!, id, user.id);
   }
 
   @Post(':id/trigger')

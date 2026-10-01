@@ -119,6 +119,13 @@ const prismaModelNames = [
   'reportExport',
   'analyticsDashboard',
   'apiKey',
+  'webhookRegistration',
+  'webhookDelivery',
+  'consentRecord',
+  'cookiePreference',
+  'dataExportRequest',
+  'backupRecord',
+  'revokedToken',
 ];
 
 export interface MockDelegate {
@@ -298,6 +305,13 @@ export interface MockPrismaModelDelegates {
   reportExport: MockDelegate;
   analyticsDashboard: MockDelegate;
   apiKey: MockDelegate;
+  webhookRegistration: MockDelegate;
+  webhookDelivery: MockDelegate;
+  consentRecord: MockDelegate;
+  cookiePreference: MockDelegate;
+  dataExportRequest: MockDelegate;
+  backupRecord: MockDelegate;
+  revokedToken: MockDelegate;
 }
 
 export interface MockPrisma extends MockPrismaModelDelegates {

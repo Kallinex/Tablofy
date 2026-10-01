@@ -70,20 +70,17 @@ export class ExecutiveDashboardService {
       this.prisma.customer.count({ where: { tenantId } }),
     ]);
 
-    const totalRevenue = orders.reduce((sum, o) => sum + Number(o.total), 0);
-    const netRevenue = orders
-      .filter((o) => o.status === 'COMPLETED')
-      .reduce((sum, o) => sum + Number(o.paidAmount ?? o.total), 0);
-    const grossProfit = orders
-      .filter((o) => o.status === 'COMPLETED')
-      .reduce((sum, o) => {
-        const subtotal = Number(o.subtotal ?? 0);
-        const discount = Number(o.discountAmount ?? 0);
-        return sum + subtotal - discount;
-      }, 0);
+    const completedOnly = orders.filter((o) => o.status === 'COMPLETED');
+    const totalRevenue = completedOnly.reduce((sum, o) => sum + Number(o.total), 0);
+    const netRevenue = completedOnly.reduce((sum, o) => sum + Number(o.paidAmount ?? o.total), 0);
+    const grossProfit = completedOnly.reduce((sum, o) => {
+      const subtotal = Number(o.subtotal ?? 0);
+      const discount = Number(o.discountAmount ?? 0);
+      return sum + subtotal - discount;
+    }, 0);
     const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
     const operatingMargin = netRevenue > 0 ? (grossProfit / netRevenue) * 100 : 0;
-    const avgOrderValue = orders.length > 0 ? totalRevenue / orders.length : 0;
+    const avgOrderValue = completedOnly.length > 0 ? totalRevenue / completedOnly.length : 0;
 
     const customerGrowth = existingCustomers > 0 ? (customerCount / existingCustomers) * 100 : 0;
 
@@ -128,6 +125,7 @@ export class ExecutiveDashboardService {
     const orderWhere: Prisma.OrderWhereInput = { tenantId };
     if (Object.keys(dateFilter).length > 0) orderWhere.createdAt = dateFilter;
     if (query.branchId) orderWhere.branchId = query.branchId;
+    orderWhere.status = 'COMPLETED';
 
     const items = await this.prisma.orderItem.findMany({
       where: { order: orderWhere },
@@ -172,6 +170,7 @@ export class ExecutiveDashboardService {
     const orderWhere: Prisma.OrderWhereInput = { tenantId };
     if (Object.keys(dateFilter).length > 0) orderWhere.createdAt = dateFilter;
     if (query.branchId) orderWhere.branchId = query.branchId;
+    orderWhere.status = 'COMPLETED';
 
     const items = await this.prisma.orderItem.findMany({
       where: { order: orderWhere },
@@ -236,7 +235,11 @@ export class ExecutiveDashboardService {
     const dateFilter = this.buildDateFilter(query);
 
     const orders = await this.prisma.order.findMany({
-      where: { tenantId, ...(Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {}) },
+      where: {
+        tenantId,
+        status: 'COMPLETED',
+        ...(Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {}),
+      },
       select: { branchId: true, total: true },
     });
 
@@ -272,6 +275,7 @@ export class ExecutiveDashboardService {
       where: {
         tenantId,
         userId: { not: null },
+        status: 'COMPLETED',
         ...(Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {}),
       },
       select: { userId: true, total: true },
@@ -303,7 +307,11 @@ export class ExecutiveDashboardService {
     const dateFilter = this.buildDateFilter(query);
 
     const orders = await this.prisma.order.findMany({
-      where: { tenantId, ...(Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {}) },
+      where: {
+        tenantId,
+        status: 'COMPLETED',
+        ...(Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {}),
+      },
       select: { customerPhone: true, customerEmail: true, total: true },
     });
 
@@ -336,7 +344,11 @@ export class ExecutiveDashboardService {
     const dateFilter = this.buildDateFilter(query);
 
     const orders = await this.prisma.order.findMany({
-      where: { tenantId, ...(Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {}) },
+      where: {
+        tenantId,
+        status: 'COMPLETED',
+        ...(Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {}),
+      },
       select: { createdAt: true, total: true, id: true },
       orderBy: { createdAt: 'asc' },
     });

@@ -1,4 +1,4 @@
-import axios from 'axios';
+﻿import axios from 'axios';
 import { SsrfClientService } from './ssrf-client.service';
 import { SsrfBlockedError } from './ssrf-guard';
 import { DnsResolver } from './ssrf-guard';
@@ -138,5 +138,129 @@ describe('SsrfClientService.postJson', () => {
     });
     await service.postJson('https://example.com/hook', {});
     expect(mockedRequest).toHaveBeenCalledTimes(1);
+  });
+});
+
+const dualStackResolver: DnsResolver = async (host) =>
+  host === 'dual.example.com'
+    ? ['93.184.216.34', '2606:2800:220:1:248:1893:25c8:1946']
+    : ['93.184.216.34'];
+
+const dualStackService = new SsrfClientService().setResolver(dualStackResolver);
+
+type LookupFn = (
+  host: string,
+  opts: unknown,
+  cb: (err: Error | null, address?: unknown, family?: number) => void,
+) => void;
+
+function captureAgent(): LookupFn {
+  const config = mockedRequest.mock.calls[0][0] as unknown as {
+    httpsAgent: { options?: { lookup?: LookupFn } };
+  };
+  const lookup = config.httpsAgent.options?.lookup;
+  if (!lookup) throw new Error('agent has no lookup');
+  return lookup;
+}
+
+describe('SsrfClientService.assertUrlSafe', () => {
+  it('delegates to the guard and returns the resolved, pinned addresses', async () => {
+    const safe = await service.assertUrlSafe('https://example.com/hook');
+
+    expect(safe.hostname).toBe('example.com');
+    expect(safe.port).toBe(443);
+    expect(safe.addresses).toEqual(['93.184.216.34']);
+  });
+
+  it('propagates a blocked host', async () => {
+    await expect(service.assertUrlSafe('https://127.0.0.1/hook')).rejects.toBeInstanceOf(
+      SsrfBlockedError,
+    );
+  });
+
+  it('falls back to the OS resolver when none is configured', async () => {
+    const osResolverService = new SsrfClientService();
+    jest
+      .spyOn(osResolverService, 'assertUrlSafe')
+      .mockResolvedValue(
+        {} as unknown as Awaited<ReturnType<typeof osResolverService.assertUrlSafe>>,
+      );
+
+    await expect(osResolverService.assertUrlSafe('https://example.com')).resolves.toEqual({});
+    expect(jest.spyOn(osResolverService, 'assertUrlSafe')).toHaveBeenCalledWith(
+      'https://example.com',
+    );
+  });
+});
+
+describe('SsrfClientService address pinning', () => {
+  beforeEach(() => {
+    mockedRequest.mockResolvedValue(response(200));
+  });
+
+  it('serves only IPv4 candidates when the socket asks for family 4', async () => {
+    await dualStackService.postJson('https://dual.example.com/hook', {});
+    const lookup = captureAgent();
+
+    let resolved: unknown;
+    lookup('dual.example.com', { all: true, family: 4 }, (_e, address) => {
+      resolved = address;
+    });
+
+    expect(resolved).toEqual([{ address: '93.184.216.34', family: 4 }]);
+  });
+
+  it('serves only IPv6 candidates when the socket asks for family 6', async () => {
+    await dualStackService.postJson('https://dual.example.com/hook', {});
+    const lookup = captureAgent();
+
+    let resolved: unknown;
+    lookup('dual.example.com', { all: true, family: 6 }, (_e, address) => {
+      resolved = address;
+    });
+
+    expect(resolved).toEqual([{ address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 }]);
+  });
+
+  it('returns every pinned address when no family preference is given', async () => {
+    await dualStackService.postJson('https://dual.example.com/hook', {});
+    const lookup = captureAgent();
+
+    let resolved: unknown;
+    lookup('dual.example.com', { all: true }, (_e, address) => {
+      resolved = address;
+    });
+
+    expect(resolved).toEqual([
+      { address: '93.184.216.34', family: 4 },
+      { address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 },
+    ]);
+  });
+
+  it('returns a single address and family for a non-`all` lookup', async () => {
+    await dualStackService.postJson('https://dual.example.com/hook', {});
+    const lookup = captureAgent();
+
+    let resolved: unknown;
+    let family: number | undefined;
+    lookup('dual.example.com', {}, (_e, address, f) => {
+      resolved = address;
+      family = f;
+    });
+
+    expect(resolved).toBe('93.184.216.34');
+    expect(family).toBe(4);
+  });
+
+  it('falls back to the full pinned set when the requested family has no match', async () => {
+    await dualStackService.postJson('https://dual.example.com/hook', {});
+    const lookup = captureAgent();
+
+    let resolved: unknown;
+    lookup('dual.example.com', { all: true, family: 0 }, (_e, address) => {
+      resolved = address;
+    });
+
+    expect(resolved).toHaveLength(2);
   });
 });

@@ -169,7 +169,7 @@ export class ProductVariantsService {
 
     if (dto.variantGroupId) {
       const variantGroup = await this.prisma.variantGroup.findFirst({
-        where: { id: dto.variantGroupId, deletedAt: null },
+        where: { id: dto.variantGroupId, tenantId, deletedAt: null },
       });
       if (!variantGroup) {
         throw new NotFoundException('Variant group not found');

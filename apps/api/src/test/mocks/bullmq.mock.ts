@@ -28,11 +28,21 @@ export class Queue {
   removeAllListeners = jest.fn();
 }
 
-export class Worker {
-  static last: Worker | null = null;
+export class Worker<TData = unknown> {
+  static last: Worker<never> | null = null;
   handlers: Record<string, (job: unknown, err?: Error) => void> = {};
-  constructor() {
-    Worker.last = this;
+  processor?: (job: TData) => Promise<unknown>;
+  concurrency?: number;
+  connection?: Record<string, unknown>;
+  constructor(
+    public name?: string,
+    processor?: (job: TData) => Promise<unknown>,
+    opts?: { concurrency?: number; connection?: Record<string, unknown> },
+  ) {
+    this.processor = processor;
+    this.concurrency = opts?.concurrency;
+    this.connection = opts?.connection;
+    Worker.last = this as unknown as Worker<never>;
   }
   on = jest.fn((event: string, cb: (job: unknown, err?: Error) => void) => {
     this.handlers[event] = cb;
