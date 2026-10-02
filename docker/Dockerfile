@@ -5,7 +5,11 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+# `postinstall` runs `prisma generate`, which needs the schema. Copying just the
+# schema and config here keeps that hook working without pulling in migrations.
+COPY package.json package-lock.json prisma.config.ts ./
+COPY prisma/schema.prisma ./prisma/schema.prisma
+
 RUN npm ci
 
 # Production-only dependencies (no dev tooling) for the runtime stage
@@ -29,7 +33,10 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy only the files the production build needs. Keeping this explicit avoids
 # invalidating the layer (and re-running the build) when unrelated files such as
 # documentation, tests or CI configuration change.
-COPY package.json ./
+#
+# package-lock.json is required even though dependencies are already installed:
+# webpack/Nx reads it to compute the build cache key and fails without it.
+COPY package.json package-lock.json ./
 COPY tsconfig.base.json ./
 COPY nx.json ./
 COPY prisma.config.ts ./

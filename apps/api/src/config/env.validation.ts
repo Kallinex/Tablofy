@@ -11,37 +11,48 @@ class EnvironmentVariables {
   @IsEnum(Environment)
   NODE_ENV!: Environment;
 
+  @IsOptional()
   @IsNumber()
   PORT!: number;
 
+  @IsOptional()
   @IsString()
   API_PREFIX!: string;
 
   @IsString()
   DATABASE_URL!: string;
 
+  @IsOptional()
   @IsString()
   REDIS_HOST!: string;
 
+  @IsOptional()
   @IsNumber()
   REDIS_PORT!: number;
 
+  // Optional: redis.config.ts falls back to redis://localhost:6379 and derives
+  // host/port/password from this URL when present.
+  @IsOptional()
   @IsString()
-  REDIS_URL!: string;
+  REDIS_URL?: string;
 
   @IsString()
   @MinLength(32, { message: 'JWT_SECRET must be at least 32 characters long' })
   JWT_SECRET!: string;
 
+  // Optional: jwt.config.ts defaults to 15m.
+  @IsOptional()
   @IsString()
-  JWT_EXPIRATION!: string;
+  JWT_EXPIRATION?: string;
 
   @IsString()
   @MinLength(32, { message: 'JWT_REFRESH_SECRET must be at least 32 characters long' })
   JWT_REFRESH_SECRET!: string;
 
+  // Optional: jwt.config.ts defaults to 7d.
+  @IsOptional()
   @IsString()
-  JWT_REFRESH_EXPIRATION!: string;
+  JWT_REFRESH_EXPIRATION?: string;
 
   @IsOptional()
   @IsString()
@@ -51,11 +62,14 @@ class EnvironmentVariables {
   @IsString()
   CORS_CREDENTIALS?: string;
 
+  // Optional: throttle.config.ts defaults to a 60s window and 120 requests.
+  @IsOptional()
   @IsNumber()
-  THROTTLE_TTL!: number;
+  THROTTLE_TTL?: number;
 
+  @IsOptional()
   @IsNumber()
-  THROTTLE_LIMIT!: number;
+  THROTTLE_LIMIT?: number;
 
   @IsOptional()
   @IsNumber()
@@ -257,9 +271,13 @@ class EnvironmentVariables {
   @IsEnum(['mock', 'test', 'live'])
   PAYMENTS_MODE?: string;
 
-  @IsOptional()
+  // Always required, not just in production: webhook.config.ts refuses to boot
+  // without it in every environment, so validating it only under production left
+  // development and staging to die inside the DI container with a stack trace
+  // instead of a clear, actionable message.
   @IsString()
-  WEBHOOK_ENCRYPTION_KEY?: string;
+  @MinLength(32, { message: 'WEBHOOK_ENCRYPTION_KEY must be at least 32 characters long' })
+  WEBHOOK_ENCRYPTION_KEY!: string;
 
   @IsOptional()
   @IsString()
@@ -456,15 +474,6 @@ export function validate(config: Record<string, unknown>) {
   ) {
     throw new Error(
       'Production environment requires REDIS_PASSWORD (min 16 characters) to secure Redis.',
-    );
-  }
-
-  if (
-    validatedConfig.NODE_ENV === Environment.Production &&
-    (!validatedConfig.WEBHOOK_ENCRYPTION_KEY || validatedConfig.WEBHOOK_ENCRYPTION_KEY.length < 32)
-  ) {
-    throw new Error(
-      'Production environment requires WEBHOOK_ENCRYPTION_KEY (min 32 characters) to encrypt tenant webhook secrets.',
     );
   }
 

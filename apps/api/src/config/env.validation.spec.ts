@@ -16,6 +16,7 @@ function baseEnv(overrides: Record<string, string> = {}): Record<string, string>
     JWT_REFRESH_EXPIRATION: '7d',
     THROTTLE_TTL: '60',
     THROTTLE_LIMIT: '120',
+    WEBHOOK_ENCRYPTION_KEY: 'w'.repeat(64),
     ...overrides,
   };
 }
@@ -23,6 +24,55 @@ function baseEnv(overrides: Record<string, string> = {}): Record<string, string>
 describe('env.validation', () => {
   it('accepts a valid minimal development environment', () => {
     expect(() => validate(baseEnv())).not.toThrow();
+  });
+
+  it('accepts a container-minimal environment that omits every defaulted variable', () => {
+    // Regression guard: this is the exact shape a production container was
+    // started with, and validation rejected it because REDIS_URL, JWT_EXPIRATION,
+    // JWT_REFRESH_EXPIRATION, THROTTLE_TTL and THROTTLE_LIMIT were declared
+    // required even though every one of them has a default in its config
+    // factory. The container crashed on boot before reaching any handler.
+    //
+    // The secrets that genuinely have no default are still supplied here, so
+    // this asserts only that the *defaulted* variables stopped being mandatory.
+    const containerMinimal = {
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgresql://tablofy:secret@postgres:5432/tablofy?schema=public',
+      JWT_SECRET: 'a-secret-that-is-at-least-32-characters-long',
+      JWT_REFRESH_SECRET: 'another-secret-that-is-at-least-32-characters-long',
+      REDIS_PASSWORD: 'a-redis-password-of-16-plus',
+      WEBHOOK_ENCRYPTION_KEY: 'a'.repeat(64),
+      METRICS_AUTH_TOKEN: 'a-metrics-token-of-16-plus',
+    };
+
+    expect(() => validate(containerMinimal)).not.toThrow();
+  });
+
+  it('still rejects a missing JWT secret, which has no safe default', () => {
+    const withoutSecrets = {
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgresql://tablofy:secret@postgres:5432/tablofy?schema=public',
+    };
+
+    expect(() => validate(withoutSecrets)).toThrow(/JWT_SECRET/);
+    expect(() =>
+      validate({
+        ...withoutSecrets,
+        JWT_SECRET: 'a-secret-that-is-at-least-32-characters-long',
+      }),
+    ).toThrow(/JWT_REFRESH_SECRET/);
+  });
+
+  it('still rejects a too-short JWT secret', () => {
+    expect(() => validate(baseEnv({ JWT_SECRET: 'too-short' }))).toThrow(
+      /property JWT_SECRET has failed/,
+    );
+  });
+
+  it('still rejects a missing DATABASE_URL, which has no safe default', () => {
+    expect(() => validate(baseEnv({ DATABASE_URL: undefined as unknown as string }))).toThrow(
+      /DATABASE_URL/,
+    );
   });
 
   it('accepts optional observability variables when present', () => {
@@ -110,16 +160,33 @@ describe('env.validation', () => {
     ).not.toThrow();
   });
 
-  it('rejects production without WEBHOOK_ENCRYPTION_KEY', () => {
+  it('rejects any environment without WEBHOOK_ENCRYPTION_KEY', () => {
+    // webhook.config.ts refuses to boot without this key in *every* environment,
+    // so validation must reject it everywhere rather than only in production.
+    expect(() =>
+      validate(
+        baseEnv({
+          WEBHOOK_ENCRYPTION_KEY: undefined as unknown as string,
+        }),
+      ),
+    ).toThrow(/WEBHOOK_ENCRYPTION_KEY/);
+
     expect(() =>
       validate(
         baseEnv({
           NODE_ENV: 'production',
           METRICS_ENABLED: 'false',
           REDIS_PASSWORD: 'redis-password-at-least-16-chars',
+          WEBHOOK_ENCRYPTION_KEY: undefined as unknown as string,
         }),
       ),
     ).toThrow(/WEBHOOK_ENCRYPTION_KEY/);
+  });
+
+  it('rejects a too-short WEBHOOK_ENCRYPTION_KEY', () => {
+    expect(() => validate(baseEnv({ WEBHOOK_ENCRYPTION_KEY: 'too-short' }))).toThrow(
+      /property WEBHOOK_ENCRYPTION_KEY has failed/,
+    );
   });
 
   it('accepts development without a token when metrics are enabled', () => {

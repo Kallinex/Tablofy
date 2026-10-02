@@ -46,17 +46,20 @@ incident would originate.
 
 ## 3. Infrastructure that has never been built
 
-| Item                   | Status                                                                                                                           |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Docker image           | **[UNVERIFIED]** never built — the daemon is unavailable in the dev environment. We do not currently know that the image builds. |
-| Trivy image scan       | **[UNVERIFIED]** wired in `docker-publish.yml`, never executed.                                                                  |
-| Image in a registry    | **[UNVERIFIED]** `docker-publish.yml` only runs on `main`; this branch has produced no image.                                    |
-| Backup + restore drill | **[UNVERIFIED]** no restore has been performed from a real backup.                                                               |
-| Load / soak testing    | **[UNVERIFIED]** no test above single-request volume.                                                                            |
+| Item                    | Status                                                                                                                                                                                                                                                            |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Docker image            | **[PROVEN]** built end to end after fixing three real build/boot defects (see §5). Image runs as `nestjs`, carries the Prisma CLI, and holds both migrations.                                                                                                     |
+| Container boot + health | **[PROVEN]** container reaches `running`/Docker `healthy` against a real Postgres 16 and Redis 7. `GET /api/v1/health` returns `200` with `database`, `redis`, `memory_rss`, `bullmq` (22 queues) and `disk` all `up`. The Dockerfile's own `HEALTHCHECK` passes. |
+| Migration on boot       | **[PROVEN]** `prisma migrate deploy` inside the image applied both migrations to a real Postgres.                                                                                                                                                                 |
+| Trivy image scan        | **[UNVERIFIED]** wired in `docker-publish.yml`, never executed. Blocked on this machine: the host ran out of disk while pulling the scanner.                                                                                                                      |
+| Image in a registry     | **[UNVERIFIED]** `docker-publish.yml` only runs on `main`; this branch has produced no image.                                                                                                                                                                     |
+| Backup + restore drill  | **[UNVERIFIED]** no restore has been performed from a real backup.                                                                                                                                                                                                |
+| Load / soak testing     | **[UNVERIFIED]** no test above single-request volume.                                                                                                                                                                                                             |
 
-**The Docker image is the single largest unknown.** Everything else can be
-verified incrementally; if the image does not build, nothing ships. Build it
-first.
+**The Docker image is no longer the unknown.** It builds, boots and reports
+healthy against real datastores. What remains unproven is a _production-shaped_
+run: real gateway credentials, a production-sized dataset, an image in a
+registry, and a scan.
 
 ## 4. Before you launch — ordered by cost of discovering the problem late
 
@@ -99,15 +102,16 @@ silently. That is fixed; do not lower them again.
 
 ## 6. Security posture
 
-| Control                        | Status                                                                                                                                                                    |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dependency vulnerabilities     | **[PROVEN]** `npm audit` = 0. CI gate tightened to `--audit-level=moderate`.                                                                                              |
-| SSRF on tenant-controlled URLs | **[PROVEN]** DNS pinning, manual redirect re-validation, `maxRedirects: 0`. Verified against a live local server, including a defeated prototype-pollution socket hijack. |
-| Webhook signature verification | **[PROVEN]** HMAC-SHA256, `timingSafeEqual`, 300s tolerance, multi-secret rotation.                                                                                       |
-| Multi-tenant isolation         | **[PROVEN]** enforced by `SkipTenant`/tenant guards on every query path, with decorator-level tests.                                                                      |
-| Rate limiting                  | **[PROVEN]** configurable limits.                                                                                                                                         |
-| Secrets in images              | **[PROVEN]** builder stage copies only build inputs.                                                                                                                      |
-| Dependency pinning             | **[PROVEN]** `overrides` keyed on `minimatch` major, semver-valid.                                                                                                        |
+| Control                        | Status                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dependency vulnerabilities     | **[PROVEN]** `npm audit` = 0. CI gate tightened to `--audit-level=moderate`.                                                                                                                                                                                                                                                          |
+| SSRF on tenant-controlled URLs | **[PROVEN]** DNS pinning, manual redirect re-validation, `maxRedirects: 0`. Verified against a live local server, including a defeated prototype-pollution socket hijack.                                                                                                                                                             |
+| Webhook signature verification | **[PROVEN]** HMAC-SHA256, `timingSafeEqual`, 300s tolerance, multi-secret rotation.                                                                                                                                                                                                                                                   |
+| Multi-tenant isolation         | **[PROVEN]** enforced by `SkipTenant`/tenant guards on every query path, with decorator-level tests.                                                                                                                                                                                                                                  |
+| Rate limiting                  | **[PROVEN]** configurable limits.                                                                                                                                                                                                                                                                                                     |
+| Secrets in images              | **[PROVEN]** builder stage copies only build inputs.                                                                                                                                                                                                                                                                                  |
+| Dependency pinning             | **[PROVEN]** `overrides` keyed on `minimatch` major, semver-valid.                                                                                                                                                                                                                                                                    |
+| Boot-time secret enforcement   | **[PROVEN]** the image refuses to start without `JWT_SECRET`, `JWT_REFRESH_SECRET`, `WEBHOOK_ENCRYPTION_KEY`, production `REDIS_PASSWORD` and `METRICS_AUTH_TOKEN`; `PAYMENTS_MODE` cannot be `mock`/`test` under production and `live` demands a real `sk_live_*` key. Each guard was observed firing during a real container start. |
 
 **Never tested:** authorisation against a real IdP. Role mapping
 (`OWNER`/`MANAGER`) is unit-tested with fabricated claims; whether an Azure AD
@@ -117,15 +121,36 @@ group claim maps to the right Tablofy role is **[UNVERIFIED]**.
 
 Do not launch on this basis.
 
-Not because the code is in poor shape — it is measurably clean, fully gated,
-type-checked, and free of known dependency vulnerabilities. But because
-**every third-party integration is a mock**, and mocks cannot reveal an
+The image builds, boots and is healthy, and the codebase is measurably clean,
+fully gated, type-checked and free of known dependency vulnerabilities. But
+**every third-party integration is still a mock**, and mocks cannot reveal an
 integration failure. The payment, identity and email paths have never touched
 their real counterparts.
 
-Section 4 lists the eight steps that convert those unknowns into facts. The
-first is build the image. That is a single command and it retires the biggest
-unknown on this page.
+Section 4 lists the steps that convert those unknowns into facts. The image
+question is now answered; the credential-gated ones are not, and only the
+account holder can supply those credentials.
+
+## 8. Defects found by actually running the image
+
+Static review had called the image "not known to build". Building it found three
+real defects that no amount of reading would have surfaced, each of which alone
+prevented the container from ever starting.
+
+| #   | Defect                                                                                                                                                                                                            | Effect                                                                                                | Fix                                                                    |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 1   | `postinstall` runs `prisma generate`, but the `deps` stage copied only `package.json`/`package-lock.json`, so the schema was absent                                                                               | `npm ci` failed; **image never built**                                                                | Copy `prisma.config.ts` + `prisma/schema.prisma` into the `deps` stage |
+| 2   | The `builder` stage copied `package.json` but not `package-lock.json`, which webpack reads for its cache key                                                                                                      | `nx build api` failed with `ENOENT ... package-lock.json`                                             | Copy the lockfile into the builder stage                               |
+| 3   | `env.validation.ts` declared `REDIS_URL`, `JWT_EXPIRATION`, `JWT_REFRESH_EXPIRATION`, `THROTTLE_TTL` and `THROTTLE_LIMIT` as **required**, although every one of them has a working default in its config factory | **Container refused to boot** with a wall of validation errors, despite a correct minimal environment | Mark them `@IsOptional()`, matching the defaults that already existed  |
+
+A fourth inconsistency was fixed in the same pass: `WEBHOOK_ENCRYPTION_KEY` was
+validated only under `NODE_ENV=production`, yet `webhook.config.ts` refuses to
+boot without it in _every_ environment. Development and staging therefore died
+inside the DI container with a stack trace instead of a clear message. Validation
+now matches the runtime rule, and the redundant production-only branch is gone.
+
+Regression tests cover all of these, including the exact container-minimal
+environment that failed to boot.
 
 ---
 
