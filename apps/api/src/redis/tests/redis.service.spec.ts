@@ -28,7 +28,15 @@ jest.mock('ioredis', () => {
     quit: jest.fn().mockResolvedValue('OK'),
     status: 'ready',
   };
-  return jest.fn(() => mockRedis);
+  const MockRedis = jest.fn(() => mockRedis);
+  // The client factory uses the named `Redis`/`Cluster` exports, and cluster mode
+  // is instantiated through `Cluster`, so both must exist on the mock.
+  return Object.assign(MockRedis, {
+    __esModule: true,
+    default: MockRedis,
+    Redis: MockRedis,
+    Cluster: jest.fn(() => mockRedis),
+  });
 });
 
 describe('RedisService', () => {

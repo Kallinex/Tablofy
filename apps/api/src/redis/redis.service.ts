@@ -2,12 +2,14 @@ import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
-import { buildRedisConnectionOptions } from '../config/redis.config';
+import { createRedisClient, RedisClient } from './redis.client';
+import { buildRedisClientOptions, RedisMode } from '../config/redis.config';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
-  private client!: Redis;
+  private client!: RedisClient;
+  private mode: RedisMode = 'standalone';
 
   constructor(
     private readonly configService: ConfigService,
@@ -15,16 +17,15 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    this.client = new Redis({
-      ...buildRedisConnectionOptions(this.configService),
+    // Branching on the configured mode rather than `instanceof Redis.Cluster`
+    // keeps the behaviour explicit and independent of ioredis class identity.
+    this.mode = buildRedisClientOptions(this.configService).mode;
+
+    this.client = createRedisClient(this.configService, {
+      // Bound the application client's retries so a request fails fast instead of
+      // hanging for the full ioredis default when Redis is unreachable.
       maxRetriesPerRequest: 3,
-      retryStrategy(times: number): number | null {
-        if (times > 3) {
-          return null;
-        }
-        return Math.min(times * 200, 2000);
-      },
-    });
+    }) as Redis;
 
     this.client.on('connect', () => {
       this.logger.log('Redis connected successfully');
@@ -44,20 +45,49 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getClient(): Promise<Redis> {
-    return this.client;
+    return this.client as Redis;
   }
 
+  /**
+   * Collects keys matching a pattern.
+   *
+   * In cluster mode a Cluster-level SCAN is routed to a single arbitrary node, so
+   * it would return a partial key set. Since this feeds `deletePattern`, a partial
+   * result leaves stale cache entries behind - a silent correctness bug that shows
+   * up much later as data that should have been invalidated still being served.
+   * Every master is therefore scanned and the results merged.
+   */
   async scanKeys(pattern: string, count = 100): Promise<string[]> {
-    const keys: string[] = [];
+    const keys = new Set<string>();
+
+    if (this.mode === 'cluster') {
+      const cluster = this.client as unknown as InstanceType<typeof Redis.Cluster>;
+      const masters = clusterMasters(cluster);
+      if (masters.length === 0) {
+        return [];
+      }
+      await Promise.all(
+        masters.map(async (node) => {
+          const found = await scanNode(node, pattern, count);
+          for (const key of found) {
+            keys.add(key);
+          }
+        }),
+      );
+      return [...keys];
+    }
+
+    const client = this.client as Redis;
     let cursor = '0';
     do {
-      const [nextCursor, batch] = await this.client.scan(cursor, 'MATCH', pattern, 'COUNT', count);
-      if (batch.length > 0) {
-        keys.push(...batch);
+      const [nextCursor, batch] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', count);
+      for (const key of batch) {
+        keys.add(key);
       }
       cursor = nextCursor;
     } while (cursor !== '0');
-    return keys;
+
+    return [...keys];
   }
 
   async ping(): Promise<string> {
@@ -230,4 +260,30 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async getAllHash(key: string): Promise<Record<string, string>> {
     return this.client.hgetall(key);
   }
+}
+
+/**
+ * Returns the per-node clients for every master in the cluster.
+ *
+ * ioredis types `Cluster#nodes()` as `Redis[]`, but it actually returns
+ * `ClusterNode` wrappers that carry the node's own `Redis` connection under
+ * `.redis`. Scanning the wrapper directly would issue the command on the cluster
+ * proxy, which routes it to a single arbitrary node - the exact partial-result
+ * bug this avoids - so the cast is deliberate and load-bearing.
+ */
+function clusterMasters(cluster: InstanceType<typeof Redis.Cluster>): Redis[] {
+  const nodes = cluster.nodes('master') as unknown as { redis: Redis }[];
+  return nodes.map((node) => node.redis);
+}
+
+/** Runs a full cursor scan against one node, mirroring the standalone loop. */
+async function scanNode(node: Redis, pattern: string, count: number): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor = '0';
+  do {
+    const [nextCursor, batch] = await node.scan(cursor, 'MATCH', pattern, 'COUNT', count);
+    keys.push(...batch);
+    cursor = nextCursor;
+  } while (cursor !== '0');
+  return keys;
 }

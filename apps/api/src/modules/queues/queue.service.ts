@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { Queue, Worker, Job, JobsOptions } from 'bullmq';
 import { MetricsService } from '../../common/metrics/metrics.service';
-import { buildRedisConnectionOptions, RedisConnectionOptions } from '../../config/redis.config';
+import { createRedisClient } from '../../redis/redis.client';
 
 export interface QueueJobData {
   tenantId?: string;
@@ -74,15 +74,30 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   private readonly dlqAlertThreshold: number;
   private onQueueCreated?: (queue: Queue) => void;
 
-  private redisConfig: RedisConnectionOptions;
+  /**
+   * BullMQ cannot use host/port options for cluster mode, only an ioredis
+   * instance, so the topology-correct client is created once and shared by every
+   * queue and worker. `maxRetriesPerRequest: null` is mandatory for BullMQ.
+   *
+   * Created lazily: constructing it in the constructor would open a connection
+   * merely by instantiating QueueService, which breaks tests and any tooling
+   * that builds the module without intending to talk to Redis.
+   */
+  private queueConnection?: ReturnType<typeof createRedisClient>;
+
+  private connection(): ReturnType<typeof createRedisClient> {
+    if (!this.queueConnection) {
+      this.queueConnection = createRedisClient(this.configService, {
+        maxRetriesPerRequest: null,
+      });
+    }
+    return this.queueConnection;
+  }
 
   constructor(
     private readonly configService: ConfigService,
     private readonly metricsService: MetricsService,
   ) {
-    this.redisConfig = buildRedisConnectionOptions(this.configService, {
-      maxRetriesPerRequest: null,
-    });
     this.dlqAlertThreshold = parseInt(process.env.QUEUE_DLQ_ALERT_THRESHOLD || '50', 10);
   }
 
@@ -103,12 +118,22 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       await worker.close();
       this.logger.log(`Worker "${name}" closed`);
     }
+    // BullMQ does not own this client, so QueueService must close it. `quit()`
+    // rejects when the connection already dropped (which is common during a
+    // Redis failover), and that must not turn a clean shutdown into a failure.
+    if (this.queueConnection) {
+      try {
+        await this.queueConnection.quit();
+      } catch {
+        this.queueConnection.disconnect();
+      }
+    }
   }
 
   getQueue(name: string): Queue {
     if (!this.queues.has(name)) {
       const queue = new Queue(name, {
-        connection: this.redisConfig,
+        connection: this.connection(),
         defaultJobOptions: {
           ...BASE_JOB_OPTIONS,
           ...(QUEUE_JOB_OPTIONS[name] || {}),
@@ -149,7 +174,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         return processor(job);
       },
       {
-        connection: this.redisConfig,
+        connection: this.connection(),
         concurrency,
       },
     );

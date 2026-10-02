@@ -114,10 +114,20 @@ describe('redisConfig', () => {
       },
       () => {
         expect(redisConfig()).toEqual({
+          mode: 'standalone',
           host: 'redis.east.internal',
           port: 6380,
           password: 'pw-123',
           url: 'redis://redis.east.internal:6380',
+          db: undefined,
+          username: undefined,
+          sentinelHosts: undefined,
+          sentinelMaster: undefined,
+          sentinelPassword: undefined,
+          sentinelRole: undefined,
+          clusterNodes: undefined,
+          clusterScaleReads: undefined,
+          connectTimeout: undefined,
           tls: {},
         });
       },

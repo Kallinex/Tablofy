@@ -2,6 +2,7 @@
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import Redis from 'ioredis';
+import { Redis as NamedRedis } from 'ioredis';
 import { RedisService } from '../redis.service';
 
 const clientMock = {
@@ -17,12 +18,19 @@ function makeClient(): unknown {
   return clientMock;
 }
 
+// jest.mock factories are hoisted above const declarations, so the constructors
+// are created inside the factory and only `makeClient` (a hoisted function) is
+// referenced from module scope.
 jest.mock('ioredis', () => ({
   __esModule: true,
   default: jest.fn(() => makeClient()),
+  Redis: jest.fn(() => makeClient()),
+  Cluster: jest.fn(() => makeClient()),
 }));
 
-const redisConstructor = Redis as unknown as jest.Mock;
+// The client factory constructs the *named* `Redis` export, so that is the
+// constructor whose arguments these assertions inspect.
+const redisConstructor = (NamedRedis ?? Redis) as unknown as jest.Mock;
 
 describe('RedisService lifecycle and key scanning', () => {
   let service: RedisService;

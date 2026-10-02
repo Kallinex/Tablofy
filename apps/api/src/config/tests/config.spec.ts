@@ -229,11 +229,21 @@ describe('jwtConfig', () => {
 describe('redisConfig', () => {
   it('defaults to a local unsecured instance', () => {
     expect(redisConfig()).toEqual({
+      mode: 'standalone',
       host: 'localhost',
       port: 6379,
       password: undefined,
       url: 'redis://localhost:6379',
       tls: undefined,
+      db: undefined,
+      username: undefined,
+      sentinelHosts: undefined,
+      sentinelMaster: undefined,
+      sentinelPassword: undefined,
+      sentinelRole: undefined,
+      clusterNodes: undefined,
+      clusterScaleReads: undefined,
+      connectTimeout: undefined,
     });
   });
 

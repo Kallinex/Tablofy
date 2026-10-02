@@ -101,6 +101,54 @@ class EnvironmentVariables {
   @IsString()
   REDIS_PASSWORD?: string;
 
+  // Redis HA topology. REDIS_MODE is optional and auto-detected from the values
+  // below; set it explicitly to override detection.
+  @IsOptional()
+  @IsString()
+  REDIS_MODE?: string;
+
+  @IsOptional()
+  @IsString()
+  REDIS_USERNAME?: string;
+
+  @IsOptional()
+  @IsNumber()
+  REDIS_DB?: number;
+
+  @IsOptional()
+  @IsNumber()
+  REDIS_CONNECT_TIMEOUT?: number;
+
+  // Sentinel: comma-separated "host:port" sentinels plus the master set name.
+  @IsOptional()
+  @IsString()
+  REDIS_SENTINEL_HOSTS?: string;
+
+  @IsOptional()
+  @IsString()
+  REDIS_SENTINEL_MASTER?: string;
+
+  @IsOptional()
+  @IsString()
+  REDIS_SENTINEL_PASSWORD?: string;
+
+  @IsOptional()
+  @IsString()
+  REDIS_SENTINEL_ROLE?: string;
+
+  // Cluster: comma-separated startup nodes; the rest is discovered from the cluster.
+  @IsOptional()
+  @IsString()
+  REDIS_CLUSTER_NODES?: string;
+
+  @IsOptional()
+  @IsString()
+  REDIS_CLUSTER_NODES_RAW?: string;
+
+  @IsOptional()
+  @IsString()
+  REDIS_CLUSTER_SCALE_READS?: string;
+
   @IsOptional()
   @IsString()
   REDIS_TLS?: string;

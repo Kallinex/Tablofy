@@ -1,9 +1,13 @@
 import { ConfigService } from '@nestjs/config';
+import { validateRedisTopology } from '../redis/redis.client';
 
 /**
  * Non-fatal production configuration checks. Unlike env.validation (which throws
  * and stops the boot), these describe a running process whose observability is
  * degraded, so they are emitted as startup warnings.
+ *
+ * Returns early outside production: a developer running a cluster locally should
+ * not be warned about a half-configured replica set.
  */
 export function collectConfigWarnings(config: ConfigService): string[] {
   const warnings: string[] = [];
@@ -11,6 +15,13 @@ export function collectConfigWarnings(config: ConfigService): string[] {
   const nodeEnv = config.get<string>('app.nodeEnv') ?? 'development';
   if (nodeEnv !== 'production') {
     return warnings;
+  }
+
+  // A missing cluster seed or sentinel master name does not fail construction:
+  // ioredis retries silently in the background, so without this the API would
+  // boot reporting itself healthy while every cache read and enqueue failed.
+  for (const problem of validateRedisTopology(config)) {
+    warnings.push(`Redis topology is misconfigured: ${problem}`);
   }
 
   const sentryEnabled = config.get<boolean>('sentry.enabled', false);
