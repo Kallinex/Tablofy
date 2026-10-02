@@ -1,13 +1,16 @@
 node_modules
 dist
+coverage
 .git
 .gitignore
 .env
 .env.*
 !.env.example
-nx.json
 README.md
 .vscode
 .nx
 *.md
 docker
+uploads
+exports
+logs

@@ -25,7 +25,17 @@ FROM base AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+
+# Copy only the files the production build needs. Keeping this explicit avoids
+# invalidating the layer (and re-running the build) when unrelated files such as
+# documentation, tests or CI configuration change.
+COPY package.json ./
+COPY tsconfig.base.json ./
+COPY nx.json ./
+COPY prisma.config.ts ./
+COPY prisma ./prisma
+COPY libs ./libs
+COPY apps/api ./apps/api
 
 RUN npx prisma generate
 RUN npx nx build api --configuration=production
