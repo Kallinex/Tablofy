@@ -252,6 +252,30 @@ class EnvironmentVariables {
   @IsOptional()
   @IsNumber()
   SSO_EXCHANGE_CODE_TTL_SECONDS?: number;
+
+  @IsOptional()
+  @IsString()
+  UPLOAD_DIR?: string;
+
+  @IsOptional()
+  @IsString()
+  UPLOAD_PUBLIC_BASE_URL?: string;
+
+  @IsOptional()
+  @IsNumber()
+  UPLOAD_MAX_IMAGE_SIZE_BYTES?: number;
+
+  @IsOptional()
+  @IsString()
+  SMS_PROVIDER_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  SMS_API_KEY?: string;
+
+  @IsOptional()
+  @IsNumber()
+  HEALTH_DEPENDENCY_TIMEOUT_MS?: number;
 }
 
 export function validate(config: Record<string, unknown>) {

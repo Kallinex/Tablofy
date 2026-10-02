@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -9,20 +10,29 @@ import {
   HttpCode,
   HttpStatus,
   Req,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { ProductImagesService } from './product-images.service';
 import { CreateProductImageDto } from './dto/create-product-image.dto';
 import { UpdateProductImageDto } from './dto/update-product-image.dto';
+import { UploadProductImageDto } from './dto/upload-product-image.dto';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ImageStorageService } from '../../common/upload/image-storage.service';
+import { UploadedImageFile } from '../../common/upload/uploaded-image-file.interface';
 import { Request } from 'express';
 
 @ApiTags('product-images')
 @ApiBearerAuth()
 @Controller('restaurants/:restaurantId/products/:productId/images')
 export class ProductImagesController {
-  constructor(private readonly productImagesService: ProductImagesService) {}
+  constructor(
+    private readonly productImagesService: ProductImagesService,
+    private readonly imageStorage: ImageStorageService,
+  ) {}
 
   @Post()
   @Roles('OWNER', 'MANAGER')
@@ -38,6 +48,46 @@ export class ProductImagesController {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
+  }
+
+  @Post('upload')
+  @Roles('OWNER', 'MANAGER')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload an image file for a product' })
+  @ApiResponse({ status: 201, description: 'Product image uploaded and created' })
+  @ApiResponse({ status: 400, description: 'Missing, oversized or unsupported image file' })
+  async upload(
+    @Param('productId') productId: string,
+    @UploadedFile() file: UploadedImageFile | undefined,
+    @Body() dto: UploadProductImageDto,
+    @CurrentUser() user: CurrentUserData,
+    @Req() req: Request,
+  ) {
+    if (!file) {
+      throw new BadRequestException('An image file is required in the "file" field');
+    }
+
+    const stored = await this.imageStorage.save(file, {
+      tenantId: user.tenantId!,
+      productId,
+    });
+
+    return this.productImagesService.create(
+      {
+        url: stored.url,
+        altText: dto.altText,
+        sortOrder: dto.sortOrder,
+        isPrimary: dto.isPrimary,
+      },
+      productId,
+      user.tenantId!,
+      user.id,
+      {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      },
+    );
   }
 
   @Get()

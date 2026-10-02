@@ -53,6 +53,26 @@ function buildArg(arg: HandlerArg): unknown {
       return () => undefined;
     case 'session':
       return {};
+    case 'file':
+      return {
+        fieldname: 'file',
+        originalname: 'sample.png',
+        encoding: '7bit',
+        mimetype: 'image/png',
+        size: 8,
+        buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      };
+    case 'files':
+      return [
+        {
+          fieldname: 'file',
+          originalname: 'sample.png',
+          encoding: '7bit',
+          mimetype: 'image/png',
+          size: 8,
+          buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        },
+      ];
     default:
       return { ...TEST_USER };
   }

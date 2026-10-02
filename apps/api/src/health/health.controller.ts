@@ -5,6 +5,9 @@ import { PrismaHealthIndicator } from './prisma-health.indicator';
 import { RedisHealthIndicator } from './redis-health.indicator';
 import { BullHealthIndicator } from './bull-health.indicator';
 import { DiskHealthIndicator } from './disk-health.indicator';
+import { SmtpHealthIndicator } from './smtp-health.indicator';
+import { SmsHealthIndicator } from './sms-health.indicator';
+import { PaymentHealthIndicator } from './payment-health.indicator';
 import { Public } from '../common/decorators/public.decorator';
 import { SkipTenantCheck } from '../common/decorators/skip-tenant.decorator';
 
@@ -19,6 +22,9 @@ export class HealthController {
     private bullHealth: BullHealthIndicator,
     private diskHealth: DiskHealthIndicator,
     private readonly configService: ConfigService,
+    private smtpHealth: SmtpHealthIndicator,
+    private smsHealth: SmsHealthIndicator,
+    private paymentHealth: PaymentHealthIndicator,
   ) {}
 
   // An absolute RSS ceiling hardcoded at 300MB makes a healthy instance report
@@ -62,6 +68,22 @@ export class HealthController {
       () => this.bullHealth.isHealthy('bullmq'),
       () => this.memory.checkRSS('memory_rss', this.memoryRssLimitBytes()),
       () => this.diskHealth.isHealthy('disk'),
+    ]);
+  }
+
+  /**
+   * External dependency probes (email, SMS, payment gateways). Deliberately
+   * separate from the liveness/readiness probes: a payment gateway outage must
+   * not remove the API instance from the load balancer.
+   */
+  @Get('dependencies')
+  @Public()
+  @HealthCheck()
+  dependencies() {
+    return this.health.check([
+      () => this.smtpHealth.isHealthy('email'),
+      () => this.smsHealth.isHealthy('sms'),
+      () => this.paymentHealth.isHealthy('payment'),
     ]);
   }
 }

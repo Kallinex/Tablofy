@@ -5,6 +5,9 @@ import { PrismaHealthIndicator } from './prisma-health.indicator';
 import { RedisHealthIndicator } from './redis-health.indicator';
 import { BullHealthIndicator } from './bull-health.indicator';
 import { DiskHealthIndicator } from './disk-health.indicator';
+import { SmtpHealthIndicator } from './smtp-health.indicator';
+import { SmsHealthIndicator } from './sms-health.indicator';
+import { PaymentHealthIndicator } from './payment-health.indicator';
 import { RedisModule } from '../redis/redis.module';
 import { QueueModule } from '../modules/queues/queue.module';
 
@@ -16,6 +19,9 @@ import { QueueModule } from '../modules/queues/queue.module';
     RedisHealthIndicator,
     BullHealthIndicator,
     DiskHealthIndicator,
+    SmtpHealthIndicator,
+    SmsHealthIndicator,
+    PaymentHealthIndicator,
   ],
 })
 export class HealthModule {}

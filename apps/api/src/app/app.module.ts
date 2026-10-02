@@ -118,6 +118,8 @@ import {
   paymentsConfig,
   smtpConfig,
   ssoConfig,
+  uploadConfig,
+  smsConfig,
 } from '../config';
 
 @Module({
@@ -140,6 +142,8 @@ import {
         paymentsConfig,
         smtpConfig,
         ssoConfig,
+        uploadConfig,
+        smsConfig,
       ],
       envFilePath: '.env',
     }),

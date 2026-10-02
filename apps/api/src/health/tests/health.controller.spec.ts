@@ -6,6 +6,9 @@ import { PrismaHealthIndicator } from '../prisma-health.indicator';
 import { RedisHealthIndicator } from '../redis-health.indicator';
 import { BullHealthIndicator } from '../bull-health.indicator';
 import { DiskHealthIndicator } from '../disk-health.indicator';
+import { SmtpHealthIndicator } from '../smtp-health.indicator';
+import { SmsHealthIndicator } from '../sms-health.indicator';
+import { PaymentHealthIndicator } from '../payment-health.indicator';
 
 describe('HealthController', () => {
   let controller: HealthController;
@@ -27,6 +30,9 @@ describe('HealthController', () => {
       { isHealthy: jest.fn() } as unknown as BullHealthIndicator,
       { isHealthy: jest.fn() } as unknown as DiskHealthIndicator,
       { get: jest.fn().mockReturnValue(rssLimitMb) } as unknown as ConfigService,
+      { isHealthy: jest.fn() } as unknown as SmtpHealthIndicator,
+      { isHealthy: jest.fn() } as unknown as SmsHealthIndicator,
+      { isHealthy: jest.fn() } as unknown as PaymentHealthIndicator,
     );
   };
 
@@ -67,6 +73,18 @@ describe('HealthController', () => {
         },
         {
           provide: DiskHealthIndicator,
+          useValue: { isHealthy: jest.fn() },
+        },
+        {
+          provide: SmtpHealthIndicator,
+          useValue: { isHealthy: jest.fn() },
+        },
+        {
+          provide: SmsHealthIndicator,
+          useValue: { isHealthy: jest.fn() },
+        },
+        {
+          provide: PaymentHealthIndicator,
           useValue: { isHealthy: jest.fn() },
         },
         {
@@ -124,6 +142,9 @@ describe('HealthController aggregate handlers', () => {
     const diskHealth = { isHealthy: jest.fn().mockResolvedValue({ disk: { status: 'up' } }) };
     const checkRSS = jest.fn().mockResolvedValue({ memory_rss: { status: 'up' } });
     const check = jest.fn().mockResolvedValue({ status: 'ok' });
+    const smtpHealth = { isHealthy: jest.fn().mockResolvedValue({ email: { status: 'up' } }) };
+    const smsHealth = { isHealthy: jest.fn().mockResolvedValue({ sms: { status: 'up' } }) };
+    const paymentHealth = { isHealthy: jest.fn().mockResolvedValue({ payment: { status: 'up' } }) };
     const controller = new HealthController(
       { check } as unknown as HealthCheckService,
       prismaHealth as unknown as PrismaHealthIndicator,
@@ -132,8 +153,22 @@ describe('HealthController aggregate handlers', () => {
       bullHealth as unknown as BullHealthIndicator,
       diskHealth as unknown as DiskHealthIndicator,
       { get: jest.fn().mockReturnValue(undefined) } as unknown as ConfigService,
+      smtpHealth as unknown as SmtpHealthIndicator,
+      smsHealth as unknown as SmsHealthIndicator,
+      paymentHealth as unknown as PaymentHealthIndicator,
     );
-    return { controller, check, prismaHealth, redisHealth, bullHealth, diskHealth, checkRSS };
+    return {
+      controller,
+      check,
+      prismaHealth,
+      redisHealth,
+      bullHealth,
+      diskHealth,
+      checkRSS,
+      smtpHealth,
+      smsHealth,
+      paymentHealth,
+    };
   }
 
   it('runs exactly five indicators for the aggregate check and invokes each one', async () => {
@@ -181,6 +216,21 @@ describe('HealthController aggregate handlers', () => {
     expect(ctx.redisHealth.isHealthy).toHaveBeenCalledWith('redis');
     expect(ctx.bullHealth.isHealthy).toHaveBeenCalledWith('bullmq');
     expect(ctx.diskHealth.isHealthy).toHaveBeenCalledWith('disk');
+  });
+
+  it('runs the email, SMS and payment dependency probes for the dependencies endpoint', async () => {
+    const ctx = buildDetailedController();
+
+    await expect(ctx.controller.dependencies()).resolves.toEqual({ status: 'ok' });
+
+    const indicators = ctx.check.mock.calls[0][0] as (() => Promise<unknown>)[];
+    expect(indicators).toHaveLength(3);
+    for (const indicator of indicators) await indicator();
+
+    expect(ctx.smtpHealth.isHealthy).toHaveBeenCalledWith('email');
+    expect(ctx.smsHealth.isHealthy).toHaveBeenCalledWith('sms');
+    expect(ctx.paymentHealth.isHealthy).toHaveBeenCalledWith('payment');
+    expect(ctx.prismaHealth.isHealthy).not.toHaveBeenCalled();
   });
 
   it('surfaces an unhealthy result from the aggregate check unchanged', async () => {

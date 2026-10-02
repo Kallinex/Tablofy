@@ -139,8 +139,15 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:?SMTP_FROM must be set (production requires a sender address)}
+      UPLOAD_DIR: ${UPLOAD_DIR:-/app/uploads}
+      UPLOAD_PUBLIC_BASE_URL: ${UPLOAD_PUBLIC_BASE_URL:-}
+      UPLOAD_MAX_IMAGE_SIZE_BYTES: ${UPLOAD_MAX_IMAGE_SIZE_BYTES:-5242880}
+      SMS_PROVIDER_URL: ${SMS_PROVIDER_URL:-}
+      SMS_API_KEY: ${SMS_API_KEY:-}
+      HEALTH_DEPENDENCY_TIMEOUT_MS: ${HEALTH_DEPENDENCY_TIMEOUT_MS:-5000}
     volumes:
       - exports_data:/app/exports
+      - uploads_data:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -210,6 +217,8 @@ volumes:
   redis_data:
     driver: local
   exports_data:
+    driver: local
+  uploads_data:
     driver: local
 
 networks:

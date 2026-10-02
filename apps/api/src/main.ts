@@ -5,6 +5,8 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import compression from 'compression';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { AppModule } from './app/app.module';
 import { AppLoggerService } from './common/logger/logger.service';
 import { SocketIoAdapter } from './common/ws/socket-io.adapter';
@@ -107,6 +109,30 @@ async function bootstrap(): Promise<void> {
   if (compressionEnabled) {
     app.use(compression({ threshold: compressionThreshold }));
   }
+
+  // Serve uploaded images. The upload directory is created on boot so the
+  // static middleware always has a valid root. CORP is relaxed to cross-origin
+  // so the SPA (often on a different origin than the API) can render them.
+  const uploadDirectory =
+    configService.get<string>('upload.directory') ?? join(process.cwd(), 'uploads');
+  try {
+    mkdirSync(uploadDirectory, { recursive: true });
+  } catch (error) {
+    logger.warn(
+      `Upload directory "${uploadDirectory}" could not be created: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  app.useStaticAssets(uploadDirectory, {
+    prefix: '/uploads/',
+    index: false,
+    dotfiles: 'deny',
+    maxAge: 86400000,
+    setHeaders: (res) => {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    },
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({

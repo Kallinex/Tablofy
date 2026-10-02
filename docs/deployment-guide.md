@@ -240,11 +240,31 @@ Cron jobs (via @nestjs/schedule):
 | `CLEANUP_TOKEN_RETENTION_DAYS`   | 7       | Token retention in days             |
 | `AUDIT_LOG_RETENTION_DAYS`       | 365     | Audit log retention before archival |
 
+## File Uploads (Product Images)
+
+Product images can be created from an existing URL (`POST .../images`) or
+uploaded as a file (`POST .../images/upload`, multipart field `file`).
+
+- Uploads are held in memory by Multer, capped by `UPLOAD_MAX_IMAGE_SIZE_BYTES`
+  (default 5 MB). The nginx `client_max_body_size` must be at least as large.
+- The declared MIME type and extension are allow-listed (JPEG/PNG/WebP/GIF) and
+  the true file type is then verified from the magic bytes before it is written.
+- Files are served from `UPLOAD_DIR` (default `/app/uploads`) at `/uploads/...`.
+  In a multi-replica deployment `UPLOAD_DIR` **must** be a shared volume (the
+  bundled compose file mounts `uploads_data`) or replaced with object storage,
+  otherwise a URL returned by one replica 404s on another.
+- Set `UPLOAD_PUBLIC_BASE_URL` when images are served from a CDN.
+
 ## Health Checks
 
-- `GET /api/v1/health` — Returns database, Redis, and memory status
-- Used by Docker HEALTHCHECK and load balancer probes
-- Returns 200 OK when all systems operational
+- `GET /api/v1/health` — aggregate: database, Redis, memory RSS, BullMQ, disk
+- `GET /api/v1/health/live` — liveness (database + Redis)
+- `GET /api/v1/health/ready` — readiness (all internal dependencies)
+- `GET /api/v1/health/dependencies` — external dependencies: email (SMTP
+  `verify()`), SMS (optional `SMS_PROVIDER_URL`) and payment gateways
+  (Stripe/Paymob, only when credentials are configured). Kept separate from
+  liveness/readiness so a third-party outage cannot remove the API from the LB.
+- Used by Docker HEALTHCHECK and load balancer probes; 200 OK when operational.
 
 ## Production Checklist
 
@@ -259,6 +279,7 @@ Cron jobs (via @nestjs/schedule):
 - [ ] Live payment gateways fully configured (`sk_live_*` + webhook secret, Paymob integration id + webhook secret) — **enforced at boot**
 - [ ] Swagger, if enabled in production, protected by `SWAGGER_AUTH_USER`/`SWAGGER_AUTH_PASSWORD` — **enforced at boot**
 - [ ] If SSO is enabled: `SSO_ENCRYPTION_KEY` (or `WEBHOOK_ENCRYPTION_KEY`), `SSO_CALLBACK_BASE_URL` and the redirect URLs set; redirect URI registered at the IdP — **enforced at boot**
+- [ ] Product-image `UPLOAD_DIR` backed by a shared volume (multi-replica) or object storage, and `client_max_body_size` >= `UPLOAD_MAX_IMAGE_SIZE_BYTES`
 - [ ] Offsite database backups configured (rclone remote) and **restore tested**
 - [ ] Monitoring and alerting configured
 - [ ] Rate limiting limits tuned for expected traffic
