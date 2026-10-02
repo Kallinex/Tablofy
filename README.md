@@ -26,6 +26,8 @@ and the shared libraries it depends on.
 - [Webhooks](#webhooks)
 - [Deployment](#deployment)
 - [Security notes](#security-notes)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Tech stack
 
@@ -270,6 +272,16 @@ security scanning via the workflows in `.github/workflows`.
 - Swagger is off by default in production; enabling it requires HTTP Basic auth.
 - `/metrics` requires a bearer token in production.
 - JWT refresh tokens are rotated and revoked tokens are blacklisted.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the local setup, the commands the
+project expects, and the conventions (tenant scoping, DTO validation,
+configuration, migrations, tests).
+
+Release history is recorded in [CHANGELOG.md](./CHANGELOG.md). The
+item-by-item Phase 7 verification record is in
+[PHASE7-VERIFIED-ROADMAP.md](./PHASE7-VERIFIED-ROADMAP.md).
 
 ## License
 
