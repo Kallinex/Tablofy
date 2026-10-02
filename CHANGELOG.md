@@ -86,6 +86,23 @@ item-by-item record and the caveats that remain open.
   context, so nothing sensitive is captured in a build layer.
 - Purchase, KDS, auth and reference-uniqueness paths were hardened against
   concurrency issues and TOCTOU races.
+- `npm audit` is now clean (0 vulnerabilities, down from 17). The bulk of the
+  exposure was `axios`, which is used by the outbound webhook SSRF client and the
+  Stripe/Paymob providers: 13 advisories, most of them prototype-pollution or
+  SSRF-adjacent gadgets. Upgraded `axios` 1.19.0 → 1.20.0 and `nodemailer`
+  9.1.1 → 10.0.13, and lifted the `overrides` floors for `js-yaml`,
+  `brace-expansion` and `axios` so the versions Nx pulls in transitively are also
+  covered. Two of the axios fixes matter directly to `SsrfClientService`: the
+  fetch adapter now honours `maxRedirects: 0` (the service follows redirects
+  manually so it can re-validate every hop), and the Node HTTP adapter no longer
+  honours an inherited `createConnection`, which is how its pinned-DNS `lookup`
+  agents could have been bypassed.
+- Dependency pinning was simplified at the same time. `brace-expansion` was
+  overridden from eight different grandparent packages, which could not satisfy
+  the four `minimatch` majors in the tree at once and left `npm ls` reporting
+  `invalid` entries. The overrides are now keyed on the `minimatch` major
+  directly (`minimatch@3`/`@5` → `^1.1.21`, `@9` → `^2.1.7`, `@10` →
+  `^5.0.12`), which is both shorter and semver-valid.
 
 ### Documentation
 
