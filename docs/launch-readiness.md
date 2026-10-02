@@ -154,4 +154,4 @@ environment that failed to boot.
 
 ---
 
-Last verified: 2026-10-02 · commit `948b0c8` · branch `feature/phase7-m5`
+Last verified: 2026-10-02 · commit `541e7e0` · branch `feature/phase7-m5`
