@@ -324,4 +324,7 @@ async function bootstrap(): Promise<void> {
   }
 }
 
-bootstrap();
+// A rejection here is a boot failure. The unhandledRejection/uncaughtException
+// handlers below (or Sentry, when enabled) report and terminate the process, so
+// the promise is explicitly marked as intentionally not awaited.
+void bootstrap();

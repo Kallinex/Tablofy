@@ -99,8 +99,12 @@ describe('BullBoardModule', () => {
   });
 
   describe('auth middleware', () => {
+    // Express types middleware as returning void, but createAuthMiddleware() is
+    // async, so the helper awaits whatever it actually returns.
+    type MaybeAsyncHandler = (...args: Parameters<RequestHandler>) => Promise<unknown> | unknown;
+
     const run = async (
-      middleware: RequestHandler,
+      middleware: MaybeAsyncHandler,
       authorization: string | undefined,
     ): Promise<{ status: jest.Mock; json: jest.Mock; next: jest.Mock }> => {
       const req = { headers: { authorization } };

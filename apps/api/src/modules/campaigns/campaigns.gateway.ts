@@ -44,18 +44,18 @@ export class CampaignsGateway implements OnGatewayInit, OnGatewayConnection, OnG
   }
 
   @SubscribeMessage('joinTenant')
-  handleJoinTenant(client: Socket, tenantId: string) {
+  async handleJoinTenant(client: Socket, tenantId: string) {
     if (!this.wsAuthService.assertTenantAllowed(client, tenantId)) {
       this.logger.warn(`Client ${client.id} denied join for tenant:${tenantId}`);
       return;
     }
-    client.join(`tenant:${tenantId}`);
+    await client.join(`tenant:${tenantId}`);
     this.logger.log(`Client ${client.id} joined tenant:${tenantId}`);
   }
 
   @SubscribeMessage('leaveTenant')
-  handleLeaveTenant(client: Socket, tenantId: string) {
-    client.leave(`tenant:${tenantId}`);
+  async handleLeaveTenant(client: Socket, tenantId: string) {
+    await client.leave(`tenant:${tenantId}`);
   }
 
   broadcastCampaignUpdate(tenantId: string, event: string, data: Record<string, unknown>) {

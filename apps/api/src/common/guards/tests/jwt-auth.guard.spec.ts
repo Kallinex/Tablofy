@@ -79,11 +79,11 @@ describe('JwtAuthGuard', () => {
     expect(result).toBe(true);
   });
 
-  it('should check IS_PUBLIC_KEY on handler and class', () => {
+  it('should check IS_PUBLIC_KEY on handler and class', async () => {
     reflector.getAllAndOverride.mockReturnValue(true);
     const context = createMockContext();
 
-    guard.canActivate(context);
+    await guard.canActivate(context);
 
     expect(reflector.getAllAndOverride).toHaveBeenCalledWith('isPublic', [
       context.getHandler(),

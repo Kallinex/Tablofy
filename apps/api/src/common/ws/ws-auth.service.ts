@@ -137,9 +137,9 @@ export class WsAuthService {
 
     if (user.role === USER_ROLES.SUPER_ADMIN) {
       if (requestedTenantId) {
-        client.join(`tenant:${requestedTenantId}`);
+        await client.join(`tenant:${requestedTenantId}`);
       } else if (user.tenantId) {
-        client.join(`tenant:${user.tenantId}`);
+        await client.join(`tenant:${user.tenantId}`);
       }
       return true;
     }
@@ -155,7 +155,7 @@ export class WsAuthService {
       return this.reject(client, 'Access denied to this tenant');
     }
 
-    client.join(`tenant:${user.tenantId}`);
+    await client.join(`tenant:${user.tenantId}`);
     return true;
   }
 

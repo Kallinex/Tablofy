@@ -65,6 +65,10 @@ describe('QueueService', () => {
   });
 
   describe('dead letter queue', () => {
+    // The `failed` listener is synchronous and hands off to sendToDeadLetter()
+    // with `void`, so assertions need a microtask flush to observe the effect.
+    const flushPromises = () => new Promise<void>((resolve) => setImmediate(resolve));
+
     it('moves an exhausted failed job to the dead letter queue', async () => {
       service.registerWorker('email', jest.fn().mockResolvedValue(undefined));
 
@@ -83,7 +87,8 @@ describe('QueueService', () => {
       };
       const err = new Error('boom');
 
-      await worker!.handlers.failed(failedJob, err);
+      worker!.handlers.failed(failedJob, err);
+      await flushPromises();
 
       const dlqQueue = Queue.last;
       expect(dlqQueue!.name).toBe('dead-letter');
@@ -112,7 +117,7 @@ describe('QueueService', () => {
         finishedOn: 2000,
       };
 
-      await worker!.handlers.failed(failedJob, new Error('transient'));
+      worker!.handlers.failed(failedJob, new Error('transient'));
 
       expect((Queue.last as unknown as Queue).add).not.toHaveBeenCalled();
       expect(metrics.incrementBullQueueDeadLetter).not.toHaveBeenCalled();
@@ -132,7 +137,7 @@ describe('QueueService', () => {
         finishedOn: 3000,
       };
 
-      await worker!.handlers.failed(failedJob, new Error('done'));
+      worker!.handlers.failed(failedJob, new Error('done'));
 
       expect(metrics.observeBullJob).toHaveBeenCalledWith('cleanup', 'failed', 2000);
     });

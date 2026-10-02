@@ -12,7 +12,10 @@ module.exports = [
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        project: null,
+        // Type-aware linting. tsconfig.eslint.json covers both sources and
+        // specs so `no-floating-promises` and friends can resolve types.
+        project: ['./apps/api/tsconfig.eslint.json'],
+        tsconfigRootDir: __dirname,
         sourceType: 'module',
       },
     },
@@ -28,6 +31,13 @@ module.exports = [
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-empty-function': 'error',
+      // Type-aware rules (require parserOptions.project above).
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/await-thenable': 'error',
+      '@typescript-eslint/no-misused-promises': [
+        'error',
+        { checksVoidReturn: false },
+      ],
       'prefer-const': 'error',
       'no-var': 'error',
       'no-console': ['error', { allow: ['warn', 'error'] }],
