@@ -49,14 +49,16 @@ function checkFile(label, relativePath) {
 }
 
 const schema = read('prisma/schema.prisma');
-const M4_01 = read(
-  'prisma/migrations/20260802105959_m4_1_cascade_and_orphan_relations/migration.sql',
-);
-const M4_03 = read(
-  'prisma/migrations/20260802111618_m4_3_soft_delete_and_updated_at_indexes/migration.sql',
-);
-const M4_05 = read('prisma/migrations/20260802210000_m4_5_enum_conversions/migration.sql');
-const M4_06 = read('prisma/migrations/20260802180442_m4_6_decimal_precision/migration.sql');
+// The incremental M4 migrations were squashed on 2026-10-03 into a baseline plus
+// the enterprise SSO release. Their SQL now lives in these two files, so the
+// artifact checks below verify the consolidated migrations instead of the
+// per-migration files they were originally written against.
+const MIGRATION_DIRS = [
+  '20261003090000_baseline_initial_schema',
+  '20261003100000_add_enterprise_sso',
+];
+const migrationSql = MIGRATION_DIRS.map((d) => read(`prisma/migrations/${d}/migration.sql`)).join('\n');
+const cascadesInMigrations = count(migrationSql, /ON DELETE CASCADE/g);
 
 // ============================================================
 console.log('\n=== G1: Build ===');
@@ -99,20 +101,23 @@ try {
 // ============================================================
 console.log('\n=== G5: Static schema assertions ===');
 
-// 5a. Cascades (approved actual: 22 added by M4-01, 100 -> 122)
+// 5a. Cascades. The baseline now carries every cascade (M4-01 originally added
+// 22 on top of 100 pre-existing ones) plus the SSO cascade added later, so the
+// migration SQL and the schema must agree on the total.
 const headCascades = 100;
 const curCascades = count(schema, /onDelete:\s*Cascade/g);
-const m4_01_cascades = count(M4_01, /ON DELETE CASCADE/g);
-if (curCascades === 122 && m4_01_cascades === 22) {
-  ok(`22 cascade FKs added by M4-01 (schema total 122; baseline 100)`);
+if (curCascades === 123 && cascadesInMigrations === 123) {
+  ok(`123 cascade FKs, identical in schema and migrations (baseline ${headCascades} + M4 + SSO)`);
 } else {
   fail(
-    `Cascade count mismatch: schema=${curCascades} (expected 122), M4-01 stmts=${m4_01_cascades} (expected 22)`,
+    `Cascade count mismatch: schema=${curCascades} (expected 123), migrations=${cascadesInMigrations} (expected 123)`,
   );
 }
 
 // 5b. Orphan relations (2 tables: membership_history, event_logs)
-const orphanFks = count(M4_01, /ADD CONSTRAINT "(membership_history|event_logs)_/g);
+const orphanFks =
+  count(migrationSql, /ADD CONSTRAINT "membership_history_/g) +
+  count(migrationSql, /ADD CONSTRAINT "event_logs_/g);
 if (orphanFks === 4) {
   ok('Orphan FKs present for membership_history (2) and event_logs (2)');
 } else {
@@ -160,12 +165,14 @@ if (delAtCols === 126) {
   fail(`deletedAt columns=${delAtCols} (expected 126)`);
 }
 const updAtCols = count(schema, /updatedAt\s+DateTime\s+@updatedAt/g);
-// 126 = 125 models + PaymentWebhookReceipt (the inbound webhook replay
-// ledger added in phase 7 M5). CookiePreference stays excluded.
-if (updAtCols === 126) {
-  ok('126 models carry updatedAt @updatedAt (CookiePreference excluded)');
+// 127 = 125 models + PaymentWebhookReceipt (the inbound webhook replay ledger
+// added in phase 7 M5) + SsoConnection (enterprise SSO). CookiePreference stays
+// excluded. The SsoConnection term was missing before the migration squash and
+// is corrected here.
+if (updAtCols === 127) {
+  ok('127 models carry updatedAt @updatedAt (CookiePreference excluded)');
 } else {
-  fail(`updatedAt columns=${updAtCols} (expected 126)`);
+  fail(`updatedAt columns=${updAtCols} (expected 127)`);
 }
 
 // 5g. 20 new enums (79 total = 58 baseline + 20 new + PaymentWebhookReceiptStatus)
@@ -206,12 +213,15 @@ for (const en of NEW_ENUMS) {
 }
 if (enumsOk) ok('All 20 new enums declared');
 
-// 5h. 28 enum-field conversions (spot-check the enum types on converted fields via M4-05 migration)
-const conversions = count(M4_05, /AlterTable|CREATE TYPE/g);
-if (conversions >= 48) {
-  ok('M4-05 migration carries 20 CREATE TYPE + 28 column conversions');
+// 5h. Enum types. M4-05 originally added 20 enums and converted 28 text
+// columns to them. After squashing there are no conversion statements left: the
+// baseline declares every enum once and types the columns inline, so the check
+// is that the migration count matches the schema's enum count.
+const enumTypesInMigrations = count(migrationSql, /^CREATE TYPE/gm);
+if (enumTypesInMigrations === 79) {
+  ok('79 enum types created by the migrations (matches schema enum count)');
 } else {
-  fail(`M4-05 migration statements=${conversions} (expected >= 48)`);
+  fail(`migration CREATE TYPE count=${enumTypesInMigrations} (expected 79)`);
 }
 
 // 5i. 9 decimals on monetary fields
@@ -226,9 +236,12 @@ const DECIMAL_FIELDS = [
   ['CustomerAnalytics', 'averageOrderValue'],
   ['CustomerAnalytics', 'totalSpend'],
 ];
-const m4_06_cols = count(M4_06, /SET DATA TYPE DECIMAL\(10,2\)/g);
-let decOk = m4_06_cols === 9;
-if (!decOk) fail(`M4-06 ALTER COLUMN count=${m4_06_cols} (expected 9)`);
+// M4-06 originally altered 9 monetary columns to DECIMAL(10,2). The baseline
+// declares them inline, so verify the precision is present in the DDL and that
+// every monetary field in the schema still carries @db.Decimal(10, 2).
+const decimalCols = count(migrationSql, /DECIMAL\(10,2\)/g);
+let decOk = decimalCols >= 9;
+if (!decOk) fail(`migration DECIMAL(10,2) count=${decimalCols} (expected >= 9)`);
 for (const [model, field] of DECIMAL_FIELDS) {
   const m = schema.match(new RegExp(`model ${model} \\{[^}]*\\b${field}\\s+Decimal[^\\n]*`, 's'));
   if (m && m[0].includes('@db.Decimal(10, 2)')) {
@@ -299,18 +312,11 @@ try {
 
 // ============================================================
 console.log('\n=== G8: Migration artifacts ===');
-const MIGRATIONS = [
-  '20260802105959_m4_1_cascade_and_orphan_relations',
-  '20260802110915_m4_2_tenant_created_at_indexes',
-  '20260802111618_m4_3_soft_delete_and_updated_at_indexes',
-  '20260802120914_m4_4_soft_delete_updated_at',
-  '20260802210000_m4_5_enum_conversions',
-  '20260802213000_m4_5_1_webhook_delivery_status',
-  '20260802180442_m4_6_decimal_precision',
-];
-for (const dir of MIGRATIONS) {
+// Squashed on 2026-10-03: the seven M4 migrations are now part of the baseline.
+for (const dir of MIGRATION_DIRS) {
   checkFile(`Migration ${dir}`, `prisma/migrations/${dir}/migration.sql`);
 }
+checkFile('migration lock', 'prisma/migrations/migration_lock.toml');
 
 // ============================================================
 console.log('\n=== G9: Coverage (M4-touched paths) ===');
