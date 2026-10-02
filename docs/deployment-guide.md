@@ -195,16 +195,16 @@ After either flow the browser is sent to
 
 Tenant admins manage the connection:
 
-| Method | Path | Role | Purpose |
-|--------|------|------|---------|
-| POST | `/api/v1/auth/sso/connections` | OWNER/MANAGER | Create an OIDC or SAML connection |
-| GET | `/api/v1/auth/sso/connections` | OWNER/MANAGER | Read it (secret hidden) |
-| PATCH | `/api/v1/auth/sso/connections/:id` | OWNER/MANAGER | Update (issuer/IdP/domains/role) |
-| DELETE | `/api/v1/auth/sso/connections/:id` | OWNER | Remove it |
-| GET | `/api/v1/auth/sso/discover?email=` | public | Login hint for a domain |
-| GET | `/api/v1/auth/sso/:id/authorize` | public | Start the OIDC or SAML redirect flow |
-| POST | `/api/v1/auth/sso/saml/acs` | public | SAML Assertion Consumer Service |
-| GET | `/api/v1/auth/sso/:id/saml/metadata` | public | SP metadata XML for a SAML connection |
+| Method | Path                                 | Role          | Purpose                               |
+| ------ | ------------------------------------ | ------------- | ------------------------------------- |
+| POST   | `/api/v1/auth/sso/connections`       | OWNER/MANAGER | Create an OIDC or SAML connection     |
+| GET    | `/api/v1/auth/sso/connections`       | OWNER/MANAGER | Read it (secret hidden)               |
+| PATCH  | `/api/v1/auth/sso/connections/:id`   | OWNER/MANAGER | Update (issuer/IdP/domains/role)      |
+| DELETE | `/api/v1/auth/sso/connections/:id`   | OWNER         | Remove it                             |
+| GET    | `/api/v1/auth/sso/discover?email=`   | public        | Login hint for a domain               |
+| GET    | `/api/v1/auth/sso/:id/authorize`     | public        | Start the OIDC or SAML redirect flow  |
+| POST   | `/api/v1/auth/sso/saml/acs`          | public        | SAML Assertion Consumer Service       |
+| GET    | `/api/v1/auth/sso/:id/saml/metadata` | public        | SP metadata XML for a SAML connection |
 
 `autoProvision` (default true) creates a local user on first login with
 `defaultRole`; `allowedEmailDomains` restricts which domains may sign in. Set
@@ -216,11 +216,11 @@ suspended locally cannot sign in via SSO.
 Three independent budgets are enforced on every request. All counters live in
 Redis, so the limits apply across every replica.
 
-| Budget          | Bucket key                | Configured by                  |
-| --------------- | ------------------------- | ------------------------------ |
-| Per IP          | request source IP         | `THROTTLE_LIMIT` / `THROTTLE_TTL` |
-| Per tenant      | subscription plan         | `THROTTLE_PLAN_*`, `THROTTLE_PLAN_WINDOW_SECONDS` |
-| Per API key     | `Authorization: ApiKey`   | `THROTTLE_API_KEY_LIMIT`, `THROTTLE_API_KEY_WINDOW_SECONDS` |
+| Budget      | Bucket key              | Configured by                                               |
+| ----------- | ----------------------- | ----------------------------------------------------------- |
+| Per IP      | request source IP       | `THROTTLE_LIMIT` / `THROTTLE_TTL`                           |
+| Per tenant  | subscription plan       | `THROTTLE_PLAN_*`, `THROTTLE_PLAN_WINDOW_SECONDS`           |
+| Per API key | `Authorization: ApiKey` | `THROTTLE_API_KEY_LIMIT`, `THROTTLE_API_KEY_WINDOW_SECONDS` |
 
 Unauthenticated traffic falls back to the per-IP bucket
 (`THROTTLE_UNAUTHENTICATED_LIMIT`). A request presenting an API key is charged to

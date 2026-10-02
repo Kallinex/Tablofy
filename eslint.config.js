@@ -34,10 +34,7 @@ module.exports = [
       // Type-aware rules (require parserOptions.project above).
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/await-thenable': 'error',
-      '@typescript-eslint/no-misused-promises': [
-        'error',
-        { checksVoidReturn: false },
-      ],
+      '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: false }],
       'prefer-const': 'error',
       'no-var': 'error',
       'no-console': ['error', { allow: ['warn', 'error'] }],

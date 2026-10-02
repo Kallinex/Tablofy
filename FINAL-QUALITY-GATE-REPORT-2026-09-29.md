@@ -386,14 +386,15 @@
 `PLAN_LIMITS` ÙŠØ¹Ù„Ù† `maxUsers` (FREE 5 / BASIC 15 / STANDARD 50 / PREMIUM 200 / ENTERPRISE -1)ØŒ
 ÙˆÙ„Ù… ÙŠÙƒÙ† Ø£ÙŠ ÙƒÙˆØ¯ ÙŠØ³ØªØ¯Ø¹ÙŠÙ‡. Ø§Ù„ÙØ­Øµ Ø§Ù„Ø­ÙŠÙ‘ Ø£Ø«Ø¨Øª Ø°Ù„Ùƒ Ø¹Ù„Ù‰ Ø®Ø·Ø© FREE:
 
-| Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø© | Ù‚Ø¨Ù„ Ø§Ù„Ø¥ØµÙ„Ø§Ø­ | Ø¨Ø¹Ø¯ Ø§Ù„Ø¥ØµÙ„Ø§Ø­ |
-| -------- | ----------- | ----------- |
-| Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… 1..5 | 201 | 201 âœ“ |
-| Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… 6..9 | **201 (Ø®Ù„Ù„)** | **400 âœ“** |
+| Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø©      | Ù‚Ø¨Ù„ Ø§Ù„Ø¥ØµÙ„Ø§Ø­   | Ø¨Ø¹Ø¯ Ø§Ù„Ø¥ØµÙ„Ø§Ø­ |
+| ------------- | ------------- | ----------- |
+| Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… 1..5 | 201           | 201 âœ“       |
+| Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… 6..9 | **201 (Ø®Ù„Ù„)** | **400 âœ“**   |
 
 Ø§Ø³ØªØ¬Ø§Ø¨Ø© Ø§Ù„Ø±ÙØ¶: `plan_limit_reached â€” Current: 5, Limit: 5`.
 
 Ø§Ù„Ø¥ØµÙ„Ø§Ø­:
+
 - `UsersService.create()` ÙŠÙØ­Øµ `PlanLimitsService` Ø¨Ø¹Ø¯ ÙƒØ´Ù Ø§Ù„ØªÙƒØ±Ø§Ø± ÙˆÙ‚Ø¨Ù„ hashing ÙˆØ§Ù„ÙƒØªØ§Ø¨Ø©.
 - `InvitationsService.create()` ÙŠØ±ÙØ¶ Ø§Ù„Ø¯Ø¹ÙˆØ© Ø¹Ù†Ø¯ Ø§Ù…ØªÙ„Ø§Ø¡ Ø§Ù„Ù…Ù‚Ø§Ø¹Ø¯ØŒ Ø­ØªÙ‰ Ù„Ø§ ØªÙÙ†Ø´Ø£ Ø¯Ø¹ÙˆØ© Ù…Ø­ÙƒÙˆÙ… Ø¹Ù„ÙŠÙ‡Ø§ Ø¨Ø§Ù„ÙØ´Ù„Ø›
   ÙˆÙ‚Ø¨ÙˆÙ„ Ø§Ù„Ø¯Ø¹ÙˆØ© ÙŠÙ…Ø± Ø¹Ø¨Ø± `UsersService.create()` ÙÙŠØ­Ù…ÙŠÙ‡ Ø§Ù„Ø­Ø¯ Ù†ÙØ³Ù‡.
@@ -422,6 +423,7 @@ immediately after pay    qty= 150  consumption=0
 ØºÙŠØ± Ø­ØªÙ…ÙŠ Ø¹Ù„Ù‰ Ø£ÙŠ Ø¬Ù‡Ø§Ø² Ø£Ø¨Ø·Ø£ Ø£Ùˆ ØªØ­Øª Ø­Ù…Ù„.
 
 Ø§Ù„Ø§Ø®ØªØ¨Ø§Ø± Ø§Ù„Ø¬Ø¯ÙŠØ¯ ÙŠÙ‚ÙŠØ³ Ø§Ù„Ø¹Ù‚Ø¯ Ø§Ù„Ø­Ù‚ÙŠÙ‚ÙŠ:
+
 1. ÙŠÙ†ØªØ¸Ø± Ø­Ø±ÙƒØ© Ø§Ù„Ø§Ø³ØªÙ‡Ù„Ø§Ùƒ Ù…Ù† Ø§Ù„Ø¹Ø§Ù…Ù„ Ø§Ù„Ø®Ù„ÙÙŠ (poll Ù…Ø­Ø¯ÙˆØ¯) Ø¨Ø¯Ù„ Ø§ÙØªØ±Ø§Ø¶ ØªÙˆÙ‚ÙŠØª.
 2. ÙŠØ«Ø¨Øª Ø£Ù† Ø¥Ø¹Ø§Ø¯Ø© `deduct-order` **Ù„Ø§** ØªØ³ØªÙ‡Ù„Ùƒ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰ (idempotency).
 3. ÙŠØ«Ø¨Øª Ø£Ù† `rollback-order` ÙŠØ¹ÙŠØ¯ Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ù…Ø®ØµÙˆÙ…Ø© Ø¨Ø§Ù„Ø¶Ø¨Ø·.
@@ -437,224 +439,224 @@ immediately after pay    qty= 150  consumption=0
 
 ### Ø¯) Ø­Ø±Ø§Ø³Ø© Ø§Ù„Ø¥Ù†ØªØ§Ø¬ Ø§Ù„Ù…ÙØªØ­Ù‚Ù‘Ù‚Ø© Ù…Ù†Ù‡Ø§ ÙØ¹Ù„ÙŠØ§Ù‹
 
-| Ø§Ù„ÙØ­Øµ | Ø§Ù„Ù†ØªÙŠØ¬Ø© |
-| ----- | ------- |
-| `GET /health` | 200 âœ“ |
-| `GET /docs` (Ø§ÙØªØ±Ø§Ø¶ÙŠ) | 404 âœ“ |
-| `GET /admin/queues` | 401 âœ“ |
+| Ø§Ù„ÙØ­Øµ                     | Ø§Ù„Ù†ØªÙŠØ¬Ø©       |
+| ------------------------- | ------------- |
+| `GET /health`             | 200 âœ“         |
+| `GET /docs` (Ø§ÙØªØ±Ø§Ø¶ÙŠ)     | 404 âœ“         |
+| `GET /admin/queues`       | 401 âœ“         |
 | `METRICS_AUTH_TOKEN` Ù†Ø§Ù‚Øµ | Ø±ÙØ¶ Ø§Ù„Ø¥Ù‚Ù„Ø§Ø¹ âœ“ |
-| `PAYMENTS_MODE=mock` | Ø±ÙØ¶ Ø§Ù„Ø¥Ù‚Ù„Ø§Ø¹ âœ“ |
+| `PAYMENTS_MODE=mock`      | Ø±ÙØ¶ Ø§Ù„Ø¥Ù‚Ù„Ø§Ø¹ âœ“ |
 
 ### Ù‡Ù€) Ø§Ù„Ø¨ÙˆØ§Ø¨Ø§Øª Ø¨Ø¹Ø¯ Ù‡Ø°Ù‡ Ø§Ù„Ø¬ÙˆÙ„Ø©
 
-| Ø§Ù„Ø¨ÙˆØ§Ø¨Ø©         | Ø§Ù„Ù†ØªÙŠØ¬Ø©                                        |
-| --------------- | ---------------------------------------------- |
-| `eslint`        | 4 Ù…Ø´Ø§Ø±ÙŠØ¹ âœ“                                    |
-| `prettier`      | Ù†Ø¸ÙŠÙ âœ“                                         |
-| `build:api`     | Ù†Ø§Ø¬Ø­ âœ“                                         |
-| `npm test`      | **103 / 1372** âœ“                               |
-| E2E ØªÙƒØ§Ù…Ù„       | **78/78 Ã— 3** Ù…ØªØªØ§Ù„ÙŠØ© âœ“                        |
-| Ø­ÙØ±Ù‘Ø§Ø³Ø© Ø§Ù„Ø¥Ù†ØªØ§Ø¬ | 5/5 âœ“                                         |
-| `git diff`      | 7 Ù…Ù„ÙØ§ØªØŒ 175+/4-ØŒ Ø¨Ù„Ø§ Ø£Ø³Ø±Ø§Ø± âœ“                  |
+| Ø§Ù„Ø¨ÙˆØ§Ø¨Ø©         | Ø§Ù„Ù†ØªÙŠØ¬Ø©                       |
+| --------------- | ----------------------------- |
+| `eslint`        | 4 Ù…Ø´Ø§Ø±ÙŠØ¹ âœ“                    |
+| `prettier`      | Ù†Ø¸ÙŠÙ âœ“                        |
+| `build:api`     | Ù†Ø§Ø¬Ø­ âœ“                        |
+| `npm test`      | **103 / 1372** âœ“              |
+| E2E ØªÙƒØ§Ù…Ù„       | **78/78 Ã— 3** Ù…ØªØªØ§Ù„ÙŠØ© âœ“       |
+| Ø­ÙØ±Ù‘Ø§Ø³Ø© Ø§Ù„Ø¥Ù†ØªØ§Ø¬ | 5/5 âœ“                         |
+| `git diff`      | 7 Ù…Ù„ÙØ§ØªØŒ 175+/4-ØŒ Ø¨Ù„Ø§ Ø£Ø³Ø±Ø§Ø± âœ“ |
 
-## 17) ÇÓÊÚÇÏÉ ÇáØáÈÇÊ (orders restore) + ÍÏæÏ ÇáÎØÉ (2026-09-30)
+## 17) ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (orders restore) + ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ (2026-09-30)
 
-### Ã) ÚáøÉ ÌĞÈíÉ İí `BackupService.restore` — İŞÏÇä `id` ÚäÏ ÇáÇÓÊÚÇÏÉ
+### ï¿½) ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ `BackupService.restore` ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ `id` ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
-ÇáÇÓÊÚÇÏÉ ßÇäÊ ÊäİøĞ `upsert` áßá ÌÏæá ÈáÇ `id` İí İÑÚ `create`. ÚäÏ ÍĞİ ÇáØáÈ ãä DB
-Ëã ÇáÇÓÊÚÇÏÉ¡ íæáøÏ Prisma `id` ÌÏíÏÇğ¡ İíäåÇÑ:
+ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ `upsert` ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ `id` ï¿½ï¿½ ï¿½ï¿½ï¿½ `create`. ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ DB
+ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É¡ ï¿½ï¿½ï¿½ï¿½ï¿½ Prisma `id` ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½:
 
-- `order_items_orderId_fkey` (ãÑÌÚ Åáì ØáÈ ÛíÑ ãæÌæÏ).
-- ÊÚÇÑÖ İÑíÏ `(restaurantId, orderNumber)` áÃä ÑŞã ÇáØáÈ íÚæÏ Åáì ÇáÊÓáÓá ÇáÊáŞÇÆí.
+- `order_items_orderId_fkey` (ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½).
+- ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ `(restaurantId, orderNumber)` ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 
-**ÇáÅÕáÇÍ:** ÅÖÇİÉ `id` Åáì `create` İí ßá ÇáÌÏÇæá (restaurant, branch, floor, diningArea,
+**ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½:** ï¿½ï¿½ï¿½ï¿½ï¿½ `id` ï¿½ï¿½ï¿½ `create` ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (restaurant, branch, floor, diningArea,
 table, menuCategory, product, customer, order, orderItem, orderItemModifier,
 orderStatusHistory, orderNote, payment).
 
-### È) ãÑÇÌÚ FK ÇáÇÎÊíÇÑíÉ ÛíÑ ÇáãÓÊÚÇÏÉ
+### ï¿½) ï¿½ï¿½ï¿½ï¿½ï¿½ FK ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
-ßÇäÊ ÊõäÓÎ ßÓáÇÓá İÇÑÛÉ/ÛíÑ ãæÌæÏÉ İíßÓÑ ÇáŞíÏ. ÇáŞÇÚÏÉ ÇáÂä: Ãí FK áÇ íæÌÏ İí
-ÇáÜbackupGraph íõßÊÈ `null` ÕÑÇÍÉğ:
+ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ FK ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½
+ï¿½ï¿½ï¿½backupGraph ï¿½ï¿½ï¿½ï¿½ï¿½ `null` ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½:
 
-| ÇáÍŞá | ÇáÓáæß ÇáÌÏíÏ |
-| ----- | ------------- |
-| `order.userId` / `serviceChargeId` / `taxRateId` | `null` ÏÇÆãÇğ (ÛíÑ ãÓÊÚÇÏ) |
-| `order.tableId` | íõÍİÙ İŞØ ÅĞÇ ßÇä ÇáØÇæáÉ ãæÌæÏÉ İí `data.tables` |
-| `orderStatusHistory.changedByUserId` | `null` |
-| `orderNote.userId` | `null` |
+| ï¿½ï¿½ï¿½ï¿½ï¿½                                            | ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½                                     |
+| ------------------------------------------------ | ------------------------------------------------- |
+| `order.userId` / `serviceChargeId` / `taxRateId` | `null` ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½)                        |
+| `order.tableId`                                  | ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ `data.tables` |
+| `orderStatusHistory.changedByUserId`             | `null`                                            |
+| `orderNote.userId`                               | `null`                                            |
 
-### Ì) ÎØÃ İí ÇÎÊÈÇÑ ÇáæÍÏÉ
+### ï¿½) ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
-`prisma.upsert` íõÓÊÏÚì ÈßÇÆä æÇÍÏ¡ æÇáÇÎÊÈÇÑ ßÇä íİßøß ÇáãÚÇãá ÇáËÇäí
-(`const [, orderArgs]`) İíäåÇÑ ÈÜ `TypeError: Cannot read properties of undefined`.
-ÇáÕÍíÍ `[orderArgs]`. ÇáäÊíÌÉ: **7/7**.
+`prisma.upsert` ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ï¡ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+(`const [, orderArgs]`) ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ `TypeError: Cannot read properties of undefined`.
+ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ `[orderArgs]`. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: **7/7**.
 
-### Ï) ÇÓÊÚÇÏÉ ÍíøÉ ßÇãáÉ: `14/14`
+### ï¿½) ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½: `14/14`
 
-ÓíäÇÑíæ: ÊÓÌíá ãÓÊÃÌÑ ? ÈäÇÁ ÇáÑÓã ÇáÈíÇäí (ãØÚã/İÑÚ/ØÇÈŞ/ãäØŞÉ/ØÇæáÇÊ/İÆÇÊ/ãäÊÌÇÊ) ?
-ØáÈ ãÏİæÚ äŞÏÇğ (PENDING ? CONFIRMED ? IN_PREPARATION ? READY ? SERVED ? CASH) ?
-backup ? verify ? **ÍĞİ order graph ãä DB ãÈÇÔÑÉ** ? ÊäÙíİ ãİÇÊíÍ cache
-(`cache:{tenantId}:one:{orderId}` æ `cache:{tenantId}:list:*`) ? restore.
+ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ? ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½ï¿½/ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½) ?
+ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ (PENDING ? CONFIRMED ? IN_PREPARATION ? READY ? SERVED ? CASH) ?
+backup ? verify ? **ï¿½ï¿½ï¿½ order graph ï¿½ï¿½ DB ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½** ? ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ cache
+(`cache:{tenantId}:one:{orderId}` ï¿½ `cache:{tenantId}:list:*`) ? restore.
 
-| ÇáİÍÕ | ÇáäÊíÌÉ |
-| ----- | ------- |
-| `POST /backup` | ãáİ ßÇãá ãÚ checksum |
-| `GET /backup/:id/verify` | ãØÇÈŞ |
-| `GET /orders/:id` ÈÚÏ ÇáÍĞİ | 404 (áÇ ghost ãä Redis) |
-| `POST /backup/:id/restore` | ÊäİíĞ äÇÌÍ |
-| ÇáØáÈ íÚæÏ ÈäİÓ `id` æäİÓ ÇáÍŞæá | pass |
-| `orderItems` + `modifiers` + `payments` | totals ãØÇÈŞÉ |
-| `orderStatusHistory` + `orderNotes` | ãæÌæÏÉ ãÚ `userId = null` |
-| FKs ÇáÇÎÊíÇÑíÉ | `null` (áÇ crash) |
-| `updatedAt` / `createdAt` | ãÍİæÙÉ ãä ÇáÃÕá |
-| `GET /backups` | íÙåÑ ÇáÓÌá ÇáÌÏíÏ |
+| ï¿½ï¿½ï¿½ï¿½ï¿½                                   | ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½                   |
+| --------------------------------------- | ------------------------- |
+| `POST /backup`                          | ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ checksum      |
+| `GET /backup/:id/verify`                | ï¿½ï¿½ï¿½ï¿½ï¿½                     |
+| `GET /orders/:id` ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½             | 404 (ï¿½ï¿½ ghost ï¿½ï¿½ Redis)   |
+| `POST /backup/:id/restore`              | ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½                |
+| ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ `id` ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½        | pass                      |
+| `orderItems` + `modifiers` + `payments` | totals ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½             |
+| `orderStatusHistory` + `orderNotes`     | ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ `userId = null` |
+| FKs ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½                          | `null` (ï¿½ï¿½ crash)         |
+| `updatedAt` / `createdAt`               | ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½           |
+| `GET /backups`                          | ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½         |
 
-### åÜ) ÍÏæÏ ÇáÎØÉ (products/tables) ÍíøÇğ: `11/11`
+### ï¿½ï¿½) ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ (products/tables) ï¿½ï¿½ï¿½ï¿½ï¿½: `11/11`
 
-| ÇáÎØÉ | ÇáãäÊÌÇÊ | ÇáØÇæáÇÊ |
-| ----- | -------- | -------- |
-| FREE | 100 | 10 |
-| BASIC | 500 | 30 |
-| STANDARD | 2000 | 100 |
-| PREMIUM | 10000 | 500 |
-| ENTERPRISE | -1 | -1 |
+| ï¿½ï¿½ï¿½ï¿½ï¿½      | ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ | ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ |
+| ---------- | -------- | -------- |
+| FREE       | 100      | 10       |
+| BASIC      | 500      | 30       |
+| STANDARD   | 2000     | 100      |
+| PREMIUM    | 10000    | 500      |
+| ENTERPRISE | -1       | -1       |
 
-- ÇáÍÏ ÚäÏ ÇáÍÏ: ÅäÔÇÁ ÇáÚäÕÑ ÑŞã `N` ? **201**.
-- ÊÌÇæÒ ÇáÍÏ: `400` ÈÇáÑÓÇáÉ: `Table limit reached. Current: 10, Limit: 10. Please upgrade your plan.`
-- ÇáÊÑŞíÉ Åáì BASIC ÊÊíÍ ÇáÚäÕÑ ÇáÊÇáí (ÊÍÏíË ÍÏæÏ ÇáÓÌá İí äİÓ ÇáÜtenant).
-- `cleanup`: ÍĞİ ßá ãÇ ÃäÔÃå ÇáÇÎÊÈÇÑ æÇáÊÍŞŞ ãä ÚÏøÇÏ DB.
+- ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ `N` ? **201**.
+- ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½: `400` ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: `Table limit reached. Current: 10, Limit: 10. Please upgrade your plan.`
+- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ BASIC ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½tenant).
+- `cleanup`: ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ DB.
 
-## 18) ÊßÑÇÑ ÇáÊØÈíŞ (HA/failover) + ÅÕáÇÍ `/metrics` (2026-09-30)
+## 18) ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (HA/failover) + ï¿½ï¿½ï¿½ï¿½ï¿½ `/metrics` (2026-09-30)
 
-### Ã) ËÛÑÉ ÅäÊÇÌíÉ: `Content-Type` ÎÇØÆ ãäÚ Prometheus ãä ÇáÓÍÈ
+### ï¿½) ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: `Content-Type` ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ Prometheus ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½
 
-ÇáÇÎÊÈÇÑ ÇáÍí ßÔİ Ãä `/api/v1/metrics` íÑÏ `text/html; charset=utf-8`¡ İíÑİÖ
-Prometheus ÇáåÏİ:
+ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ `/api/v1/metrics` ï¿½ï¿½ï¿½ `text/html; charset=utf-8`ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½
+Prometheus ï¿½ï¿½ï¿½ï¿½ï¿½:
 
 ```
 received unsupported Content-Type "text/html; charset=utf-8"
 and no fallback_scrape_protocol specified for target
 ```
 
-ÓÈÈåÇ Ãä `Nest` íÚíÏ `string` ÈÊÑãíÒ `text/html` ÇİÊÑÇÖíÇğ.
+ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ `Nest` ï¿½ï¿½ï¿½ï¿½ `string` ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ `text/html` ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 
-**ÇáÅÕáÇÍ** İí `apps/api/src/common/metrics/metrics.controller.ts`:
+**ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½** ï¿½ï¿½ `apps/api/src/common/metrics/metrics.controller.ts`:
 
 ```ts
 @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
 ```
 
-ãÚ spec ÌÏíÏ Úáì ãÓÊæì HTTP ÍŞíŞí (supertest) — **5/5**:
-ÕíÛÉ exposition ÕÍíÍÉ¡ content-type ÕÍíÍ¡ æÑİÖ ÇáÊæßä ÚäÏ ÛíÇÈ/ÎØÃ/ŞÈæá ÇáÊæßä ÇáÕÍíÍ.
+ï¿½ï¿½ spec ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ HTTP ï¿½ï¿½ï¿½ï¿½ï¿½ (supertest) ï¿½ **5/5**:
+ï¿½ï¿½ï¿½ï¿½ exposition ï¿½ï¿½ï¿½ï¿½É¡ content-type ï¿½ï¿½ï¿½Í¡ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½ï¿½/ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 
-### È) ÇáÈäíÉ ÇáãÓÊÎÏãÉ İí ÇáÅÎáÇÁ
+### ï¿½) ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
-- äÓÎÊÇä API Úáì `3100` æ `3200` (äİÓ DB æ Redis).
-- `nginx` ãæÇÒä ÊÍãíá Úáì `8090` ãÚ `max_fails=1 fail_timeout=3s` æ
-  `proxy_next_upstream error timeout http_502 http_503 http_504` æ `tries 2`.
-- ÊÑæíÓÉ `X-Served-By` ÚÈÑ `map $upstream_addr` áÊÍÏíÏ ÇáäÓÎÉ ÇáÊí ÎÏãÊ ÇáØáÈ.
-- `Prometheus` Úáì `9090` ÈÜÜ `scrape_interval: 5s`.
-- `nginx-prometheus-exporter` (áÃä `stub_status` áíÓ ÈÕíÛÉ Prometheus).
+- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ API ï¿½ï¿½ï¿½ `3100` ï¿½ `3200` (ï¿½ï¿½ï¿½ DB ï¿½ Redis).
+- `nginx` ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ `8090` ï¿½ï¿½ `max_fails=1 fail_timeout=3s` ï¿½
+  `proxy_next_upstream error timeout http_502 http_503 http_504` ï¿½ `tries 2`.
+- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ `X-Served-By` ï¿½ï¿½ï¿½ `map $upstream_addr` ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½.
+- `Prometheus` ï¿½ï¿½ï¿½ `9090` ï¿½ï¿½ï¿½ `scrape_interval: 5s`.
+- `nginx-prometheus-exporter` (ï¿½ï¿½ï¿½ `stub_status` ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ Prometheus).
 
-ãáÇÍÙÉ ÈíÆÉ: Úáì Docker Desktop¡ `--network host` íÚØí ÇáÍÇæíÉ loopback ÇáÎÇÕ
-ÈÜLinux VM¡ áĞÇ `127.0.0.1:3100` ÏÇÎá ÇáÍÇæíÉ áÇ íÕá Åáì ÎÏãÇÊ Windows. ÇáÍá:
-ÔÈßÉ bridge + `host.docker.internal`.
+ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ Docker Desktopï¿½ `--network host` ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ loopback ï¿½ï¿½ï¿½ï¿½ï¿½
+ï¿½ï¿½Linux VMï¿½ ï¿½ï¿½ï¿½ `127.0.0.1:3100` ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ Windows. ï¿½ï¿½ï¿½ï¿½:
+ï¿½ï¿½ï¿½ï¿½ bridge + `host.docker.internal`.
 
-### Ì) ŞæÇÚÏ ÇáÊäÈíå ÇáãİÚøáÉ
+### ï¿½) ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
-| ÇáÊäÈíå | ÇáÊÚÈíÑ | ÇáäÊíÌÉ İí ÇáÅÎáÇÁ |
-| ------- | ------- | ------------------ |
-| `TablofyAPIDown` | `up{job="tablofy-api"} == 0` (15s) | ÇÔÊÛá ÚäÏ ?ÇÁ äÓÎÉ |
-| `TablofyAllAPIDown` | `sum(up{job="tablofy-api"}) == 0` (10s) | ÇÔÊÛá ÚäÏ ÇäŞØÇÚ ßÇãá |
-| `TablofyAPIErrorRateHigh` | `http_errors_total / http_requests_total > 5%` | áã íÔÊÛá (áÇ ÃÎØÇÁ) |
-| `TablofyQueueDepthBacklog` | `bull_queue_depth > 1000` | áã íÔÊÛá |
-| `TablofyQueueDeadLetters` | `increase(bull_queue_dead_letter_total[15m]) > 0` | áã íÔÊÛá |
-| `TablofyNoMetricsScrape` | `absent(up{job="tablofy-api"})` | áã íÔÊÛá |
+| ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½                    | ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½                                           | ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    |
+| -------------------------- | ------------------------------------------------- | --------------------- |
+| `TablofyAPIDown`           | `up{job="tablofy-api"} == 0` (15s)                | ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ?ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½    |
+| `TablofyAllAPIDown`        | `sum(up{job="tablofy-api"}) == 0` (10s)           | ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ |
+| `TablofyAPIErrorRateHigh`  | `http_errors_total / http_requests_total > 5%`    | ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½)   |
+| `TablofyQueueDepthBacklog` | `bull_queue_depth > 1000`                         | ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½              |
+| `TablofyQueueDeadLetters`  | `increase(bull_queue_dead_letter_total[15m]) > 0` | ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½              |
+| `TablofyNoMetricsScrape`   | `absent(up{job="tablofy-api"})`                   | ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½              |
 
-### Ï) ÅÎáÇÁ HA: `19/19`
+### ï¿½) ï¿½ï¿½ï¿½ï¿½ï¿½ HA: `19/19`
 
-| ÇáİÍÕ | ÇáäÊíÌÉ |
-| ----- | ------- |
-| ÇáäÓÎÊÇä Directly healthy | 200/200 |
-| ßá ÃåÏÇİ Prometheus `up` | 3/3 (api-a, api-b, nginx) |
-| áÇ ÊäÈíåÇÊ İí ÇáÍÇáÉ ÇáÃÓÇÓíÉ | pass |
-| ÇáÊæÒíÚ Úáì ÇáäÓÎÊíä | `{"replica-a":7,"replica-b":7}` |
-| **ŞÊá ÇáäÓÎÉ B** | `B down` |
-| **Òãä ÇäŞØÇÚ ÕİÑí ÈÚÏ ÇáÇäåíÇÑ** | **20/20 ØáÈ = 200**¡ ÇáÊæÒíÚ `{"replica-a":20}` |
-| `up{...3200} == 0` | pass |
-| `TablofyAPIDown` ÇÔÊÛá | pass |
-| `TablofyAllAPIDown` áã íÔÊÛá (A Íí) | pass |
-| ÅÚÇÏÉ ÊÔÛíá B (failback) | healthy + `{"replica-a":9,"replica-b":7}` |
-| `TablofyAPIDown` ÇäÍá | pass |
-| **ŞÊá ÇáäÓÎÊíä** | **ßá ÇáØáÈÇÊ 502** (áÇ äÌÇÍ ÕÇãÊ) |
-| `TablofyAllAPIDown` ÇÔÊÛá | pass |
-| ÇÓÊÚÇÏÉ ÇáÈíÆÉ | ßá ÇáÃåÏÇİ `up` æáÇ ÊäÈíåÇÊ |
+| ï¿½ï¿½ï¿½ï¿½ï¿½                               | ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½                                         |
+| ----------------------------------- | ----------------------------------------------- |
+| ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Directly healthy           | 200/200                                         |
+| ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ Prometheus `up`            | 3/3 (api-a, api-b, nginx)                       |
+| ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | pass                                            |
+| ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½                | `{"replica-a":7,"replica-b":7}`                 |
+| **ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ B**                    | `B down`                                        |
+| **ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½**    | **20/20 ï¿½ï¿½ï¿½ = 200**ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ `{"replica-a":20}` |
+| `up{...3200} == 0`                  | pass                                            |
+| `TablofyAPIDown` ï¿½ï¿½ï¿½ï¿½ï¿½              | pass                                            |
+| `TablofyAllAPIDown` ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ (A ï¿½ï¿½) | pass                                            |
+| ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ B (failback)            | healthy + `{"replica-a":9,"replica-b":7}`       |
+| `TablofyAPIDown` ï¿½ï¿½ï¿½ï¿½               | pass                                            |
+| **ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½**                    | **ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 502** (ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½)               |
+| `TablofyAllAPIDown` ï¿½ï¿½ï¿½ï¿½ï¿½           | pass                                            |
+| ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½                      | ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ `up` ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½                     |
 
-## 19) ÅÎáÇÁ clean clone + ÅÕáÇÍ `postinstall` (2026-09-30)
+## 19) ï¿½ï¿½ï¿½ï¿½ï¿½ clean clone + ï¿½ï¿½ï¿½ï¿½ï¿½ `postinstall` (2026-09-30)
 
-### Ã) äÊíÌÉ ÇáÅÎáÇÁ: clone ÌÏíÏ áÇ íõÈäì
+### ï¿½) ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: clone ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½
 
-ÇáÅÌÑÇÁ: `git clone` ãä ÇáÑíÈæ ÇáãÍáí Åáì ãÌáÏ ÌÏíÏ¡ ÊØÈíŞ ÇáÍÇáÉ ÇáÍÇáíÉ
-(3 ãáİÇÊ ãÚÏøáÉ + spec ÌÏíÏ)¡ Ëã `npm ci` Ëã `build:api`.
+ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: `git clone` ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ï¡ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+(3 ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ + spec ï¿½ï¿½ï¿½ï¿½)ï¿½ ï¿½ï¿½ `npm ci` ï¿½ï¿½ `build:api`.
 
-**ÇáİÔá ÇáÃæá** — 1010 ÃÎØÇÁ ãä webpack:
+**ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½** ï¿½ 1010 ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ webpack:
 
 ```
 TS2694: Namespace '.../node_modules/.prisma/client/default'.Prisma
 has no exported member 'Decimal'.
 ```
 
-ÇáÓÈÈ: áÇ íæÌÏ `postinstall` İí `package.json`¡ İáÇ íõæáóøÏ Prisma Client ÈÚÏ
-`npm ci`. ÇáÜworktree ÇáÍÇáí ßÇä íÚãá áÃä ÇáÜclient ãæáóøÏ íÏæíÇğ ãä ŞÈá — Ãí Ãä
-Ãí ÚÖæ ÌÏíÏ İí ÇáİÑíŞ ÓíÍÕá Úáì build ãßÓæÑ.
+ï¿½ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ `postinstall` ï¿½ï¿½ `package.json`ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Prisma Client ï¿½ï¿½ï¿½
+`npm ci`. ï¿½ï¿½ï¿½worktree ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½client ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ ï¿½ï¿½ ï¿½ï¿½
+ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ build ï¿½ï¿½ï¿½ï¿½ï¿½.
 
-**ÇáÅÕáÇÍ** İí `package.json`:
+**ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½** ï¿½ï¿½ `package.json`:
 
 ```json
 "postinstall": "prisma generate"
 ```
 
-### È) ÇáÊÍŞŞ ÈÚÏ ÇáÅÕáÇÍ
+### ï¿½) ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
-| ÇáÎØæÉ | ÇáäÊíÌÉ |
-| ------ | ------- |
-| `npm ci` İí clone äÙíİ | `added 1423 packages` + `prisma generate` ÊáŞÇÆí |
-| Prisma Client ãæáóøÏ | `.prisma/client/index.d.ts` ãæÌæÏ |
-| `npm run build:api` | `webpack compiled successfully` (ÈÏæä `prisma generate` íÏæí) |
-| `npm test` | ÇäÙÑ ÇáÌÏæá ÃÏäÇå |
+| ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½                 | ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½                                                       |
+| ---------------------- | ------------------------------------------------------------- |
+| `npm ci` ï¿½ï¿½ clone ï¿½ï¿½ï¿½ï¿½ | `added 1423 packages` + `prisma generate` ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½              |
+| Prisma Client ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | `.prisma/client/index.d.ts` ï¿½ï¿½ï¿½ï¿½ï¿½                             |
+| `npm run build:api`    | `webpack compiled successfully` (ï¿½ï¿½ï¿½ï¿½ `prisma generate` ï¿½ï¿½ï¿½ï¿½) |
+| `npm test`             | ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½                                             |
 
-### Ì) ãáÇÍÙÇÊ ÊÔÛíá
+### ï¿½) ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½
 
-- `npm test` İí ÇáÜclone ÊÚØá ÊÍÊ ÖÛØ ÇáĞÇßÑÉ (568MB ÍÑÉ) ÈÓÈÈ ÊÔÛíá äÓÎÊíä API +
-  Prometheus + exporter + nginx ãÚÇğ. ÈÚÏ ÅíŞÇİ ÇáäÓÎÉ ÇáËÇäíÉ (ÍÑíÉ 2013MB) Êã
-  ÇáÊÔÛíá ÈÜ `--maxWorkers=2` ÈäÌÇÍ.
+- `npm test` ï¿½ï¿½ ï¿½ï¿½ï¿½clone ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (568MB ï¿½ï¿½ï¿½) ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ API +
+  Prometheus + exporter + nginx ï¿½ï¿½ï¿½ï¿½. ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½ 2013MB) ï¿½ï¿½
+  ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ `--maxWorkers=2` ï¿½ï¿½ï¿½ï¿½ï¿½.
 
-### Ï) ÇáÈæÇÈÇÊ ÇáäåÇÆíÉ (2026-09-30¡ ÈÚÏ ßá ÇáÅÕáÇÍÇÊ)
+### ï¿½) ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (2026-09-30ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½)
 
-| ÇáÈæÇÈÉ | ŞÈá | ÈÚÏ |
-| ------- | ---- | ---- |
-| `npm test` (worktree) | 103 suites / 1373 | **104 suites / 1378** |
-| `npm test` (clean clone) | áÇ íÚãá (`prisma generate` ãİŞæÏ) | **104 suites / 1378** |
-| `build:api` (clean clone) | 1010 webpack errors | **webpack compiled successfully** |
-| `eslint` (api) | — | **exit 0** |
-| `prettier` | — | **ßá ÇáãáİÇÊ ãØÇÈŞÉ** |
-| `backup.service.spec` | 1/7 (ãßÓæÑ) | **7/7** |
-| `metrics.controller.spec` (ÌÏíÏ) | — | **5/5** |
-| ÇÎÊÈÇÑ Íí orders restore | — | **14/14** |
-| ÇÎÊÈÇÑ Íí ÍÏæÏ ÇáÎØÉ | — | **11/11** |
-| ÅÎáÇÁ HA/failover | — | **19/19** |
-| E2E | 78/78 | **78/78** (ÈíÇäÇÊ ÇáÇÎÊÈÇÑ ãÊØåíÉ) |
+| ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½                          | ï¿½ï¿½ï¿½                               | ï¿½ï¿½ï¿½                                |
+| -------------------------------- | --------------------------------- | ---------------------------------- |
+| `npm test` (worktree)            | 103 suites / 1373                 | **104 suites / 1378**              |
+| `npm test` (clean clone)         | ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (`prisma generate` ï¿½ï¿½ï¿½ï¿½ï¿½) | **104 suites / 1378**              |
+| `build:api` (clean clone)        | 1010 webpack errors               | **webpack compiled successfully**  |
+| `eslint` (api)                   | ï¿½                                 | **exit 0**                         |
+| `prettier`                       | ï¿½                                 | **ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½**              |
+| `backup.service.spec`            | 1/7 (ï¿½ï¿½ï¿½ï¿½ï¿½)                       | **7/7**                            |
+| `metrics.controller.spec` (ï¿½ï¿½ï¿½ï¿½) | ï¿½                                 | **5/5**                            |
+| ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ orders restore         | ï¿½                                 | **14/14**                          |
+| ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½             | ï¿½                                 | **11/11**                          |
+| ï¿½ï¿½ï¿½ï¿½ï¿½ HA/failover                | ï¿½                                 | **19/19**                          |
+| E2E                              | 78/78                             | **78/78** (ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½) |
 
-### åÜ) ÍÇáÉ ÇáÏíÈæ
+### ï¿½ï¿½) ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
-- ÇáÊÚÏíáÇÊ ÇáãÚáŞÉ (áã ÊõÜcommit ÈÚÏ):
+- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ ï¿½ï¿½ï¿½commit ï¿½ï¿½ï¿½):
   - `apps/api/src/modules/backup/backup.service.ts`
   - `apps/api/src/modules/backup/tests/backup.service.spec.ts`
   - `apps/api/src/common/metrics/metrics.controller.ts`
-  - `apps/api/src/common/metrics/tests/metrics.controller.spec.ts` (ÌÏíÏ)
-  - `package.json` (ÅÖÇİÉ `postinstall`)
-  - `FINAL-QUALITY-GATE-REPORT-2026-09-29.md` (ÇáÃŞÓÇã 17–19)
-- áÇ íæÌÏ `push`. ÇáãæÇİŞÉ Úáì commit ãØáæÈÉ.
+  - `apps/api/src/common/metrics/tests/metrics.controller.spec.ts` (ï¿½ï¿½ï¿½ï¿½)
+  - `package.json` (ï¿½ï¿½ï¿½ï¿½ï¿½ `postinstall`)
+  - `FINAL-QUALITY-GATE-REPORT-2026-09-29.md` (ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 17ï¿½19)
+- ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ `push`. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ commit ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½.
 
 ---
 
@@ -666,15 +668,15 @@ transfers, usage-tracking, webhooks, logger, scheduler and payments.
 
 **Full repository gate (clean, `--maxWorkers=1`, `npm run test:coverage --silent`):**
 
-| Gate | Result |
-| ---- | ------ |
-| Test suites | 197 passed / 197 |
-| Tests | 4399 passed / 4399 |
-| Statements | 96.06% |
-| Branches | 72.60% |
-| Functions | 99.41% |
-| Lines | 97.33% |
-| `nx lint api` | exit 0 |
+| Gate           | Result                        |
+| -------------- | ----------------------------- |
+| Test suites    | 197 passed / 197              |
+| Tests          | 4399 passed / 4399            |
+| Statements     | 96.06%                        |
+| Branches       | 72.60%                        |
+| Functions      | 99.41%                        |
+| Lines          | 97.33%                        |
+| `nx lint api`  | exit 0                        |
 | `nx build api` | webpack compiled successfully |
 
 **Function-coverage inventory (`coverage/lcov.info`):** 462 files, 2737 functions,
@@ -685,24 +687,23 @@ few untested methods (`enforceLimit`, `resendVerificationEmail`, api-keys `findA
 
 **Production fixes landed:**
 
-- `apps/api/src/redis/redis.service.ts` — connection `error` handler accepts `unknown`
+- `apps/api/src/redis/redis.service.ts` ï¿½ connection `error` handler accepts `unknown`
   and logs a safe detail string instead of throwing on non-Error events.
-- `apps/api/src/modules/scheduled-reports/scheduled-reports.service.ts` + controller —
+- `apps/api/src/modules/scheduled-reports/scheduled-reports.service.ts` + controller ï¿½
   audit `userId` no longer falls back to the tenant id; acting user is optional and
   passed from the authenticated request.
-- `apps/api/src/modules/transfers/transfers.service.ts` — list-cache invalidation now
+- `apps/api/src/modules/transfers/transfers.service.ts` ï¿½ list-cache invalidation now
   uses `deletePattern(tenantId, 'transfers:list:*')` on every mutation path.
-- `apps/api/src/modules/scheduler/scheduler.service.ts` — added the missing
+- `apps/api/src/modules/scheduler/scheduler.service.ts` ï¿½ added the missing
   `cleanup_expired_tokens_2am` entry to `getRegisteredJobs()`.
 
 **Test-only stabilization:**
 
-- `apps/api/src/common/tests/request-pipeline.spec.ts` — `prom-client` default
+- `apps/api/src/common/tests/request-pipeline.spec.ts` ï¿½ `prom-client` default
   collectors are mocked so the Windows/V8 `AsyncWrap::GetOwner` abort from
   `process_handles` cannot kill the jest run; the registration contract is still asserted.
 
-**Notes:** no commit and no push were performed; working tree left uncommitted.
----
+## **Notes:** no commit and no push were performed; working tree left uncommitted.
 
 ## 21) Function coverage completion (2026-10-02)
 
@@ -729,17 +730,17 @@ few untested methods (`enforceLimit`, `resendVerificationEmail`, api-keys `findA
 
 **Full repository gate (clean, `--maxWorkers=1`, `npm run test:coverage --silent`):**
 
-| Gate | Before (section 20) | After |
-| ---- | ------------------- | ----- |
-| Test suites | 197 | 199 |
-| Tests | 4399 | 4427 |
-| Statements | 96.06% | 96.52% |
-| Branches | 72.60% | 72.91% |
-| Functions | 99.41% | 100% |
-| Lines | 97.33% | 97.78% |
-| Zero-hit functions | 16 | 0 |
-| `nx lint api` | exit 0 | exit 0 |
-| `nx build api` | exit 0 | exit 0 |
+| Gate               | Before (section 20) | After  |
+| ------------------ | ------------------- | ------ |
+| Test suites        | 197                 | 199    |
+| Tests              | 4399                | 4427   |
+| Statements         | 96.06%              | 96.52% |
+| Branches           | 72.60%              | 72.91% |
+| Functions          | 99.41%              | 100%   |
+| Lines              | 97.33%              | 97.78% |
+| Zero-hit functions | 16                  | 0      |
+| `nx lint api`      | exit 0              | exit 0 |
+| `nx build api`     | exit 0              | exit 0 |
 
 **Notes:** `coverage/lcov.info` regenerated (462 files / 2737 functions / 0 zero-hit).
 No commit and no push were performed.

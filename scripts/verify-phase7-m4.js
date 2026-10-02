@@ -57,7 +57,9 @@ const MIGRATION_DIRS = [
   '20261003090000_baseline_initial_schema',
   '20261003100000_add_enterprise_sso',
 ];
-const migrationSql = MIGRATION_DIRS.map((d) => read(`prisma/migrations/${d}/migration.sql`)).join('\n');
+const migrationSql = MIGRATION_DIRS.map((d) => read(`prisma/migrations/${d}/migration.sql`)).join(
+  '\n',
+);
 const cascadesInMigrations = count(migrationSql, /ON DELETE CASCADE/g);
 
 // ============================================================
