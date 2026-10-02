@@ -8,6 +8,7 @@ import compression from 'compression';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { AppModule } from './app/app.module';
+import { collectConfigWarnings } from './config/config-warnings';
 import { AppLoggerService } from './common/logger/logger.service';
 import { SocketIoAdapter } from './common/ws/socket-io.adapter';
 import { BullBoardModule, BULL_BOARD_PATH } from './common/bull-board/bull-board.module';
@@ -32,6 +33,12 @@ async function bootstrap(): Promise<void> {
   const isProduction = nodeEnv === 'production';
   const shutdownTimeoutMs = configService.get<number>('app.shutdownTimeoutMs') ?? 15000;
   const sentryEnabled = configService.get<boolean>('sentry.enabled', false);
+
+  // Non-fatal production checks: surface degraded observability instead of
+  // silently booting a process that operators cannot monitor.
+  for (const warning of collectConfigWarnings(configService)) {
+    logger.warn(warning);
+  }
 
   app.setGlobalPrefix(apiPrefix);
 
