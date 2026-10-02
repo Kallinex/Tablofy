@@ -16,8 +16,13 @@ export interface UploadConfig {
 export const DEFAULT_MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 
 function positiveInt(value: string | undefined, fallback: number): number {
-  const parsed = parseInt(value ?? '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  const raw = value?.trim() ?? '';
+  // Require the whole string to be numeric. parseInt('10.5.6') is 10, which is a
+  // valid positive int and would silently become a 10-byte limit that rejects
+  // every real upload.
+  if (!/^\d+$/.test(raw)) return fallback;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 export default registerAs(

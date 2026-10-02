@@ -51,10 +51,13 @@ jobs:
         run: npm ci
 
       - name: Security audit (SCA)
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=moderate
 
       - name: Generate Prisma client
         run: npx prisma generate
+
+      - name: Format check
+        run: npm run format:check
 
       - name: Lint
         run: npx eslint --ext .ts apps/api/src
