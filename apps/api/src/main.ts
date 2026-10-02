@@ -1,3 +1,6 @@
+// Must stay first: OpenTelemetry patches libraries at require-time, so it has
+// to run before express/ioredis/pg/bullmq are loaded below.
+import './instrumentation';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';

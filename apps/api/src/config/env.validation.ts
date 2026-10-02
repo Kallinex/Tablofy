@@ -316,6 +316,43 @@ class EnvironmentVariables {
   @IsOptional()
   @IsNumber()
   HEALTH_DEPENDENCY_TIMEOUT_MS?: number;
+
+  // OpenTelemetry (all optional: tracing is opt-in and disabled by default).
+  @IsOptional()
+  @IsString()
+  OTEL_ENABLED?: string;
+
+  @IsOptional()
+  @IsString()
+  OTEL_EXPORTER_OTLP_ENDPOINT?: string;
+
+  @IsOptional()
+  @IsString()
+  OTEL_SERVICE_NAME?: string;
+
+  @IsOptional()
+  @IsString()
+  OTEL_TRACES_ENABLED?: string;
+
+  @IsOptional()
+  @IsString()
+  OTEL_METRICS_ENABLED?: string;
+
+  @IsOptional()
+  @IsString()
+  OTEL_TRACES_SAMPLER_ARG?: string;
+
+  @IsOptional()
+  @IsString()
+  OTEL_EXPORTER_OTLP_TIMEOUT?: string;
+
+  @IsOptional()
+  @IsString()
+  OTEL_EXPORTER_OTLP_PROTOCOL?: string;
+
+  @IsOptional()
+  @IsString()
+  OTEL_METRIC_EXPORT_INTERVAL?: string;
 }
 
 export function validate(config: Record<string, unknown>) {

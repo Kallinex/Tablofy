@@ -36,5 +36,17 @@ export function collectConfigWarnings(config: ConfigService): string[] {
     );
   }
 
+  // Distributed tracing is opt-in. Note the endpoint requirement: OTEL_ENABLED
+  // alone is not enough, because an SDK with no collector would drop every span.
+  const otelEnabled = config.get<boolean>('otel.enabled', false);
+  const otelEndpoint = (config.get<string>('otel.endpoint') ?? '').trim();
+  if (!otelEnabled || otelEndpoint === '') {
+    warnings.push(
+      'Distributed tracing is disabled in production (OTEL_ENABLED=true with ' +
+        'OTEL_EXPORTER_OTLP_ENDPOINT required). Queue, database and HTTP spans ' +
+        'will not be exported, so a slow request cannot be traced end to end.',
+    );
+  }
+
   return warnings;
 }

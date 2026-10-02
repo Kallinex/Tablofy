@@ -120,6 +120,7 @@ import {
   ssoConfig,
   uploadConfig,
   smsConfig,
+  otelConfig,
 } from '../config';
 
 @Module({
@@ -144,6 +145,7 @@ import {
         ssoConfig,
         uploadConfig,
         smsConfig,
+        otelConfig,
       ],
       envFilePath: '.env',
     }),

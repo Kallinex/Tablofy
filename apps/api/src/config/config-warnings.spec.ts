@@ -14,6 +14,8 @@ function production(overrides: Record<string, unknown> = {}): ConfigService {
     'sentry.dsn': 'https://abc@o0.ingest.sentry.io/0',
     'metrics.enabled': true,
     'logging.json': true,
+    'otel.enabled': true,
+    'otel.endpoint': 'https://collector.example.com',
     ...overrides,
   });
 }
@@ -51,10 +53,28 @@ describe('collectConfigWarnings', () => {
     expect(warnings[0]).toMatch(/JSON/i);
   });
 
+  it('warns when distributed tracing is disabled in production', () => {
+    const warnings = collectConfigWarnings(production({ 'otel.enabled': false }));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/tracing is disabled/i);
+  });
+
+  it('warns when tracing is enabled without a collector endpoint', () => {
+    // The SDK would start but drop every span, which looks like tracing works.
+    const warnings = collectConfigWarnings(production({ 'otel.endpoint': '   ' }));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/OTEL_EXPORTER_OTLP_ENDPOINT/);
+  });
+
   it('reports every degraded signal at once', () => {
     const warnings = collectConfigWarnings(
-      production({ 'sentry.enabled': false, 'metrics.enabled': false, 'logging.json': false }),
+      production({
+        'sentry.enabled': false,
+        'metrics.enabled': false,
+        'logging.json': false,
+        'otel.enabled': false,
+      }),
     );
-    expect(warnings).toHaveLength(3);
+    expect(warnings).toHaveLength(4);
   });
 });
