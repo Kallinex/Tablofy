@@ -319,6 +319,12 @@ class EnvironmentVariables {
 }
 
 export function validate(config: Record<string, unknown>) {
+  // Environment variables always arrive as strings, so this DTO genuinely
+  // needs coercion (PORT=3000 must become a number to satisfy @IsNumber()).
+  // The global HTTP ValidationPipe does NOT use implicit conversion because it
+  // inverts boolean query parameters; see main.ts and
+  // common/transform/boolean.transform.ts. This DTO declares no boolean or
+  // Date fields, which are the types implicit conversion coerces incorrectly.
   const validatedConfig = plainToInstance(EnvironmentVariables, config, {
     enableImplicitConversion: true,
   });

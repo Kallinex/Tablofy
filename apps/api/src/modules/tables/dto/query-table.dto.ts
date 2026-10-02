@@ -1,6 +1,7 @@
 import { IsOptional, IsString, IsBoolean, IsInt, IsEnum, IsUUID, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TableStatus } from '@prisma/client';
+import { ToBoolean } from '../../../common/transform/boolean.transform';
 
 export class QueryTableDto {
   @IsOptional()
@@ -20,6 +21,7 @@ export class QueryTableDto {
   @IsString()
   search?: string;
 
+  @ToBoolean()
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;

@@ -1,5 +1,6 @@
 import { IsOptional, IsString, IsBoolean, IsInt, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
+import { ToBoolean } from '../../../common/transform/boolean.transform';
 
 export class QueryRestaurantDto {
   @IsOptional()
@@ -19,6 +20,7 @@ export class QueryRestaurantDto {
   @IsString()
   search?: string;
 
+  @ToBoolean()
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;

@@ -1,6 +1,7 @@
 import { IsOptional, IsInt, Min, Max, IsBoolean, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ToBoolean } from '../../../common/transform/boolean.transform';
 
 export class QueryModifierDto {
   @ApiPropertyOptional({ default: 1 })
@@ -23,9 +24,9 @@ export class QueryModifierDto {
   @IsString()
   search?: string;
 
+  @ToBoolean()
   @ApiPropertyOptional()
   @IsOptional()
-  @Type(() => Boolean)
   @IsBoolean()
   isActive?: boolean;
 }

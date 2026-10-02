@@ -1,5 +1,6 @@
 import { IsOptional, IsString, IsInt, Min, Max, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
+import { ToBoolean } from '../../../common/transform/boolean.transform';
 
 export class QueryRecipeDto {
   @IsOptional()
@@ -23,6 +24,7 @@ export class QueryRecipeDto {
   @IsString()
   productId?: string;
 
+  @ToBoolean()
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;

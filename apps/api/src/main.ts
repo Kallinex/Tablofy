@@ -146,9 +146,11 @@ async function bootstrap(): Promise<void> {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
+      // enableImplicitConversion is deliberately NOT enabled. It coerced every
+      // non-empty string with JavaScript truthiness, so `?isActive=false`
+      // arrived as `true` and silently inverted the filter. Query parameters
+      // that need coercion now declare it explicitly via @Type(() => Number)
+      // or @ToBoolean().
     }),
   );
 

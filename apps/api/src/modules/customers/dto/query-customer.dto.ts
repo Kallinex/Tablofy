@@ -1,6 +1,7 @@
 import { IsOptional, IsString, IsEnum, IsBoolean, IsInt, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CustomerStatus } from '@prisma/client';
+import { ToBoolean } from '../../../common/transform/boolean.transform';
 
 export class QueryCustomerDto {
   @IsOptional()
@@ -36,10 +37,12 @@ export class QueryCustomerDto {
   @IsString()
   source?: string;
 
+  @ToBoolean()
   @IsOptional()
   @IsBoolean()
   hasEmail?: boolean;
 
+  @ToBoolean()
   @IsOptional()
   @IsBoolean()
   hasPhone?: boolean;
