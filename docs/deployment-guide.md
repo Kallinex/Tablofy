@@ -211,6 +211,35 @@ Tenant admins manage the connection:
 `autoProvision=false` to require pre-invited users only. Users disabled or
 suspended locally cannot sign in via SSO.
 
+## Rate Limiting
+
+Three independent budgets are enforced on every request. All counters live in
+Redis, so the limits apply across every replica.
+
+| Budget          | Bucket key                | Configured by                  |
+| --------------- | ------------------------- | ------------------------------ |
+| Per IP          | request source IP         | `THROTTLE_LIMIT` / `THROTTLE_TTL` |
+| Per tenant      | subscription plan         | `THROTTLE_PLAN_*`, `THROTTLE_PLAN_WINDOW_SECONDS` |
+| Per API key     | `Authorization: ApiKey`   | `THROTTLE_API_KEY_LIMIT`, `THROTTLE_API_KEY_WINDOW_SECONDS` |
+
+Unauthenticated traffic falls back to the per-IP bucket
+(`THROTTLE_UNAUTHENTICATED_LIMIT`). A request presenting an API key is charged to
+both the per-key bucket and the tenant bucket, so an abusive integration is
+throttled on its own budget instead of exhausting the tenant allowance. Only a
+truncated SHA-256 of the key forms the bucket identity - the raw key is never
+written to Redis or to the logs.
+
+Responses carry `X-RateLimit-Limit`, `X-RateLimit-Remaining` and
+`X-RateLimit-Reset`. Exceeding a budget returns `429` with a `retryAfter` field.
+
+Sizing notes:
+
+- Behind a reverse proxy set `TRUST_PROXY` (see above). If it is unset, every
+  request shares one `request.ip` and all users throttle each other.
+- Raise `THROTTLE_PLAN_ENTERPRISE` and `THROTTLE_API_KEY_LIMIT` for tenants
+  running high-volume POS or integration traffic.
+- Set `THROTTLE_API_KEY_ENABLED=false` only if API keys are unused.
+
 ## Queue Configuration
 
 BullMQ queues (Redis-based):

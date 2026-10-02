@@ -46,6 +46,16 @@ const MANAGED_ENV = [
   'REDIS_TLS',
   'THROTTLE_TTL',
   'THROTTLE_LIMIT',
+  'THROTTLE_PLAN_WINDOW_SECONDS',
+  'THROTTLE_UNAUTHENTICATED_LIMIT',
+  'THROTTLE_PLAN_FREE',
+  'THROTTLE_PLAN_BASIC',
+  'THROTTLE_PLAN_STANDARD',
+  'THROTTLE_PLAN_PREMIUM',
+  'THROTTLE_PLAN_ENTERPRISE',
+  'THROTTLE_API_KEY_ENABLED',
+  'THROTTLE_API_KEY_LIMIT',
+  'THROTTLE_API_KEY_WINDOW_SECONDS',
   'LOG_LEVEL',
   'LOG_JSON',
   'LOG_DIR',
@@ -335,14 +345,70 @@ describe('buildRedisConnectionOptions', () => {
 });
 
 describe('throttleConfig', () => {
+  const expectedDefaults = {
+    ttl: 60000,
+    limit: 120,
+    planWindowSeconds: 60,
+    unauthenticatedLimit: 100,
+    planLimits: {
+      FREE: 30,
+      BASIC: 60,
+      STANDARD: 120,
+      PREMIUM: 300,
+      ENTERPRISE: 1000,
+    },
+    apiKeyEnabled: true,
+    apiKeyLimit: 600,
+    apiKeyWindowSeconds: 60,
+  };
+
   it('converts ttl seconds to milliseconds', () => {
-    expect(throttleConfig()).toEqual({ ttl: 60000, limit: 120 });
+    expect(throttleConfig()).toEqual(expectedDefaults);
   });
 
   it('reads overrides', () => {
     process.env.THROTTLE_TTL = '5';
     process.env.THROTTLE_LIMIT = '10';
-    expect(throttleConfig()).toEqual({ ttl: 5000, limit: 10 });
+    expect(throttleConfig()).toMatchObject({ ttl: 5000, limit: 10 });
+  });
+
+  it('reads per-plan, unauthenticated and per-api-key overrides', () => {
+    process.env.THROTTLE_PLAN_WINDOW_SECONDS = '30';
+    process.env.THROTTLE_UNAUTHENTICATED_LIMIT = '7';
+    process.env.THROTTLE_PLAN_ENTERPRISE = '5000';
+    process.env.THROTTLE_API_KEY_LIMIT = '250';
+    process.env.THROTTLE_API_KEY_WINDOW_SECONDS = '15';
+
+    expect(throttleConfig()).toMatchObject({
+      planWindowSeconds: 30,
+      unauthenticatedLimit: 7,
+      apiKeyLimit: 250,
+      apiKeyWindowSeconds: 15,
+      planLimits: {
+        FREE: 30,
+        BASIC: 60,
+        STANDARD: 120,
+        PREMIUM: 300,
+        ENTERPRISE: 5000,
+      },
+    });
+  });
+
+  it('disables per-api-key limiting when THROTTLE_API_KEY_ENABLED is false', () => {
+    process.env.THROTTLE_API_KEY_ENABLED = 'false';
+    expect(throttleConfig()).toMatchObject({ apiKeyEnabled: false });
+  });
+
+  it('ignores non-positive and non-numeric limits', () => {
+    process.env.THROTTLE_LIMIT = '0';
+    process.env.THROTTLE_PLAN_FREE = '-5';
+    process.env.THROTTLE_API_KEY_LIMIT = 'not-a-number';
+
+    expect(throttleConfig()).toMatchObject({
+      limit: 120,
+      apiKeyLimit: 600,
+      planLimits: expect.objectContaining({ FREE: 30 }),
+    });
   });
 });
 

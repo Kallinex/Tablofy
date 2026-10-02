@@ -58,6 +58,46 @@ class EnvironmentVariables {
   THROTTLE_LIMIT!: number;
 
   @IsOptional()
+  @IsNumber()
+  THROTTLE_PLAN_WINDOW_SECONDS?: number;
+
+  @IsOptional()
+  @IsNumber()
+  THROTTLE_UNAUTHENTICATED_LIMIT?: number;
+
+  @IsOptional()
+  @IsNumber()
+  THROTTLE_PLAN_FREE?: number;
+
+  @IsOptional()
+  @IsNumber()
+  THROTTLE_PLAN_BASIC?: number;
+
+  @IsOptional()
+  @IsNumber()
+  THROTTLE_PLAN_STANDARD?: number;
+
+  @IsOptional()
+  @IsNumber()
+  THROTTLE_PLAN_PREMIUM?: number;
+
+  @IsOptional()
+  @IsNumber()
+  THROTTLE_PLAN_ENTERPRISE?: number;
+
+  @IsOptional()
+  @IsString()
+  THROTTLE_API_KEY_ENABLED?: string;
+
+  @IsOptional()
+  @IsNumber()
+  THROTTLE_API_KEY_LIMIT?: number;
+
+  @IsOptional()
+  @IsNumber()
+  THROTTLE_API_KEY_WINDOW_SECONDS?: number;
+
+  @IsOptional()
   @IsString()
   REDIS_PASSWORD?: string;
 
