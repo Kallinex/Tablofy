@@ -334,9 +334,13 @@ model SsoConnection {
   tenantId              String
   name                  String
   type                  String     @default("OIDC")
-  issuerUrl             String
-  clientId              String
-  clientSecretEncrypted String
+  issuerUrl             String?
+  clientId              String?
+  clientSecretEncrypted String?
+  idpEntityId           String?
+  idpSsoUrl             String?
+  idpCertificate        String?
+  spEntityId            String?
   scopes                String     @default("openid email profile")
   allowedEmailDomains   Json?
   autoProvision         Boolean    @default(true)

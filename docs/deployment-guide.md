@@ -159,12 +159,15 @@ npx prisma migrate deploy
 node dist/apps/api/app/main.js
 ```
 
-## Enterprise SSO (OIDC)
+## Enterprise SSO (OIDC + SAML 2.0)
 
-Optional per-tenant single sign-on against any OIDC-compliant identity provider
-(Microsoft Entra ID, Okta, Google Workspace, Keycloak, Auth0, ...). It uses the
-Authorization Code flow with PKCE, state and nonce; the IdP client secret is
-encrypted at rest (AES-256-GCM).
+Optional per-tenant single sign-on against an OIDC-compliant identity provider
+(Microsoft Entra ID, Okta, Google Workspace, Keycloak, Auth0, ...) or any
+SAML 2.0 IdP (ADFS, Entra ID, Okta, OneLogin, ...). OIDC uses the Authorization
+Code flow with PKCE, state and nonce. SAML uses the HTTP-Redirect binding for
+the AuthnRequest and the HTTP-POST binding for the Assertion Consumer Service;
+assertion signatures are verified against the configured IdP certificate.
+IdP client secrets are encrypted at rest (AES-256-GCM).
 
 ```bash
 # .env (or docker/.env)
@@ -175,8 +178,18 @@ SSO_SUCCESS_REDIRECT_URL=https://app.example.com/sso/callback
 SSO_FAILURE_REDIRECT_URL=https://app.example.com/login
 ```
 
-At the IdP, register the redirect URI
-`<SSO_CALLBACK_BASE_URL>/auth/sso/callback`. After login the browser is sent to
+**OIDC:** register the redirect URI
+`<SSO_CALLBACK_BASE_URL>/auth/sso/callback` at the IdP. Create the connection
+with `type: "OIDC"` plus `issuerUrl`, `clientId` and `clientSecret`.
+
+**SAML:** register the ACS URL
+`<SSO_CALLBACK_BASE_URL>/auth/sso/saml/acs` at the IdP and download the SP
+metadata from `GET /api/v1/auth/sso/:id/saml/metadata`. Create the connection
+with `type: "SAML"` plus `idpEntityId`, `idpSsoUrl` (the IdP SSO/redirect
+endpoint) and `idpCertificate` (the IdP X.509 signing certificate, PEM or
+base64 DER); `spEntityId` defaults to the metadata URL.
+
+After either flow the browser is sent to
 `SSO_SUCCESS_REDIRECT_URL?code=<one-time-code>`; exchange that code once at
 `POST /auth/sso/exchange` to receive the Tablofy token pair.
 
@@ -184,12 +197,14 @@ Tenant admins manage the connection:
 
 | Method | Path | Role | Purpose |
 |--------|------|------|---------|
-| POST | `/api/v1/auth/sso/connections` | OWNER/MANAGER | Create the tenant connection |
+| POST | `/api/v1/auth/sso/connections` | OWNER/MANAGER | Create an OIDC or SAML connection |
 | GET | `/api/v1/auth/sso/connections` | OWNER/MANAGER | Read it (secret hidden) |
-| PATCH | `/api/v1/auth/sso/connections/:id` | OWNER/MANAGER | Update (issuer/client/domains/role) |
+| PATCH | `/api/v1/auth/sso/connections/:id` | OWNER/MANAGER | Update (issuer/IdP/domains/role) |
 | DELETE | `/api/v1/auth/sso/connections/:id` | OWNER | Remove it |
 | GET | `/api/v1/auth/sso/discover?email=` | public | Login hint for a domain |
-| GET | `/api/v1/auth/sso/:id/authorize` | public | Start the redirect flow |
+| GET | `/api/v1/auth/sso/:id/authorize` | public | Start the OIDC or SAML redirect flow |
+| POST | `/api/v1/auth/sso/saml/acs` | public | SAML Assertion Consumer Service |
+| GET | `/api/v1/auth/sso/:id/saml/metadata` | public | SP metadata XML for a SAML connection |
 
 `autoProvision` (default true) creates a local user on first login with
 `defaultRole`; `allowedEmailDomains` restricts which domains may sign in. Set

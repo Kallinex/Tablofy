@@ -381,3 +381,4 @@ backup, compression/multer, SAML/OIDC, and a production Docker image.
 **Follow-up (2026-10-02):** the remaining 16 zero-hit functions were closed with the tests
 listed in the quality-gate report, section 21. Full suite: 199 suites / 4427 tests,
 Functions 100%, Lines 97.78%, Statements 96.52%, Branches 72.91%; lint and build exit 0.
+**Follow-up (2026-10-02):** Enterprise SSO (7.7.6) completed for both OIDC and SAML 2.0 - per-tenant connection, PKCE/state/nonce or signed-assertion flow, JIT provisioning, domain/role enforcement and an SP metadata endpoint. Full suite: 203 suites / 4537 tests; lint and build exit 0. Still blocking production: live payment/SMTP credentials, production PostgreSQL/Redis, DNS/TLS/LB/HA/offsite backup, and the production Docker image (Docker daemon unavailable).

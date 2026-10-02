@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import * as openidClient from 'openid-client';
+import * as nodeSaml from '@node-saml/node-saml';
 import { SsoService } from '../sso.service';
 import { deriveSsoKey, encryptSsoSecret } from '../sso-crypto';
 
@@ -25,6 +26,19 @@ jest.mock('openid-client', () => {
       codeChallenge: jest.fn(() => 'challenge-1'),
     },
     __clientInstance: clientInstance,
+  };
+});
+
+jest.mock('@node-saml/node-saml', () => {
+  const samlInstance = {
+    getAuthorizeUrlAsync: jest.fn(),
+    validatePostResponseAsync: jest.fn(),
+    generateServiceProviderMetadata: jest.fn(),
+  };
+  return {
+    SAML: jest.fn(() => samlInstance),
+    ValidateInResponseTo: { never: 'never', ifPresent: 'ifPresent', always: 'always' },
+    __samlInstance: samlInstance,
   };
 });
 
@@ -55,12 +69,29 @@ const makeConnection = (overrides: Record<string, unknown> = {}) => ({
   defaultRole: 'STAFF',
   enabled: true,
   metadata: null,
+  idpEntityId: null,
+  idpSsoUrl: null,
+  idpCertificate: null,
+  spEntityId: null,
   createdBy: 'user-1',
   lastUsedAt: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
   ...overrides,
 });
+
+const makeSamlConnection = (overrides: Record<string, unknown> = {}) =>
+  makeConnection({
+    type: 'SAML',
+    issuerUrl: 'https://idp.test/entity',
+    clientId: null,
+    clientSecretEncrypted: null,
+    idpEntityId: 'https://idp.test/entity',
+    idpSsoUrl: 'https://idp.test/sso',
+    idpCertificate: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----',
+    spEntityId: 'https://api.test/api/v1/auth/sso/saml/metadata',
+    ...overrides,
+  });
 
 describe('SsoService', () => {
   let service: SsoService;
@@ -73,6 +104,11 @@ describe('SsoService', () => {
   let authService: { issueTokensForUser: jest.Mock };
   let audit: { log: jest.Mock };
   let clientInstance: { authorizationUrl: jest.Mock; callback: jest.Mock };
+  let samlInstance: {
+    getAuthorizeUrlAsync: jest.Mock;
+    validatePostResponseAsync: jest.Mock;
+    generateServiceProviderMetadata: jest.Mock;
+  };
 
   beforeEach(() => {
     prisma = {
@@ -116,6 +152,12 @@ describe('SsoService', () => {
       .__clientInstance;
     clientInstance.authorizationUrl.mockReturnValue('https://idp.test/authorize?state=s');
     clientInstance.callback.mockReset();
+
+    samlInstance = (nodeSaml as unknown as { __samlInstance: typeof samlInstance }).__samlInstance;
+    samlInstance.getAuthorizeUrlAsync.mockReset();
+    samlInstance.validatePostResponseAsync.mockReset();
+    samlInstance.generateServiceProviderMetadata.mockReset();
+    samlInstance.getAuthorizeUrlAsync.mockResolvedValue('https://idp.test/sso?SAMLRequest=x');
   });
 
   describe('connection management', () => {
@@ -546,6 +588,225 @@ describe('SsoService', () => {
 
     it('exposes the callback redirect uri', () => {
       expect(service.redirectUri()).toBe('https://api.test/api/v1/auth/sso/callback');
+    });
+
+    it('exposes the SAML ACS and metadata urls', () => {
+      expect(service.samlAcsUrl()).toBe('https://api.test/api/v1/auth/sso/saml/acs');
+      expect(service.samlMetadataUrl()).toBe('https://api.test/api/v1/auth/sso/saml/metadata');
+    });
+  });
+
+  describe('SAML connection management', () => {
+    it('creates a SAML connection without storing OIDC credentials', async () => {
+      prisma.ssoConnection.findUnique.mockResolvedValue(null);
+      prisma.ssoConnection.create.mockImplementation(
+        ({ data }: { data: Record<string, unknown> }) =>
+          Promise.resolve(makeSamlConnection({ ...data, id: 'conn-1' })),
+      );
+
+      const result = await service.createConnection('tenant-1', 'user-1', {
+        name: 'Acme SAML',
+        type: 'SAML',
+        idpEntityId: 'https://idp.test/entity',
+        idpSsoUrl: 'https://idp.test/sso',
+        idpCertificate: 'CERT',
+      });
+
+      const created = prisma.ssoConnection.create.mock.calls[0][0].data;
+      expect(created.type).toBe('SAML');
+      expect(created.idpEntityId).toBe('https://idp.test/entity');
+      expect(created.issuerUrl).toBe('https://idp.test/entity');
+      expect(created.clientSecretEncrypted).toBeUndefined();
+      expect(result).toMatchObject({ type: 'SAML', hasIdpCertificate: true });
+    });
+
+    it('requires the SAML IdP fields', async () => {
+      prisma.ssoConnection.findUnique.mockResolvedValue(null);
+      await expect(
+        service.createConnection('tenant-1', 'user-1', { name: 'x', type: 'SAML' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects a non-https SAML SSO url', async () => {
+      prisma.ssoConnection.findUnique.mockResolvedValue(null);
+      await expect(
+        service.createConnection('tenant-1', 'user-1', {
+          name: 'x',
+          type: 'SAML',
+          idpEntityId: 'https://idp.test/entity',
+          idpSsoUrl: 'http://idp.test/sso',
+          idpCertificate: 'CERT',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('requires OIDC credentials for OIDC connections', async () => {
+      prisma.ssoConnection.findUnique.mockResolvedValue(null);
+      await expect(
+        service.createConnection('tenant-1', 'user-1', { name: 'x', type: 'OIDC' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('refuses to switch an existing connection protocol', async () => {
+      prisma.ssoConnection.findFirst.mockResolvedValue(makeConnection());
+      await expect(
+        service.updateConnection('tenant-1', 'user-1', 'conn-1', { type: 'SAML' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('updates SAML fields', async () => {
+      prisma.ssoConnection.findFirst.mockResolvedValue(makeSamlConnection());
+      prisma.ssoConnection.update.mockImplementation(
+        ({ data }: { data: Record<string, unknown> }) => Promise.resolve(makeSamlConnection(data)),
+      );
+      const result = await service.updateConnection('tenant-1', 'user-1', 'conn-1', {
+        idpSsoUrl: 'https://idp.test/sso2',
+        spEntityId: 'https://sp.test/metadata',
+      });
+      const data = prisma.ssoConnection.update.mock.calls[0][0].data;
+      expect(data.idpSsoUrl).toBe('https://idp.test/sso2');
+      expect(result.spEntityId).toBe('https://sp.test/metadata');
+    });
+  });
+
+  describe('SAML login flow', () => {
+    const seedSamlState = () =>
+      redis.get.mockResolvedValue(
+        JSON.stringify({ connectionId: 'conn-1', protocol: 'SAML', redirectPath: '/dashboard' }),
+      );
+
+    it('returns an IdP redirect url and stores SAML state', async () => {
+      prisma.ssoConnection.findUnique.mockResolvedValue(makeSamlConnection());
+      const result = await service.beginAuthorization('conn-1', '/dashboard');
+      expect(result.url).toBe('https://idp.test/sso?SAMLRequest=x');
+      const stored = JSON.parse(redis.set.mock.calls[0][1]);
+      expect(stored).toMatchObject({ connectionId: 'conn-1', protocol: 'SAML' });
+      expect(samlInstance.getAuthorizeUrlAsync).toHaveBeenCalled();
+    });
+
+    it('rejects a SAML response without an assertion', async () => {
+      await expect(service.handleSamlResponse({ RelayState: 'rs' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('rejects a SAML response without RelayState', async () => {
+      await expect(service.handleSamlResponse({ SAMLResponse: 'xml' })).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+
+    it('rejects an unknown RelayState', async () => {
+      redis.get.mockResolvedValue(null);
+      await expect(
+        service.handleSamlResponse({ SAMLResponse: 'xml', RelayState: 'rs' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('rejects a RelayState that belongs to an OIDC flow', async () => {
+      redis.get.mockResolvedValue(JSON.stringify({ connectionId: 'conn-1', protocol: 'OIDC' }));
+      await expect(
+        service.handleSamlResponse({ SAMLResponse: 'xml', RelayState: 'rs' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('rejects a SAML assertion for a non-SAML connection', async () => {
+      seedSamlState();
+      prisma.ssoConnection.findUnique.mockResolvedValue(makeConnection());
+      await expect(
+        service.handleSamlResponse({ SAMLResponse: 'xml', RelayState: 'rs' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects a SAML assertion that fails validation', async () => {
+      seedSamlState();
+      prisma.ssoConnection.findUnique.mockResolvedValue(makeSamlConnection());
+      samlInstance.validatePostResponseAsync.mockRejectedValue(new Error('bad signature'));
+      await expect(
+        service.handleSamlResponse({ SAMLResponse: 'xml', RelayState: 'rs' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('rejects an empty SAML profile', async () => {
+      seedSamlState();
+      prisma.ssoConnection.findUnique.mockResolvedValue(makeSamlConnection());
+      samlInstance.validatePostResponseAsync.mockResolvedValue({ profile: null, loggedOut: false });
+      await expect(
+        service.handleSamlResponse({ SAMLResponse: 'xml', RelayState: 'rs' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('signs in an existing user from a valid SAML assertion', async () => {
+      seedSamlState();
+      prisma.ssoConnection.findUnique.mockResolvedValue(makeSamlConnection());
+      samlInstance.validatePostResponseAsync.mockResolvedValue({
+        profile: {
+          nameID: 'user@acme.com',
+          email: 'user@acme.com',
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+        },
+        loggedOut: false,
+      });
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        email: 'user@acme.com',
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        role: 'STAFF',
+        tenantId: 'tenant-1',
+        status: 'ACTIVE',
+      });
+
+      const result = await service.handleSamlResponse({
+        SAMLResponse: 'xml',
+        RelayState: 'rs',
+      });
+      expect(result.redirectUrl).toMatch(/^https:\/\/app\.test\/sso\?code=[a-f0-9]{64}$/);
+      expect(authService.issueTokensForUser).toHaveBeenCalled();
+      expect(redis.del).toHaveBeenCalled();
+    });
+
+    it('provisions a user from SAML attributes', async () => {
+      seedSamlState();
+      prisma.ssoConnection.findUnique.mockResolvedValue(makeSamlConnection());
+      samlInstance.validatePostResponseAsync.mockResolvedValue({
+        profile: {
+          nameID: 'new@acme.com',
+          email: 'new@acme.com',
+          givenName: 'Grace',
+          surname: 'Hopper',
+        },
+        loggedOut: false,
+      });
+      prisma.user.findFirst.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({
+        id: 'user-new',
+        email: 'new@acme.com',
+        firstName: 'Grace',
+        lastName: 'Hopper',
+        role: 'STAFF',
+        tenantId: 'tenant-1',
+        status: 'ACTIVE',
+      });
+
+      await service.handleSamlResponse({ SAMLResponse: 'xml', RelayState: 'rs' });
+      expect(prisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ email: 'new@acme.com', firstName: 'Grace' }),
+        }),
+      );
+    });
+
+    it('returns service provider metadata XML', async () => {
+      prisma.ssoConnection.findUnique.mockResolvedValue(makeSamlConnection());
+      samlInstance.generateServiceProviderMetadata.mockReturnValue('<EntityDescriptor />');
+      expect(await service.samlMetadata('conn-1')).toBe('<EntityDescriptor />');
+    });
+
+    it('rejects metadata for a non-SAML connection', async () => {
+      prisma.ssoConnection.findUnique.mockResolvedValue(makeConnection());
+      await expect(service.samlMetadata('conn-1')).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 });

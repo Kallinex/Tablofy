@@ -12,6 +12,8 @@ describe('SsoController', () => {
     discoverByEmail: jest.Mock;
     beginAuthorization: jest.Mock;
     handleCallback: jest.Mock;
+    handleSamlResponse: jest.Mock;
+    samlMetadata: jest.Mock;
     exchangeAuthorizationCode: jest.Mock;
     failureRedirect: jest.Mock;
   };
@@ -29,6 +31,10 @@ describe('SsoController', () => {
       discoverByEmail: jest.fn().mockResolvedValue({ available: false }),
       beginAuthorization: jest.fn().mockResolvedValue({ url: 'https://idp.test/authorize' }),
       handleCallback: jest.fn().mockResolvedValue({ redirectUrl: 'https://app.test/sso?code=x' }),
+      handleSamlResponse: jest
+        .fn()
+        .mockResolvedValue({ redirectUrl: 'https://app.test/sso?code=saml' }),
+      samlMetadata: jest.fn().mockResolvedValue('<EntityDescriptor />'),
       exchangeAuthorizationCode: jest.fn().mockResolvedValue({ user, tokens: {} }),
       failureRedirect: jest.fn().mockReturnValue('https://app.test/login?error=sso_failed'),
     };
@@ -90,5 +96,31 @@ describe('SsoController', () => {
     service.handleCallback.mockRejectedValue(new Error('boom'));
     service.failureRedirect.mockReturnValue('');
     await expect(controller.callback({} as never, req)).rejects.toThrow('boom');
+  });
+
+  it('returns the success url on a completed SAML assertion', async () => {
+    const result = await controller.samlAcs({ SAMLResponse: 'xml', RelayState: 'rs' }, req);
+    expect(service.handleSamlResponse).toHaveBeenCalledWith(
+      { SAMLResponse: 'xml', RelayState: 'rs' },
+      { ipAddress: '1.2.3.4', userAgent: 'jest' },
+    );
+    expect(result).toEqual({ url: 'https://app.test/sso?code=saml' });
+  });
+
+  it('returns the failure url when the SAML assertion fails', async () => {
+    service.handleSamlResponse.mockRejectedValue(new Error('boom'));
+    const result = await controller.samlAcs({ SAMLResponse: 'xml', RelayState: 'rs' }, req);
+    expect(result).toEqual({ url: 'https://app.test/login?error=sso_failed' });
+  });
+
+  it('rethrows when no SAML failure url is configured', async () => {
+    service.handleSamlResponse.mockRejectedValue(new Error('boom'));
+    service.failureRedirect.mockReturnValue('');
+    await expect(controller.samlAcs({ SAMLResponse: 'xml' }, req)).rejects.toThrow('boom');
+  });
+
+  it('returns service provider metadata for a SAML connection', async () => {
+    expect(await controller.samlMetadata('conn-1')).toBe('<EntityDescriptor />');
+    expect(service.samlMetadata).toHaveBeenCalledWith('conn-1');
   });
 });

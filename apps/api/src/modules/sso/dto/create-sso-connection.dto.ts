@@ -19,19 +19,48 @@ export class CreateSsoConnectionDto {
   @MaxLength(100)
   name!: string;
 
+  @IsOptional()
+  @IsIn(['OIDC', 'SAML'])
+  type?: string;
+
+  @IsOptional()
   @IsUrl({ require_tld: false })
   @MaxLength(2048)
-  issuerUrl!: string;
+  issuerUrl?: string;
 
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(255)
-  clientId!: string;
+  clientId?: string;
 
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(1024)
-  clientSecret!: string;
+  clientSecret?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2048)
+  idpEntityId?: string;
+
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  @MaxLength(2048)
+  idpSsoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(8192)
+  idpCertificate?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  spEntityId?: string;
 
   @IsOptional()
   @IsArray()

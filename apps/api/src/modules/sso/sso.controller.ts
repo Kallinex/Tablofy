@@ -9,6 +9,7 @@ import {
   Query,
   Req,
   Redirect,
+  Header,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -124,12 +125,42 @@ export class SsoController {
   @Get(':connectionId/authorize')
   @Redirect()
   @Throttle({ default: { limit: 30, ttl: 60000 } })
-  @ApiOperation({ summary: 'Start the OIDC authorization code flow' })
+  @ApiOperation({ summary: 'Start the OIDC or SAML authorization flow' })
   async authorize(
     @Param('connectionId') connectionId: string,
     @Query('redirect') redirect: string | undefined,
   ) {
     const result = await this.ssoService.beginAuthorization(connectionId, redirect);
     return { url: result?.url };
+  }
+
+  @Public()
+  @Post('saml/acs')
+  @Redirect()
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @ApiOperation({ summary: 'SAML assertion consumer service (IdP -> Tablofy)' })
+  async samlAcs(@Body() body: Record<string, string>, @Req() req: Request) {
+    try {
+      const result = await this.ssoService.handleSamlResponse(body, {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+      return { url: result?.redirectUrl };
+    } catch (error) {
+      const failure = this.ssoService.failureRedirect('sso_failed');
+      if (failure) {
+        return { url: failure };
+      }
+      throw error;
+    }
+  }
+
+  @Public()
+  @Get(':connectionId/saml/metadata')
+  @Header('Content-Type', 'application/xml')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @ApiOperation({ summary: 'Service provider metadata XML for a SAML connection' })
+  async samlMetadata(@Param('connectionId') connectionId: string) {
+    return this.ssoService.samlMetadata(connectionId);
   }
 }

@@ -11,6 +11,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { UserRole } from '@prisma/client';
 import { Issuer, Client, generators } from 'openid-client';
+import { SAML, ValidateInResponseTo } from '@node-saml/node-saml';
 import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -25,12 +26,23 @@ import { BCRYPT_ROUNDS } from '@tablofy/shared/constants';
 const STATE_PREFIX = 'sso:state:';
 const CODE_PREFIX = 'sso:code:';
 const DEFAULT_SCOPES = 'openid email profile';
+const OIDC = 'OIDC';
+const SAML_PROTOCOL = 'SAML';
 
 interface StoredState {
   connectionId: string;
-  codeVerifier: string;
-  nonce: string;
+  protocol: string;
+  codeVerifier?: string;
+  nonce?: string;
   redirectPath?: string;
+}
+
+interface SsoProfile {
+  email?: string;
+  emailVerified?: boolean;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
 }
 
 interface OidcProfileClaims {
@@ -49,6 +61,28 @@ interface SsoUser {
   role: string;
   tenantId: string | null;
   status: string;
+}
+
+export interface SsoConnectionFields {
+  id: string;
+  tenantId: string;
+  name: string;
+  type: string;
+  issuerUrl: string | null;
+  clientId: string | null;
+  clientSecretEncrypted: string | null;
+  idpEntityId: string | null;
+  idpSsoUrl: string | null;
+  idpCertificate: string | null;
+  spEntityId: string | null;
+  scopes: string;
+  allowedEmailDomains: unknown;
+  autoProvision: boolean;
+  defaultRole: UserRole;
+  enabled: boolean;
+  lastUsedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 @Injectable()
@@ -90,6 +124,14 @@ export class SsoService {
     return `${this.callbackBaseUrl}/auth/sso/callback`;
   }
 
+  samlAcsUrl(): string {
+    return `${this.callbackBaseUrl}/auth/sso/saml/acs`;
+  }
+
+  samlMetadataUrl(): string {
+    return `${this.callbackBaseUrl}/auth/sso/saml/metadata`;
+  }
+
   failureRedirect(reason?: string): string {
     const base = this.configService.get<string>('sso.failureRedirectUrl', '');
     if (!base) {
@@ -113,24 +155,25 @@ export class SsoService {
       );
     }
 
-    await this.verifyIssuer(dto.issuerUrl);
+    const type = (dto.type ?? OIDC).toUpperCase();
+    const baseData = {
+      tenantId,
+      name: dto.name,
+      type,
+      allowedEmailDomains: dto.allowedEmailDomains
+        ? dto.allowedEmailDomains.map((d) => d.toLowerCase())
+        : undefined,
+      autoProvision: dto.autoProvision ?? true,
+      defaultRole: (dto.defaultRole as UserRole) ?? UserRole.STAFF,
+      enabled: dto.enabled ?? false,
+      createdBy: userId,
+    };
 
     const connection = await this.prisma.ssoConnection.create({
-      data: {
-        tenantId,
-        name: dto.name,
-        issuerUrl: dto.issuerUrl,
-        clientId: dto.clientId,
-        clientSecretEncrypted: encryptSsoSecret(dto.clientSecret, this.encryptionKey),
-        scopes: dto.scopes && dto.scopes.length > 0 ? dto.scopes.join(' ') : DEFAULT_SCOPES,
-        allowedEmailDomains: dto.allowedEmailDomains
-          ? dto.allowedEmailDomains.map((d) => d.toLowerCase())
-          : undefined,
-        autoProvision: dto.autoProvision ?? true,
-        defaultRole: (dto.defaultRole as UserRole) ?? UserRole.STAFF,
-        enabled: dto.enabled ?? false,
-        createdBy: userId,
-      },
+      data:
+        type === SAML_PROTOCOL
+          ? { ...baseData, ...(await this.buildSamlData(dto)) }
+          : { ...baseData, ...(await this.buildOidcData(dto)) },
     });
 
     await this.auditLogsService.log({
@@ -139,10 +182,49 @@ export class SsoService {
       resourceId: connection.id,
       userId,
       tenantId,
-      newValues: { issuerUrl: connection.issuerUrl, enabled: connection.enabled },
+      newValues: { type, enabled: connection.enabled },
     });
 
     return this.sanitize(connection);
+  }
+
+  private async buildOidcData(dto: CreateSsoConnectionDto) {
+    if (!dto.issuerUrl || !dto.clientId || !dto.clientSecret) {
+      throw new BadRequestException(
+        'OIDC connections require issuerUrl, clientId and clientSecret',
+      );
+    }
+    await this.verifyIssuer(dto.issuerUrl);
+    return {
+      issuerUrl: dto.issuerUrl,
+      clientId: dto.clientId,
+      clientSecretEncrypted: encryptSsoSecret(dto.clientSecret, this.encryptionKey),
+      scopes: dto.scopes && dto.scopes.length > 0 ? dto.scopes.join(' ') : DEFAULT_SCOPES,
+    };
+  }
+
+  private async buildSamlData(dto: CreateSsoConnectionDto) {
+    if (!dto.idpEntityId || !dto.idpSsoUrl || !dto.idpCertificate) {
+      throw new BadRequestException(
+        'SAML connections require idpEntityId, idpSsoUrl and idpCertificate',
+      );
+    }
+    this.assertHttpsUrl(dto.idpSsoUrl, 'idpSsoUrl');
+    return {
+      issuerUrl: dto.issuerUrl ?? dto.idpEntityId,
+      idpEntityId: dto.idpEntityId,
+      idpSsoUrl: dto.idpSsoUrl,
+      idpCertificate: dto.idpCertificate,
+      spEntityId: dto.spEntityId ?? null,
+    };
+  }
+
+  private async loadTenantConnection(tenantId: string, id: string): Promise<SsoConnectionFields> {
+    const connection = await this.prisma.ssoConnection.findFirst({ where: { id, tenantId } });
+    if (!connection) {
+      throw new NotFoundException('SSO connection not found');
+    }
+    return connection as SsoConnectionFields;
   }
 
   async listConnections(tenantId: string) {
@@ -150,15 +232,11 @@ export class SsoService {
       where: { tenantId },
       orderBy: { createdAt: 'desc' },
     });
-    return connections.map((c) => this.sanitize(c));
+    return connections.map((c) => this.sanitize(c as SsoConnectionFields));
   }
 
   async getConnection(tenantId: string, id: string) {
-    const connection = await this.prisma.ssoConnection.findFirst({ where: { id, tenantId } });
-    if (!connection) {
-      throw new NotFoundException('SSO connection not found');
-    }
-    return this.sanitize(connection);
+    return this.sanitize(await this.loadTenantConnection(tenantId, id));
   }
 
   async updateConnection(
@@ -168,10 +246,19 @@ export class SsoService {
     dto: UpdateSsoConnectionDto,
   ) {
     this.assertEnabled();
-    await this.getConnection(tenantId, id);
+    const existing = await this.loadTenantConnection(tenantId, id);
+
+    if (dto.type && dto.type !== existing.type) {
+      throw new BadRequestException(
+        'The SSO protocol cannot be changed. Delete the connection and create a new one.',
+      );
+    }
 
     if (dto.issuerUrl) {
       await this.verifyIssuer(dto.issuerUrl);
+    }
+    if (dto.idpSsoUrl) {
+      this.assertHttpsUrl(dto.idpSsoUrl, 'idpSsoUrl');
     }
 
     const data: Record<string, unknown> = {};
@@ -181,6 +268,10 @@ export class SsoService {
     if (dto.clientSecret !== undefined) {
       data.clientSecretEncrypted = encryptSsoSecret(dto.clientSecret, this.encryptionKey);
     }
+    if (dto.idpEntityId !== undefined) data.idpEntityId = dto.idpEntityId;
+    if (dto.idpSsoUrl !== undefined) data.idpSsoUrl = dto.idpSsoUrl;
+    if (dto.idpCertificate !== undefined) data.idpCertificate = dto.idpCertificate;
+    if (dto.spEntityId !== undefined) data.spEntityId = dto.spEntityId;
     if (dto.scopes !== undefined) {
       data.scopes = dto.scopes.length > 0 ? dto.scopes.join(' ') : DEFAULT_SCOPES;
     }
@@ -202,11 +293,11 @@ export class SsoService {
       newValues: { enabled: connection.enabled },
     });
 
-    return this.sanitize(connection);
+    return this.sanitize(connection as SsoConnectionFields);
   }
 
   async deleteConnection(tenantId: string, userId: string, id: string) {
-    await this.getConnection(tenantId, id);
+    await this.loadTenantConnection(tenantId, id);
     await this.prisma.ssoConnection.delete({ where: { id } });
 
     await this.auditLogsService.log({
@@ -228,6 +319,7 @@ export class SsoService {
     available: boolean;
     connectionId?: string;
     name?: string;
+    type?: string;
   }> {
     if (!this.configService.get<boolean>('sso.enabled', false)) {
       return { available: false };
@@ -240,7 +332,7 @@ export class SsoService {
 
     const connections = await this.prisma.ssoConnection.findMany({
       where: { enabled: true },
-      select: { id: true, name: true, allowedEmailDomains: true },
+      select: { id: true, name: true, type: true, allowedEmailDomains: true },
     });
 
     const match = connections.find((connection) => {
@@ -249,7 +341,7 @@ export class SsoService {
     });
 
     return match
-      ? { available: true, connectionId: match.id, name: match.name }
+      ? { available: true, connectionId: match.id, name: match.name, type: match.type }
       : { available: false };
   }
 
@@ -257,7 +349,17 @@ export class SsoService {
     this.assertEnabled();
 
     const connection = await this.loadEnabledConnection(connectionId);
-    const client = await this.buildClient(connection);
+    if (connection.type === SAML_PROTOCOL) {
+      return this.beginSamlAuthorization(connection, redirectPath);
+    }
+    return this.beginOidcAuthorization(connection, redirectPath);
+  }
+
+  private async beginOidcAuthorization(
+    connection: SsoConnectionFields,
+    redirectPath?: string,
+  ): Promise<{ url: string }> {
+    const client = await this.buildOidcClient(connection);
 
     const state = generators.state();
     const nonce = generators.nonce();
@@ -265,7 +367,8 @@ export class SsoService {
     const codeChallenge = generators.codeChallenge(codeVerifier);
 
     const stored: StoredState = {
-      connectionId,
+      connectionId: connection.id,
+      protocol: OIDC,
       codeVerifier,
       nonce,
       redirectPath: this.safeRedirectPath(redirectPath),
@@ -280,6 +383,23 @@ export class SsoService {
       code_challenge_method: 'S256',
     });
 
+    return { url };
+  }
+
+  private async beginSamlAuthorization(
+    connection: SsoConnectionFields,
+    redirectPath?: string,
+  ): Promise<{ url: string }> {
+    const state = randomBytes(32).toString('hex');
+    const stored: StoredState = {
+      connectionId: connection.id,
+      protocol: SAML_PROTOCOL,
+      redirectPath: this.safeRedirectPath(redirectPath),
+    };
+    await this.redisService.set(STATE_PREFIX + state, JSON.stringify(stored), this.stateTtl);
+
+    const saml = this.buildSamlClient(connection);
+    const url = await saml.getAuthorizeUrlAsync(state, undefined, {});
     return { url };
   }
 
@@ -301,16 +421,13 @@ export class SsoService {
       throw new BadRequestException('Missing state or code in SSO callback');
     }
 
-    const rawState = await this.redisService.get(STATE_PREFIX + state);
-    if (!rawState) {
+    const stored = await this.consumeState(state);
+    if (!stored.codeVerifier || !stored.nonce) {
       throw new UnauthorizedException('SSO state is invalid or has expired');
     }
-    // One-time use: consume the state before doing anything else to prevent replay.
-    await this.redisService.del(STATE_PREFIX + state);
-    const stored = JSON.parse(rawState) as StoredState;
 
     const connection = await this.loadEnabledConnection(stored.connectionId);
-    const client = await this.buildClient(connection);
+    const client = await this.buildOidcClient(connection);
 
     let claims: OidcProfileClaims;
     try {
@@ -333,39 +450,66 @@ export class SsoService {
       throw new UnauthorizedException('SSO token exchange failed');
     }
 
-    const user = await this.resolveUser(connection, claims);
+    return this.completeLogin(connection, this.profileFromOidc(claims), meta);
+  }
 
-    const tokens = await this.authService.issueTokensForUser(user, meta);
+  async handleSamlResponse(
+    body: Record<string, string | undefined>,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ): Promise<{ redirectUrl: string }> {
+    this.assertEnabled();
 
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    });
+    const samlResponse = body.SAMLResponse ?? body.SamlResponse;
+    if (!samlResponse) {
+      throw new BadRequestException('Missing SAMLResponse in assertion consumer service POST');
+    }
 
-    await this.auditLogsService.log({
-      action: 'SSO_LOGIN',
-      resource: 'User',
-      resourceId: user.id,
-      userId: user.id,
-      tenantId: connection.tenantId,
-      ...meta,
-    });
+    const relayState = body.RelayState;
+    if (!relayState) {
+      throw new UnauthorizedException('Missing RelayState; cannot link the SAML response');
+    }
 
-    await this.prisma.ssoConnection.update({
-      where: { id: connection.id },
-      data: { lastUsedAt: new Date() },
-    });
+    const stored = await this.consumeState(relayState);
+    if (stored.protocol !== SAML_PROTOCOL) {
+      throw new UnauthorizedException('SSO state does not match a SAML login');
+    }
 
-    const exchangeCode = randomBytes(32).toString('hex');
-    await this.redisService.set(
-      CODE_PREFIX + exchangeCode,
-      JSON.stringify({ tokens, userId: user.id }),
-      this.exchangeCodeTtl,
-    );
+    const connection = await this.loadEnabledConnection(stored.connectionId);
+    if (connection.type !== SAML_PROTOCOL) {
+      throw new BadRequestException('This SSO connection is not configured for SAML');
+    }
 
-    const base = this.configService.get<string>('sso.successRedirectUrl', '');
-    const separator = base.includes('?') ? '&' : '?';
-    return { redirectUrl: `${base}${separator}code=${exchangeCode}` };
+    const saml = this.buildSamlClient(connection);
+    let profile: Record<string, unknown>;
+    try {
+      const result = await saml.validatePostResponseAsync({
+        SAMLResponse: samlResponse,
+        RelayState: relayState,
+      });
+      profile = (result.profile ?? {}) as unknown as Record<string, unknown>;
+    } catch (error) {
+      this.logger.warn(
+        `SAML assertion validation failed for connection ${connection.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      throw new UnauthorizedException('SAML assertion validation failed');
+    }
+
+    if (!Object.keys(profile).length) {
+      throw new UnauthorizedException('SAML assertion did not contain a profile');
+    }
+
+    return this.completeLogin(connection, this.profileFromSaml(profile), meta);
+  }
+
+  async samlMetadata(connectionId: string): Promise<string> {
+    this.assertEnabled();
+    const connection = await this.loadEnabledConnection(connectionId);
+    if (connection.type !== SAML_PROTOCOL) {
+      throw new BadRequestException('This SSO connection is not configured for SAML');
+    }
+    return this.buildSamlClient(connection).generateServiceProviderMetadata(null, null);
   }
 
   async exchangeAuthorizationCode(
@@ -405,18 +549,122 @@ export class SsoService {
   // Internals
   // ============================================
 
-  private async verifyIssuer(issuerUrl: string): Promise<void> {
+  private async consumeState(state: string): Promise<StoredState> {
+    const raw = await this.redisService.get(STATE_PREFIX + state);
+    if (!raw) {
+      throw new UnauthorizedException('SSO state is invalid or has expired');
+    }
+    // One-time use: consume the state before doing anything else to prevent replay.
+    await this.redisService.del(STATE_PREFIX + state);
+    return JSON.parse(raw) as StoredState;
+  }
+
+  private async completeLogin(
+    connection: SsoConnectionFields,
+    profile: SsoProfile,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ): Promise<{ redirectUrl: string }> {
+    const user = await this.resolveUser(connection, profile);
+    const tokens = await this.authService.issueTokensForUser(user, meta);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    await this.auditLogsService.log({
+      action: 'SSO_LOGIN',
+      resource: 'User',
+      resourceId: user.id,
+      userId: user.id,
+      tenantId: connection.tenantId,
+      ...meta,
+    });
+
+    await this.prisma.ssoConnection.update({
+      where: { id: connection.id },
+      data: { lastUsedAt: new Date() },
+    });
+
+    const exchangeCode = randomBytes(32).toString('hex');
+    await this.redisService.set(
+      CODE_PREFIX + exchangeCode,
+      JSON.stringify({ tokens, userId: user.id }),
+      this.exchangeCodeTtl,
+    );
+
+    const base = this.configService.get<string>('sso.successRedirectUrl', '');
+    const separator = base.includes('?') ? '&' : '?';
+    return { redirectUrl: `${base}${separator}code=${exchangeCode}` };
+  }
+
+  private profileFromOidc(claims: OidcProfileClaims): SsoProfile {
+    return {
+      email: claims.email,
+      emailVerified: claims.email_verified,
+      firstName: claims.given_name,
+      lastName: claims.family_name,
+      name: claims.name,
+    };
+  }
+
+  private profileFromSaml(profile: Record<string, unknown>): SsoProfile {
+    const email =
+      this.firstString(profile, [
+        'email',
+        'mail',
+        'nameID',
+        'urn:oid:0.9.2342.19200300.100.1.3',
+        'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress',
+      ]) ?? undefined;
+    return {
+      email,
+      // SAML assertions reaching this point are signature-validated, so the
+      // email is treated as verified by the identity provider.
+      emailVerified: true,
+      firstName: this.firstString(profile, [
+        'firstName',
+        'givenName',
+        'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname',
+      ]),
+      lastName: this.firstString(profile, [
+        'lastName',
+        'surname',
+        'familyName',
+        'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname',
+      ]),
+      name: this.firstString(profile, ['displayName', 'name', 'cn']),
+    };
+  }
+
+  private firstString(source: Record<string, unknown>, keys: string[]): string | undefined {
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'string' && value.length > 0) {
+        return value;
+      }
+      if (Array.isArray(value) && typeof value[0] === 'string' && value[0].length > 0) {
+        return value[0];
+      }
+    }
+    return undefined;
+  }
+
+  private assertHttpsUrl(value: string, field: string): void {
     let parsed: URL;
     try {
-      parsed = new URL(issuerUrl);
+      parsed = new URL(value);
     } catch {
-      throw new BadRequestException('issuerUrl must be a valid URL');
+      throw new BadRequestException(`${field} must be a valid URL`);
     }
-
     const isLocalhost = ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname);
     if (parsed.protocol !== 'https:' && !isLocalhost) {
-      throw new BadRequestException('issuerUrl must use https (except localhost)');
+      throw new BadRequestException(`${field} must use https (except localhost)`);
     }
+  }
+
+  private async verifyIssuer(issuerUrl: string): Promise<void> {
+    this.assertHttpsUrl(issuerUrl, 'issuerUrl');
 
     try {
       await Issuer.discover(issuerUrl);
@@ -430,11 +678,10 @@ export class SsoService {
     }
   }
 
-  private async buildClient(connection: {
-    issuerUrl: string;
-    clientId: string;
-    clientSecretEncrypted: string;
-  }): Promise<Client> {
+  private async buildOidcClient(connection: SsoConnectionFields): Promise<Client> {
+    if (!connection.issuerUrl || !connection.clientId || !connection.clientSecretEncrypted) {
+      throw new ServiceUnavailableException('OIDC connection is missing its client configuration');
+    }
     const issuer = await Issuer.discover(connection.issuerUrl);
     const clientSecret = decryptSsoSecret(connection.clientSecretEncrypted, this.encryptionKey);
     return new issuer.Client({
@@ -445,12 +692,35 @@ export class SsoService {
     });
   }
 
-  private async loadEnabledConnection(connectionId: string) {
+  private buildSamlClient(connection: SsoConnectionFields): SAML {
+    if (!connection.idpSsoUrl || !connection.idpCertificate) {
+      throw new ServiceUnavailableException('SAML connection is missing its IdP configuration');
+    }
+    const spEntityId = this.spEntityId(connection);
+    return new SAML({
+      entryPoint: connection.idpSsoUrl,
+      issuer: spEntityId,
+      audience: spEntityId,
+      idpCert: connection.idpCertificate,
+      idpIssuer: connection.idpEntityId ?? undefined,
+      callbackUrl: this.samlAcsUrl(),
+      wantAssertionsSigned: true,
+      wantAuthnResponseSigned: false,
+      validateInResponseTo: ValidateInResponseTo.never,
+      acceptedClockSkewMs: 5000,
+    });
+  }
+
+  private spEntityId(connection: SsoConnectionFields): string {
+    return connection.spEntityId || this.samlMetadataUrl();
+  }
+
+  private async loadEnabledConnection(connectionId: string): Promise<SsoConnectionFields> {
     const connection = await this.prisma.ssoConnection.findUnique({ where: { id: connectionId } });
     if (!connection || !connection.enabled) {
       throw new NotFoundException('SSO connection not found or disabled');
     }
-    return connection;
+    return connection as SsoConnectionFields;
   }
 
   private async resolveUser(
@@ -462,13 +732,13 @@ export class SsoService {
       allowedEmailDomains: unknown;
       name: string;
     },
-    claims: OidcProfileClaims,
+    profile: SsoProfile,
   ): Promise<SsoUser> {
-    const email = claims.email?.toLowerCase();
+    const email = profile.email?.toLowerCase();
     if (!email) {
       throw new BadRequestException('Identity provider did not return an email address');
     }
-    if (claims.email_verified === false) {
+    if (profile.emailVerified === false) {
       throw new ForbiddenException('The identity provider has not verified this email address');
     }
 
@@ -516,8 +786,8 @@ export class SsoService {
         tenantId: connection.tenantId,
         email,
         password,
-        firstName: claims.given_name || claims.name?.split(' ')[0] || email.split('@')[0],
-        lastName: claims.family_name || claims.name?.split(' ').slice(1).join(' ') || '',
+        firstName: profile.firstName || profile.name?.split(' ')[0] || email.split('@')[0],
+        lastName: profile.lastName || profile.name?.split(' ').slice(1).join(' ') || '',
         role: connection.defaultRole,
         emailVerified: true,
         status: 'ACTIVE',
@@ -582,23 +852,7 @@ export class SsoService {
     return path;
   }
 
-  private sanitize(connection: {
-    id: string;
-    tenantId: string;
-    name: string;
-    type: string;
-    issuerUrl: string;
-    clientId: string;
-    clientSecretEncrypted: string;
-    scopes: string;
-    allowedEmailDomains: unknown;
-    autoProvision: boolean;
-    defaultRole: string;
-    enabled: boolean;
-    lastUsedAt: Date | null;
-    createdAt: Date;
-    updatedAt: Date;
-  }) {
+  private sanitize(connection: SsoConnectionFields) {
     return {
       id: connection.id,
       tenantId: connection.tenantId,
@@ -611,6 +865,10 @@ export class SsoService {
       autoProvision: connection.autoProvision,
       defaultRole: connection.defaultRole,
       enabled: connection.enabled,
+      idpEntityId: connection.idpEntityId ?? null,
+      idpSsoUrl: connection.idpSsoUrl ?? null,
+      spEntityId: connection.spEntityId ?? null,
+      hasIdpCertificate: Boolean(connection.idpCertificate),
       hasClientSecret: Boolean(connection.clientSecretEncrypted),
       lastUsedAt: connection.lastUsedAt,
       createdAt: connection.createdAt,
