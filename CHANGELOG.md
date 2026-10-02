@@ -114,7 +114,9 @@ item-by-item record and the caveats that remain open.
 
 ### Known limitations
 
-These are unresolved and are **not** covered by the test suite:
+These are unresolved and are **not** covered by the test suite. See
+`docs/launch-readiness.md` for the full breakdown, including which paths are
+proven versus mock-only.
 
 - No live third-party credentials, so Stripe/Paymob, SMTP and the real
   OIDC/SAML provider flows are verified against mocks only.

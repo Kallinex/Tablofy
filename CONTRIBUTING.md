@@ -60,15 +60,20 @@ if a script is wrongly blocked, fix the detection.
 ### The gate that must pass before you open a pull request
 
 ```bash
+npm run format:check
 npm run lint
 npm run build:api
 npm run test:coverage -- --maxWorkers=1 --silent
 ```
 
-All three must exit 0. Coverage thresholds are enforced by the `coverage`
+All four must exit 0. Coverage thresholds are enforced by the `coverage`
 configuration, so a drop in coverage fails the run rather than being noticed
 later. `--maxWorkers=1` keeps the suite memory-bounded and its output readable;
 please use it for the full run.
+
+Before deploying, read [`docs/launch-readiness.md`](docs/launch-readiness.md).
+It records which paths are proven by an executed check, which are verified only
+against mocks, and what still has to be validated against real third parties.
 
 ## Project layout
 
