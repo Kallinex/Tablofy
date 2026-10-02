@@ -224,6 +224,34 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   PAYMOB_WEBHOOK_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  SSO_ENABLED?: string;
+
+  @IsOptional()
+  @IsString()
+  SSO_ENCRYPTION_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  SSO_CALLBACK_BASE_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  SSO_SUCCESS_REDIRECT_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  SSO_FAILURE_REDIRECT_URL?: string;
+
+  @IsOptional()
+  @IsNumber()
+  SSO_STATE_TTL_SECONDS?: number;
+
+  @IsOptional()
+  @IsNumber()
+  SSO_EXCHANGE_CODE_TTL_SECONDS?: number;
 }
 
 export function validate(config: Record<string, unknown>) {

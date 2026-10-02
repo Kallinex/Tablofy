@@ -180,6 +180,7 @@ describe('DTO inventory', () => {
     expect(withoutStaticClass.sort()).toEqual([
       'modules/api-keys/dto/update-api-key.dto.ts',
       'modules/scheduled-reports/dto/update-scheduled-report.dto.ts',
+      'modules/sso/dto/update-sso-connection.dto.ts',
       'modules/webhooks/dto/update-webhook.dto.ts',
     ]);
   });

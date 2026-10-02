@@ -8,6 +8,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { RedisModule } from '../redis/redis.module';
 import { WsAuthModule } from '../common/ws/ws-auth.module';
 import { AuthModule } from '../modules/auth/auth.module';
+import { SsoModule } from '../modules/sso/sso.module';
 import { TenantsModule } from '../modules/tenants/tenants.module';
 import { SubscriptionsModule } from '../modules/subscriptions/subscriptions.module';
 import { UsersModule } from '../modules/users/users.module';
@@ -116,6 +117,7 @@ import {
   apiKeysConfig,
   paymentsConfig,
   smtpConfig,
+  ssoConfig,
 } from '../config';
 
 @Module({
@@ -137,6 +139,7 @@ import {
         apiKeysConfig,
         paymentsConfig,
         smtpConfig,
+        ssoConfig,
       ],
       envFilePath: '.env',
     }),
@@ -166,6 +169,7 @@ import {
     CommonModule,
     HealthModule,
     AuthModule,
+    SsoModule,
     TenantsModule,
     SubscriptionsModule,
     UsersModule,

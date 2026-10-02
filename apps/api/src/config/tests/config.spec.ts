@@ -15,6 +15,7 @@ import paymentsConfig, {
   DEFAULT_PAYMOB_API_BASE,
   DEFAULT_STRIPE_API_BASE,
 } from '../payments.config';
+import ssoConfig from '../sso.config';
 import * as configBarrel from '../index';
 import * as prismaBarrel from '../../prisma/index';
 
@@ -91,6 +92,13 @@ const MANAGED_ENV = [
   'PAYMOB_INTEGRATION_ID',
   'PAYMOB_API_BASE',
   'PAYMOB_WEBHOOK_SECRET',
+  'SSO_ENABLED',
+  'SSO_ENCRYPTION_KEY',
+  'SSO_CALLBACK_BASE_URL',
+  'SSO_SUCCESS_REDIRECT_URL',
+  'SSO_FAILURE_REDIRECT_URL',
+  'SSO_STATE_TTL_SECONDS',
+  'SSO_EXCHANGE_CODE_TTL_SECONDS',
 ];
 
 const saved = new Map<string, string | undefined>();
@@ -660,6 +668,65 @@ describe('paymentsConfig', () => {
   });
 });
 
+describe('ssoConfig', () => {
+  it('exposes safe defaults and falls back to the webhook key', () => {
+    expect(ssoConfig()).toEqual({
+      enabled: false,
+      encryptionKey: 'k'.repeat(32),
+      stateTtlSeconds: 600,
+      exchangeCodeTtlSeconds: 60,
+      callbackBaseUrl: '',
+      successRedirectUrl: '',
+      failureRedirectUrl: '',
+    });
+  });
+
+  it('reads explicit configuration', () => {
+    process.env.SSO_ENABLED = 'true';
+    process.env.SSO_ENCRYPTION_KEY = 's'.repeat(32);
+    process.env.SSO_CALLBACK_BASE_URL = 'https://api.example.com/api/v1';
+    process.env.SSO_SUCCESS_REDIRECT_URL = 'https://app.example.com/sso';
+    process.env.SSO_FAILURE_REDIRECT_URL = 'https://app.example.com/login';
+    process.env.SSO_STATE_TTL_SECONDS = '300';
+    process.env.SSO_EXCHANGE_CODE_TTL_SECONDS = '30';
+
+    expect(ssoConfig()).toEqual({
+      enabled: true,
+      encryptionKey: 's'.repeat(32),
+      stateTtlSeconds: 300,
+      exchangeCodeTtlSeconds: 30,
+      callbackBaseUrl: 'https://api.example.com/api/v1',
+      successRedirectUrl: 'https://app.example.com/sso',
+      failureRedirectUrl: 'https://app.example.com/login',
+    });
+  });
+
+  it('falls back to FRONTEND_URL for the success redirect', () => {
+    process.env.SSO_ENABLED = 'true';
+    process.env.SSO_CALLBACK_BASE_URL = 'https://api.example.com/api/v1';
+    process.env.FRONTEND_URL = 'https://app.example.com';
+
+    expect(ssoConfig()).toMatchObject({
+      successRedirectUrl: 'https://app.example.com',
+      failureRedirectUrl: 'https://app.example.com',
+    });
+  });
+
+  it('refuses to enable SSO without a strong encryption key', () => {
+    process.env.SSO_ENABLED = 'true';
+    delete process.env.WEBHOOK_ENCRYPTION_KEY;
+    process.env.SSO_CALLBACK_BASE_URL = 'https://api.example.com/api/v1';
+
+    expect(() => ssoConfig()).toThrow(/SSO_ENCRYPTION_KEY/);
+  });
+
+  it('refuses to enable SSO without a redirect target', () => {
+    process.env.SSO_ENABLED = 'true';
+
+    expect(() => ssoConfig()).toThrow(/SSO_CALLBACK_BASE_URL/);
+  });
+});
+
 describe('public module barrels', () => {
   it('re-exports every configuration factory', () => {
     expect(typeof configBarrel.appConfig).toBe('function');
@@ -675,6 +742,7 @@ describe('public module barrels', () => {
     expect(typeof configBarrel.smtpConfig).toBe('function');
     expect(typeof configBarrel.apiKeysConfig).toBe('function');
     expect(typeof configBarrel.paymentsConfig).toBe('function');
+    expect(typeof configBarrel.ssoConfig).toBe('function');
   });
 
   it('re-exports env validation', () => {
@@ -693,5 +761,6 @@ describe('public module barrels', () => {
     expect(configBarrel.jwtConfig).toBe(jwtConfig);
     expect(configBarrel.throttleConfig).toBe(throttleConfig);
     expect(configBarrel.paymentsConfig).toBe(paymentsConfig);
+    expect(configBarrel.ssoConfig).toBe(ssoConfig);
   });
 });

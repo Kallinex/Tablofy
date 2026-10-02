@@ -852,6 +852,25 @@ export class AuthService {
     return { enabled: false };
   }
 
+  /**
+   * Issue an access/refresh token pair for an already-authenticated user.
+   * Used by external identity flows (e.g. tenant OIDC SSO) that have verified
+   * the user's identity elsewhere and only need Tablofy session tokens.
+   */
+  async issueTokensForUser(
+    user: {
+      id: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+      role: string;
+      tenantId: string | null;
+    },
+    meta?: { ipAddress?: string; userAgent?: string },
+  ): Promise<TokenPair> {
+    return this.generateTokenPair(user, meta);
+  }
+
   private async generateTokenPair(
     user: {
       id: string;

@@ -11,4 +11,5 @@ export { default as webhookConfig } from './webhook.config';
 export { default as smtpConfig } from './smtp.config';
 export { default as apiKeysConfig } from './api-keys.config';
 export { default as paymentsConfig } from './payments.config';
+export { default as ssoConfig } from './sso.config';
 export { validate } from './env.validation';

@@ -159,6 +159,43 @@ npx prisma migrate deploy
 node dist/apps/api/app/main.js
 ```
 
+## Enterprise SSO (OIDC)
+
+Optional per-tenant single sign-on against any OIDC-compliant identity provider
+(Microsoft Entra ID, Okta, Google Workspace, Keycloak, Auth0, ...). It uses the
+Authorization Code flow with PKCE, state and nonce; the IdP client secret is
+encrypted at rest (AES-256-GCM).
+
+```bash
+# .env (or docker/.env)
+SSO_ENABLED=true
+SSO_ENCRYPTION_KEY=<openssl rand -hex 32>   # falls back to WEBHOOK_ENCRYPTION_KEY
+SSO_CALLBACK_BASE_URL=https://api.example.com/api   # include the global prefix
+SSO_SUCCESS_REDIRECT_URL=https://app.example.com/sso/callback
+SSO_FAILURE_REDIRECT_URL=https://app.example.com/login
+```
+
+At the IdP, register the redirect URI
+`<SSO_CALLBACK_BASE_URL>/auth/sso/callback`. After login the browser is sent to
+`SSO_SUCCESS_REDIRECT_URL?code=<one-time-code>`; exchange that code once at
+`POST /auth/sso/exchange` to receive the Tablofy token pair.
+
+Tenant admins manage the connection:
+
+| Method | Path | Role | Purpose |
+|--------|------|------|---------|
+| POST | `/api/v1/auth/sso/connections` | OWNER/MANAGER | Create the tenant connection |
+| GET | `/api/v1/auth/sso/connections` | OWNER/MANAGER | Read it (secret hidden) |
+| PATCH | `/api/v1/auth/sso/connections/:id` | OWNER/MANAGER | Update (issuer/client/domains/role) |
+| DELETE | `/api/v1/auth/sso/connections/:id` | OWNER | Remove it |
+| GET | `/api/v1/auth/sso/discover?email=` | public | Login hint for a domain |
+| GET | `/api/v1/auth/sso/:id/authorize` | public | Start the redirect flow |
+
+`autoProvision` (default true) creates a local user on first login with
+`defaultRole`; `allowedEmailDomains` restricts which domains may sign in. Set
+`autoProvision=false` to require pre-invited users only. Users disabled or
+suspended locally cannot sign in via SSO.
+
 ## Queue Configuration
 
 BullMQ queues (Redis-based):
@@ -206,6 +243,7 @@ Cron jobs (via @nestjs/schedule):
 - [ ] `SMTP_HOST` + `SMTP_FROM` set — **enforced at boot**
 - [ ] Live payment gateways fully configured (`sk_live_*` + webhook secret, Paymob integration id + webhook secret) — **enforced at boot**
 - [ ] Swagger, if enabled in production, protected by `SWAGGER_AUTH_USER`/`SWAGGER_AUTH_PASSWORD` — **enforced at boot**
+- [ ] If SSO is enabled: `SSO_ENCRYPTION_KEY` (or `WEBHOOK_ENCRYPTION_KEY`), `SSO_CALLBACK_BASE_URL` and the redirect URLs set; redirect URI registered at the IdP — **enforced at boot**
 - [ ] Offsite database backups configured (rclone remote) and **restore tested**
 - [ ] Monitoring and alerting configured
 - [ ] Rate limiting limits tuned for expected traffic
