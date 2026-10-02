@@ -1,98 +1,276 @@
 # Tablofy
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+Enterprise multi-tenant restaurant management platform. The backend is a NestJS 11
+application backed by PostgreSQL (Prisma), Redis (cache + BullMQ queues) and
+Socket.IO, exposing a versioned REST API, Prometheus metrics and a hardened
+production deployment.
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
+This repository is an [Nx](https://nx.dev) workspace containing the API application
+and the shared libraries it depends on.
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/getting-started/intro#learn-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
+## Table of contents
 
-## Run tasks
+- [Tech stack](#tech-stack)
+- [Repository layout](#repository-layout)
+- [Prerequisites](#prerequisites)
+- [Getting started](#getting-started)
+- [Running the API](#running-the-api)
+- [Testing](#testing)
+- [Linting, formatting and building](#linting-formatting-and-building)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+- [Observability and health checks](#observability-and-health-checks)
+- [Payments](#payments)
+- [Single sign-on (OIDC and SAML 2.0)](#single-sign-on-oidc-and-saml-20)
+- [File uploads](#file-uploads)
+- [Webhooks](#webhooks)
+- [Deployment](#deployment)
+- [Security notes](#security-notes)
 
-To run tasks with Nx use:
+## Tech stack
 
-```sh
-npx nx <target> <project-name>
+| Layer            | Technology                                                          |
+| ---------------- | ------------------------------------------------------------------- |
+| Runtime          | Node.js 22, TypeScript 6                                            |
+| Framework        | NestJS 11 (Express 5)                                               |
+| Database         | PostgreSQL + Prisma ORM (128 models)                                |
+| Cache / queues   | Redis 7, ioredis, BullMQ (+ Bull Board UI)                          |
+| Realtime         | Socket.IO                                                           |
+| Auth             | JWT access/refresh, Passport, TOTP MFA, API keys, OIDC + SAML SSO   |
+| Docs             | OpenAPI / Swagger                                                   |
+| Observability    | winston, Prometheus (`prom-client`), Sentry, Terminus health checks |
+| Monorepo tooling | Nx 23, Jest 30, ESLint 10, Prettier                                 |
+
+## Repository layout
+
+```
+apps/
+  api/                     NestJS API application
+    src/
+      app/                 Root module and application wiring
+      config/              Typed, validated configuration factories
+      common/              Guards, interceptors, filters, upload, logger, ws, ...
+      health/              Terminus health indicators and probes
+      modules/             Feature modules (auth, orders, inventory, payments, ...)
+      prisma/              PrismaService
+      redis/               Redis module/service
+      test/                Test helpers (contract harness, auto-mock, app factory)
+libs/
+  shared/                  Shared constants, types and utilities
+docker/                    Dockerfile, docker-compose (dev + prod), nginx, backup
+docs/
+  deployment-guide.md      Production deployment runbook
+prisma/
+  schema.prisma            Database schema
+  migrations/              Versioned migrations
 ```
 
-For example:
+## Prerequisites
+
+- Node.js 22+
+- npm 10+
+- Docker (for local PostgreSQL and Redis, or for the full stack)
+- A PostgreSQL and Redis instance reachable from the API
+
+## Getting started
+
+1. Install dependencies:
+
+   ```sh
+   npm install
+   ```
+
+   `postinstall` runs `prisma generate`.
+
+2. Create your environment file from the template and fill in the required values
+   (see [Configuration](#configuration)):
+
+   ```sh
+   cp .env.example .env
+   ```
+
+3. Start PostgreSQL and Redis. The dev compose file ships a strong dev-only default
+   password for Redis:
+
+   ```sh
+   docker compose -f docker/docker-compose.yml up -d
+   ```
+
+4. Apply migrations and seed data:
+
+   ```sh
+   npm run prisma:migrate:dev
+   npm run prisma:seed
+   ```
+
+   Destructive Prisma scripts are guarded by `prisma/scripts/assert-safe-db.js` and
+   refuse to run against production-like databases.
+
+## Running the API
 
 ```sh
-npx nx build myproject
+npm run start:api        # equivalent to: nx serve api
 ```
 
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
+- API base URL: `http://localhost:3000/api/v1`
+- Swagger UI: `http://localhost:3000/docs` (enabled by default outside production)
+- Prometheus metrics: `http://localhost:3000/api/v1/metrics` (when metrics are enabled)
 
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Add new projects
-
-While you could add new projects to your workspace manually, you might want to leverage [Nx plugins](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) and their [code generation](https://nx.dev/features/generate-code?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) feature.
-
-To install a new plugin you can use the `nx add` command. Here's an example of adding the React plugin:
+## Testing
 
 ```sh
-npx nx add @nx/react
+npm test                                   # nx test api
+npm run test:coverage                      # with coverage thresholds
+npm run test:watch                         # watch mode
+npx nx test api --testPathPatterns=<regex> # single file / pattern
 ```
 
-Use the plugin's generator to create new projects. For example, to create a new React app or library:
+The suite uses Jest with `ts-jest`, `clearMocks` and `restoreMocks` enabled globally.
+Contract tests build every controller handler through `apps/api/src/test/helpers`.
+
+## Linting, formatting and building
 
 ```sh
-# Generate an app
-npx nx g @nx/react:app demo
-
-# Generate a library
-npx nx g @nx/react:lib some-lib
+npm run lint          # nx run-many -t lint
+npm run format        # prettier --write
+npm run format:check  # prettier --check
+npm run build:api     # nx build api (webpack)
 ```
 
-You can use `npx nx list` to get a list of installed plugins. Then, run `npx nx list <plugin-name>` to learn about more specific capabilities of a particular plugin. Alternatively, [install Nx Console](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) to browse plugins and generators in your IDE.
+## Configuration
 
-[Learn more about Nx plugins &raquo;](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) | [Browse the plugin registry &raquo;](https://nx.dev/plugin-registry?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+All configuration is validated at boot; the application fails fast on invalid or
+missing values. The canonical, documented list of variables lives in
+[`.env.example`](.env.example). Production values live in
+[`docker/.env.prod.example`](docker/.env.prod.example).
 
-## Set up CI!
+Key groups:
 
-### Step 1
+| Group         | Variables (examples)                                                               |
+| ------------- | ---------------------------------------------------------------------------------- |
+| Application   | `NODE_ENV`, `PORT`, `API_PREFIX`, `CORS_ORIGINS`, `FRONTEND_URL`, `TRUST_PROXY`    |
+| Database      | `DATABASE_URL`                                                                     |
+| Redis         | `REDIS_HOST`, `REDIS_PORT`, `REDIS_URL`, `REDIS_PASSWORD`                          |
+| JWT           | `JWT_SECRET`, `JWT_EXPIRATION`, `JWT_REFRESH_SECRET`, `JWT_REFRESH_EXPIRATION`     |
+| Rate limiting | `THROTTLE_TTL`, `THROTTLE_LIMIT`                                                   |
+| Observability | `SENTRY_*`, `METRICS_*`, `HEALTH_*`, `LOG_*`                                       |
+| Payments      | `PAYMENTS_MODE`, `STRIPE_*`, `PAYMOB_*`                                            |
+| Webhooks      | `WEBHOOK_ENCRYPTION_KEY`, `WEBHOOK_*`                                              |
+| Email         | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`                    |
+| Exports       | `EXPORT_DIR`, `REPORT_EXPORT_RETENTION_DAYS`                                       |
+| SSO           | `SSO_ENABLED`, `SSO_ENCRYPTION_KEY`, `SSO_CALLBACK_BASE_URL`, `SSO_*_REDIRECT_URL` |
+| Uploads       | `UPLOAD_DIR`, `UPLOAD_PUBLIC_BASE_URL`, `UPLOAD_MAX_IMAGE_SIZE_BYTES`              |
+| Dependencies  | `SMS_PROVIDER_URL`, `SMS_API_KEY`, `HEALTH_DEPENDENCY_TIMEOUT_MS`                  |
 
-To connect to Nx Cloud, run the following command:
+Production boot requires, at minimum: a non-empty `REDIS_PASSWORD` (16+ chars),
+`WEBHOOK_ENCRYPTION_KEY` (32+ chars), `SMTP_HOST` + `SMTP_FROM`, and `METRICS_AUTH_TOKEN`
+(16+ chars) whenever metrics are enabled. Live payment gateways require their webhook
+secrets.
 
-```sh
-npx nx connect
-```
+## Architecture
 
-Connecting to Nx Cloud ensures a [fast and scalable CI](https://nx.dev/ci/intro/why-nx-cloud?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) pipeline. It includes features such as:
+### Layers
 
-- [Remote caching](https://nx.dev/ci/features/remote-cache?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task distribution across multiple machines](https://nx.dev/ci/features/distribute-task-execution?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Automated e2e test splitting](https://nx.dev/ci/features/split-e2e-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task flakiness detection and rerunning](https://nx.dev/ci/features/flaky-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+- **Controllers** expose versioned routes (`/api/v1/...`), declare RBAC with
+  `@Roles()` / `@Permissions()`, and stay thin.
+- **Services** hold business logic. They use `PrismaService` directly, scoped by
+  `tenantId`.
+- **Guards / interceptors / filters** provide authentication (JWT, API key),
+  authorization, throttling, tenant isolation, response transformation, audit and
+  error normalization.
+- **Events / queues** decouple side effects: domain events are emitted with
+  `@nestjs/event-emitter` and heavy work runs on BullMQ queues with retries,
+  backoff and a dead-letter queue.
 
-### Step 2
+### Multi-tenancy
 
-Use the following command to configure a CI workflow for your workspace:
+Every tenant-scoped record carries `tenantId`. Request context (tenant, user, role)
+is resolved from the JWT and enforced by guards and the tenant-isolation
+middleware. Cross-tenant reads and writes are rejected.
 
-```sh
-npx nx g ci-workflow
-```
+### Module map
 
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+Feature modules live under `apps/api/src/modules` and include: `auth`, `tenants`,
+`users`, `invitations`, `sessions`, `restaurants`, `branches`, `floors`,
+`dining-areas`, `tables`, `menu`, `orders`, `kds`, `inventory` (ingredients,
+suppliers, purchasing, transfers, cycle-counts, warehouses), `crm`, `payments`,
+`subscriptions`, `webhooks`, `api-keys`, `gift-cards`, `privacy`, `backup`, `usage`,
+`sso`, `scheduler`, `scheduled-reports`, `export-engine`, `queues`, and the analytics
+modules (`sales`, `financial`, `live`, `customer`, `inventory`, `kitchen`,
+`supplier`, `forecasting`, `executive-dashboard`).
 
-## Install Nx Console
+## Observability and health checks
 
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
+All API routes include the global prefix: `/api/v1`. Swagger at `/docs` and Bull
+Board at `/admin/queues` are mounted outside the prefixed router.
 
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+| Endpoint                          | Purpose                                                                          |
+| --------------------------------- | -------------------------------------------------------------------------------- |
+| `GET /api/v1/health`              | Full health check (memory, disk, prisma, redis)                                  |
+| `GET /api/v1/health/live`         | Liveness                                                                         |
+| `GET /api/v1/health/ready`        | Readiness for load balancers                                                     |
+| `GET /api/v1/health/dependencies` | External probes: SMTP `verify()`, optional SMS gateway, configured Stripe/Paymob |
+| `GET /api/v1/metrics`             | Prometheus metrics (authenticated in production)                                 |
+| `/admin/queues`                   | Bull Board queue dashboard (protected)                                           |
 
-## Useful links
+Sentry is enabled only when both `SENTRY_ENABLED=true` and `SENTRY_DSN` are set.
+When Sentry is disabled the app installs explicit `unhandledRejection` /
+`uncaughtException` handlers with fallback logging and forced shutdown.
 
-Learn more:
+## Payments
 
-- [Learn more about this workspace setup](https://nx.dev/getting-started/intro#learn-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+Payment processing supports Stripe (card) and Paymob (mobile payment) behind a
+provider abstraction. `PAYMENTS_MODE` controls behavior:
 
-And join the Nx community:
+- `mock` — fake gateway responses. Forbidden in production (boot fails).
+- `test` — real Stripe API with `sk_test_*` keys. Forbidden in production.
+- `live` — real credentials required; live Stripe requires `STRIPE_WEBHOOK_SECRET`
+  and Paymob requires a positive `PAYMOB_INTEGRATION_ID` + `PAYMOB_WEBHOOK_SECRET`.
 
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+## Single sign-on (OIDC and SAML 2.0)
+
+Per-tenant SSO connections are supported for both OIDC and SAML 2.0. OIDC uses
+PKCE + state/nonce; SAML validates signed assertions. IdP client secrets are
+encrypted at rest with AES-256-GCM. Successful logins use JIT provisioning with
+domain/role enforcement and complete through a one-time exchange code. SP metadata
+is served at `GET /auth/sso/:id/saml/metadata`. See `.env.example` for the full
+variable list.
+
+## File uploads
+
+Product images are uploaded via
+`POST /restaurants/:restaurantId/products/:productId/images/upload`
+(`multipart/form-data`, field `file`, `OWNER`/`MANAGER` only). Uploads use memory
+storage with a configurable size limit, a MIME + extension allowlist and
+magic-byte verification. Files are written under `UPLOAD_DIR` in a
+tenant/product-scoped path and served from `/uploads/...` (or the configured
+`UPLOAD_PUBLIC_BASE_URL`). Use a shared volume or object storage in multi-instance
+deployments.
+
+## Webhooks
+
+Tenants register HTTP endpoints that receive signed, retried event deliveries.
+Signing secrets are encrypted at rest (AES-256-GCM) using
+`WEBHOOK_ENCRYPTION_KEY`; deliveries use exponential backoff and a dead-letter
+queue, with per-tenant registration limits and secret rotation.
+
+## Deployment
+
+The production deployment (Docker image, `docker/docker-compose.prod.yml`, nginx
+TLS/load balancing/WebSocket proxying, offsite backups) is documented in
+[`docs/deployment-guide.md`](docs/deployment-guide.md). CI publishes images and runs
+security scanning via the workflows in `.github/workflows`.
+
+## Security notes
+
+- Helmet with a strict production CSP, HSTS and cross-origin policies.
+- Global `ValidationPipe` with `whitelist` + `forbidNonWhitelisted`.
+- Per-IP throttling (`TRUST_PROXY` must be set behind a reverse proxy) and plan-based
+  throttling.
+- Swagger is off by default in production; enabling it requires HTTP Basic auth.
+- `/metrics` requires a bearer token in production.
+- JWT refresh tokens are rotated and revoked tokens are blacklisted.
+
+## License
+
+MIT
