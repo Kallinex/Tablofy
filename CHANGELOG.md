@@ -57,6 +57,23 @@ item-by-item record and the caveats that remain open.
 - **An E2E deduction race** could double-count.
 - **Webhook replay, payment unit handling and loyalty concurrency** were
   hardened; the **refund lifecycle** no longer leaves partial state.
+- **The Docker image did not build at all**, and had never been built. Three
+  separate defects, each independently fatal:
+  - the `deps` stage copied only the manifests, but `postinstall` runs
+    `prisma generate`, so `npm ci` failed with "Could not find Prisma Schema";
+  - the `builder` stage copied `package.json` but not `package-lock.json`, which
+    webpack reads for its cache key, failing the build with `ENOENT`;
+  - `env.validation.ts` marked `REDIS_URL`, `JWT_EXPIRATION`,
+    `JWT_REFRESH_EXPIRATION`, `THROTTLE_TTL` and `THROTTLE_LIMIT` as required even
+    though each has a working default in its config factory, so a correct minimal
+    environment was rejected and the container refused to boot.
+    Verified by building the image and running it against a real Postgres 16 and
+    Redis 7: migrations apply, the container reaches Docker `healthy`, and
+    `/api/v1/health` returns 200 with database, redis, memory, BullMQ and disk up.
+- **`WEBHOOK_ENCRYPTION_KEY` was validated only in production** while
+  `webhook.config.ts` refuses to boot without it in every environment, so
+  development and staging died inside the DI container with a stack trace instead
+  of a clear message. Validation now matches the runtime rule.
 
 ### Changed
 
@@ -103,6 +120,30 @@ item-by-item record and the caveats that remain open.
   `invalid` entries. The overrides are now keyed on the `minimatch` major
   directly (`minimatch@3`/`@5` → `^1.1.21`, `@9` → `^2.1.7`, `@10` →
   `^5.0.12`), which is both shorter and semver-valid.
+- The published `npm audit` count above was itself unreliable: it was being served
+  from a stale local npm cache. After `npm cache clean --force` the same command
+  reported 39 vulnerabilities (2 critical, 15 high, 22 moderate). Audit counts are
+  now treated as unverified until revalidated against the registry.
+- Fixed the one critical vulnerability that actually shipped:
+  `proxy-addr` 2.0.7 → `^2.0.8` (GHSA-jqcg-44mw-7w3h, IP spoofing via
+  IPv4-mapped IPv6 trust subnets, CVSS 9.1). This matters specifically here
+  because the API configures `trust proxy`. The production tree is now 0.
+- Also pinned `shell-quote`, `probe-image-size`, `source-map-js`,
+  `postcss-selector-parser` and `undici` to their patched releases, and raised the
+  Nx family 23.1.1 → 23.3.0, which took the count from 39 to 31 and from 15 high
+  to 7.
+- npm itself is no longer installed in the runtime image. A Trivy scan found 11
+  HIGH findings and every one of them traced to npm's own bundled dependencies
+  (`pacote`, `sigstore`, `ip-address`, `picomatch`, `http-cache-semantics`, one
+  `brace-expansion`), never to the application. The application's five
+  `brace-expansion` copies were already above the fix. Since nothing runs
+  `npm`/`npx` at runtime, Prisma is now invoked through
+  `./node_modules/.bin/prisma` and npm is deleted from the stage. The image scans
+  0 HIGH and 0 CRITICAL across every target.
+- The 7 remaining highs are dev-only and currently unfixable: they root at
+  `braces`, whose latest published release (3.0.3) is the vulnerable one. They
+  exist only under `webpack-dev-server`/`@nx/web`, never enter the image, and are
+  not in Trivy's result.
 
 ### Documentation
 

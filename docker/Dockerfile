@@ -79,6 +79,16 @@ RUN mkdir -p /app/logs \
 RUN mkdir -p /app/exports \
  && chown -R nestjs:nodejs /app/exports
 
+# Remove the package manager from the runtime image.
+#
+# Nothing in the running application shells out to npm/npx, but shipping it drags
+# in npm's own dependency tree, which a Trivy scan of this image flagged as the
+# source of every HIGH finding (pacote, sigstore, ip-address, picomatch,
+# http-cache-semantics and one brace-expansion copy). Deleting npm removes the
+# whole tree and with it all of those advisories.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+ && rm -f /usr/local/bin/npm /usr/local/bin/npx
+
 USER nestjs
 
 EXPOSE 3000
@@ -86,7 +96,7 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/v1/health || exit 1
 
-# Apply pending migrations at startup, then start the API. `prisma` is shipped as a
-# production dependency via deps-prod node_modules so `npx prisma migrate deploy`
-# is available in the runtime image.
-CMD ["sh", "-c", "npx prisma migrate deploy && node app/main.js"]
+# Apply pending migrations at startup, then start the API. `prisma` ships as a
+# production dependency, and it is invoked through its own binary rather than
+# `npx` so that the runtime image does not need npm installed.
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node app/main.js"]
