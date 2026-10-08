@@ -196,4 +196,4 @@ environment that failed to boot.
 
 ---
 
-Last verified: 2026-10-08 · commit `541e7e0` · branch `feature/phase7-m5`
+Last verified: 2026-10-08 · commit `82ac39b` · branch `feature/phase7-m5`
