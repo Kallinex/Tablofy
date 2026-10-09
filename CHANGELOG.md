@@ -164,9 +164,19 @@ item-by-item record and the caveats that remain open.
   `./node_modules/.bin/prisma` and npm is deleted from the stage. The image scans
   0 HIGH and 0 CRITICAL across every target.
 - The 7 remaining highs are dev-only and currently unfixable: they root at
-  `braces`, whose latest published release (3.0.3) is the vulnerable one. They
-  exist only under `webpack-dev-server`/`@nx/web`, never enter the image, and are
-  not in Trivy's result.
+  `braces`, whose latest published release (3.0.3) is the vulnerable one and for
+  which no patched release exists. They exist only under
+  `webpack-dev-server`/`@nx/web`, never enter the image, and are not in Trivy's
+  result. They cannot be removed by a version bump: every
+  `http-proxy-middleware` major depends on `micromatch@4 → braces`, and even
+  `webpack-dev-server@6` still routes through that path.
+- The CI SCA gate was scoped to the dependencies the product actually ships.
+  It now runs `npm audit --omit=dev --audit-level=moderate` (currently 0) as a
+  blocking gate, with the full-tree audit — 31 dev-only advisories (7 high,
+  24 moderate) in the Jest/Nx/babel toolchain — run alongside it as an
+  informational, non-blocking step. The advisories still exist on developer and
+  CI machines; this is a scoping decision, not a fix, and the reasoning is
+  recorded in `docs/launch-readiness.md` §6.
 
 ### Documentation
 

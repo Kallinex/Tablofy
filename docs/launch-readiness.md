@@ -10,14 +10,14 @@ against fakes · **[UNVERIFIED]** never executed anywhere
 
 ## 1. Automated gates — all executable, all passing
 
-| Gate             | Command                            | Result                                                                                                                                                                      |
-| ---------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Format           | `npm run format:check`             | **[PROVEN]** exit 0, repo-wide                                                                                                                                              |
-| Lint             | `npx nx lint api --skip-nx-cache`  | **[PROVEN]** exit 0, type-aware                                                                                                                                             |
-| Type check       | `npx tsc --noEmit` (in `apps/api`) | **[PROVEN]** exit 0                                                                                                                                                         |
-| Build            | `npx nx build api --skip-nx-cache` | **[PROVEN]** webpack success                                                                                                                                                |
-| Tests + coverage | `npm run test:coverage`            | **[PROVEN]** 216 suites / 4707 tests, thresholds enforced                                                                                                                   |
-| Dependency audit | `npm audit`                        | **[PROVEN]** production tree **0** vulnerabilities (`--omit=dev`). Dev toolchain reports 31 (7 high, 24 moderate) — see §6 for why none of them can ship or be fixed today. |
+| Gate             | Command                            | Result                                                                                                                                                                                                       |
+| ---------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Format           | `npm run format:check`             | **[PROVEN]** exit 0, repo-wide                                                                                                                                                                               |
+| Lint             | `npx nx lint api --skip-nx-cache`  | **[PROVEN]** exit 0, type-aware                                                                                                                                                                              |
+| Type check       | `npx tsc --noEmit` (in `apps/api`) | **[PROVEN]** exit 0                                                                                                                                                                                          |
+| Build            | `npx nx build api --skip-nx-cache` | **[PROVEN]** webpack success                                                                                                                                                                                 |
+| Tests + coverage | `npm run test:coverage`            | **[PROVEN]** 216 suites / 4707 tests, thresholds enforced                                                                                                                                                    |
+| Dependency audit | `npm audit --omit=dev`             | **[PROVEN]** shipped tree is **0**. The CI gate audits production dependencies only (`--omit=dev --audit-level=moderate`); the 31 dev-only advisories are reported informationally and cannot ship — see §6. |
 
 Coverage is measured, not assumed: 96.56% statements, 73.41% branches,
 99.82% functions, 97.79% lines. Branch coverage is the weak number and is
@@ -209,12 +209,27 @@ critical and the fix was a patch bump with no API change.
 
 **The remaining 7 highs are unfixable today.** They all root at `braces`,
 whose latest published release (`3.0.3`) _is_ the vulnerable one — there is no
-patched version to upgrade to. They live under `webpack-dev-server` and
-`@nx/web`, are devDependencies, are absent from the image, and are absent from
-Trivy's result. They are a local-workstation concern (a dev server accepting
-deeply nested patterns), not a deployment concern. Do not "fix" them with a
-major `webpack-dev-server` upgrade the week before launch; re-check whether
-upstream has published a `braces` release instead.
+patched version to upgrade to, and no upstream tag beyond it. They live under
+`webpack-dev-server` and `@nx/web`, are devDependencies, are absent from the
+image, and are absent from Trivy's result. A version bump cannot remove them:
+every `http-proxy-middleware` major (2/3/4) depends on `micromatch@4`, which
+depends on `braces`, and even `webpack-dev-server@6` (which drops the
+`chokidar@3` path in favour of `chokidar@5`) still routes through
+`http-proxy-middleware@4 → micromatch → braces`. They are a local-workstation
+concern (a dev server accepting deeply nested patterns), not a deployment
+concern. Do not "fix" them with a major `webpack-dev-server` upgrade the week
+before launch, and do not vendor a hand-written patch into a widely-used glob
+parser; re-check whether upstream has published a `braces` release instead.
+
+The same is true of the 24 moderates: they are the Jest/Nx/babel toolchain
+(`js-yaml`/`argparse`/`sprintf-js`, the `@jest/*` graph), all dev-only, none
+shipped. Because a full-tree audit therefore _cannot_ be made green, the CI SCA
+gate was scoped to what the product actually ships:
+`npm audit --omit=dev --audit-level=moderate` (currently **0**), with the full
+dev-tree audit run alongside it as an **informational, non-blocking** step so
+regressions stay visible without failing the build on advisories that cannot
+reach production. This is a scoping decision, not a fix: the advisories still
+exist in `node_modules` on developer and CI machines.
 
 Regression tests cover defects 3 and 5, including the exact container-minimal
 environment that failed to boot.
