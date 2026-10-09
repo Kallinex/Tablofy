@@ -10,14 +10,14 @@ against fakes · **[UNVERIFIED]** never executed anywhere
 
 ## 1. Automated gates — all executable, all passing
 
-| Gate             | Command                            | Result                                                                                                                                                                                                       |
-| ---------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Format           | `npm run format:check`             | **[PROVEN]** exit 0, repo-wide                                                                                                                                                                               |
-| Lint             | `npx nx lint api --skip-nx-cache`  | **[PROVEN]** exit 0, type-aware                                                                                                                                                                              |
-| Type check       | `npx tsc --noEmit` (in `apps/api`) | **[PROVEN]** exit 0                                                                                                                                                                                          |
-| Build            | `npx nx build api --skip-nx-cache` | **[PROVEN]** webpack success                                                                                                                                                                                 |
-| Tests + coverage | `npm run test:coverage`            | **[PROVEN]** 216 suites / 4707 tests, thresholds enforced                                                                                                                                                    |
-| Dependency audit | `npm audit --omit=dev`             | **[PROVEN]** shipped tree is **0**. The CI gate audits production dependencies only (`--omit=dev --audit-level=moderate`); the 31 dev-only advisories are reported informationally and cannot ship — see §6. |
+| Gate             | Command                            | Result                                                                                                                                                                                                                |
+| ---------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Format           | `npm run format:check`             | **[PROVEN]** exit 0, repo-wide                                                                                                                                                                                        |
+| Lint             | `npx nx lint api --skip-nx-cache`  | **[PROVEN]** exit 0, type-aware                                                                                                                                                                                       |
+| Type check       | `npx tsc --noEmit` (in `apps/api`) | **[PROVEN]** exit 0                                                                                                                                                                                                   |
+| Build            | `npx nx build api --skip-nx-cache` | **[PROVEN]** webpack success                                                                                                                                                                                          |
+| Tests + coverage | `npm run test:coverage`            | **[PROVEN]** 216 suites / 4707 tests, thresholds enforced                                                                                                                                                             |
+| Dependency audit | `npm audit --omit=dev`             | **[PROVEN]** shipped tree is **0**. The CI gate audits production dependencies only (`--omit=dev --audit-level=moderate`); the 7 remaining dev-only advisories are reported informationally and cannot ship — see §6. |
 
 Coverage is measured, not assumed: 96.56% statements, 73.41% branches,
 99.82% functions, 97.79% lines. Branch coverage is the weak number and is
@@ -123,7 +123,7 @@ silently. That is fixed; do not lower them again.
 
 | Control                        | Status                                                                                                                                                                                                                                                                                                                                |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dependency vulnerabilities     | **[PROVEN]** production tree (`--omit=dev`) is **0**, and the built image is 0 from Trivy too. The dev toolchain still reports 31 (7 high, 24 moderate) — all below, none shippable.                                                                                                                                                  |
+| Dependency vulnerabilities     | **[PROVEN]** production tree (`--omit=dev`) is **0**, and the built image is 0 from Trivy too. The dev toolchain still reports 7 (all high) — dev-only, none shippable.                                                                                                                                                               |
 | SSRF on tenant-controlled URLs | **[PROVEN]** DNS pinning, manual redirect re-validation, `maxRedirects: 0`. Verified against a live local server, including a defeated prototype-pollution socket hijack.                                                                                                                                                             |
 | Webhook signature verification | **[PROVEN]** HMAC-SHA256, `timingSafeEqual`, 300s tolerance, multi-secret rotation.                                                                                                                                                                                                                                                   |
 | Multi-tenant isolation         | **[PROVEN]** enforced by `SkipTenant`/tenant guards on every query path, with decorator-level tests.                                                                                                                                                                                                                                  |
@@ -192,11 +192,11 @@ Two independent scanners are required, and both were needed to get this right.
 
 The advisory count has since been driven down rather than explained away:
 
-| Scope                          | Before                       | Now                         |
-| ------------------------------ | ---------------------------- | --------------------------- |
-| Production tree (`--omit=dev`) | 1 critical                   | **0**                       |
-| Trivy on the image (HIGH/CRIT) | 11 high                      | **0**                       |
-| All dependencies (incl. dev)   | 39 (2 crit, 15 high, 22 mod) | 31 (0 crit, 7 high, 24 mod) |
+| Scope                          | Before                       | Now                       |
+| ------------------------------ | ---------------------------- | ------------------------- |
+| Production tree (`--omit=dev`) | 1 critical                   | **0**                     |
+| Trivy on the image (HIGH/CRIT) | 11 high                      | **0**                     |
+| All dependencies (incl. dev)   | 39 (2 crit, 15 high, 22 mod) | 7 (0 crit, 7 high, 0 mod) |
 
 What fixed them: a `proxy-addr` override to `^2.0.8` cleared the one critical
 that actually shipped (GHSA-jqcg-44mw-7w3h, IP spoofing via `trust proxy` —
@@ -205,7 +205,14 @@ and this app sets `TRUST_PROXY`), plus `shell-quote`, `probe-image-size`,
 raised to 23.3.0, taking 14 highs to 7. A second critical (`handlebars`
 template injection, GHSA-q2c6-c6pm-g3gh) was then pinned forward to `^4.7.10`
 with an `overrides` entry — it was dev/transitive only, but a critical is a
-critical and the fix was a patch bump with no API change.
+critical and the fix was a patch bump with no API change. The 24 moderates were
+then removed outright: they all rooted at the Jest/babel chain
+`@istanbuljs/load-nyc-config → js-yaml@3.15.2 → argparse@1.0.10 → sprintf-js`,
+and `sprintf-js` has no patched release at all (the advisory covers every
+version). `js-yaml@3` only invokes `argparse` from its CLI, never from the
+library, so an `argparse: ^2.0.1` override — `argparse@2` has zero dependencies
+— deletes both `argparse@1` and `sprintf-js` from the tree. Full-tree count:
+**31 → 7**.
 
 **The remaining 7 highs are unfixable today.** They all root at `braces`,
 whose latest published release (`3.0.3`) _is_ the vulnerable one — there is no
@@ -221,14 +228,13 @@ concern. Do not "fix" them with a major `webpack-dev-server` upgrade the week
 before launch, and do not vendor a hand-written patch into a widely-used glob
 parser; re-check whether upstream has published a `braces` release instead.
 
-The same is true of the 24 moderates: they are the Jest/Nx/babel toolchain
-(`js-yaml`/`argparse`/`sprintf-js`, the `@jest/*` graph), all dev-only, none
-shipped. Because a full-tree audit therefore _cannot_ be made green, the CI SCA
-gate was scoped to what the product actually ships:
+Only the 7 `braces`-rooted highs remain, and they are dev-only, none shipped.
+Because a full-tree audit therefore _cannot_ be made green, the CI SCA gate was
+scoped to what the product actually ships:
 `npm audit --omit=dev --audit-level=moderate` (currently **0**), with the full
 dev-tree audit run alongside it as an **informational, non-blocking** step so
 regressions stay visible without failing the build on advisories that cannot
-reach production. This is a scoping decision, not a fix: the advisories still
+reach production. This is a scoping decision, not a fix: the 7 advisories still
 exist in `node_modules` on developer and CI machines.
 
 Regression tests cover defects 3 and 5, including the exact container-minimal

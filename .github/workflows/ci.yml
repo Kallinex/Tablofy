@@ -51,9 +51,9 @@ jobs:
         run: npm ci
 
       # Gate on the dependencies we actually ship. The production tree is clean
-      # (0 advisories) and the runtime image is Trivy-clean. The dev-only
-      # advisories (Jest/Nx/webpack-dev-server and their transitive deps, e.g.
-      # `braces`, which has no patched release) are reported below but must not
+      # (0 advisories) and the runtime image is Trivy-clean. The 7 remaining
+      # dev-only highs all root at `braces`, which has no patched release and is
+      # pulled in by the webpack dev server; they are reported below but must not
       # block the build, because none of them enter the image.
       - name: Security audit (production dependencies)
         run: npm audit --omit=dev --audit-level=moderate

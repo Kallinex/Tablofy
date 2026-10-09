@@ -153,8 +153,14 @@ item-by-item record and the caveats that remain open.
   to 7.
 - Fixed a second critical: `handlebars` template injection
   (GHSA-q2c6-c6pm-g3gh) pinned forward to `^4.7.10` via an `overrides` entry. It
-  was transitive and dev-only, but the fix is a patch bump with no API change. The
-  tree is now **0 critical / 7 high / 24 moderate (31 total)**.
+  was transitive and dev-only, but the fix is a patch bump with no API change.
+- Removed the 24 moderate advisories outright. They all rooted at the Jest/babel
+  chain `@istanbuljs/load-nyc-config → js-yaml@3.15.2 → argparse@1.0.10 →
+sprintf-js`, and `sprintf-js` has no patched release (the advisory covers every
+  version). `js-yaml@3` only calls `argparse` from its CLI, never from the
+  library, so an `argparse: ^2.0.1` override — `argparse@2` has zero
+  dependencies — deletes both `argparse@1` and `sprintf-js` from the tree. The
+  full-tree audit went from 31 to 7.
 - npm itself is no longer installed in the runtime image. A Trivy scan found 11
   HIGH findings and every one of them traced to npm's own bundled dependencies
   (`pacote`, `sigstore`, `ip-address`, `picomatch`, `http-cache-semantics`, one
@@ -172,8 +178,8 @@ item-by-item record and the caveats that remain open.
   `webpack-dev-server@6` still routes through that path.
 - The CI SCA gate was scoped to the dependencies the product actually ships.
   It now runs `npm audit --omit=dev --audit-level=moderate` (currently 0) as a
-  blocking gate, with the full-tree audit — 31 dev-only advisories (7 high,
-  24 moderate) in the Jest/Nx/babel toolchain — run alongside it as an
+  blocking gate, with the full-tree audit — 7 dev-only advisories, all rooted at
+  `braces`, which no version can remove — run alongside it as an
   informational, non-blocking step. The advisories still exist on developer and
   CI machines; this is a scoping decision, not a fix, and the reasoning is
   recorded in `docs/launch-readiness.md` §6.
