@@ -262,4 +262,4 @@ intentional and unchanged.
 
 ---
 
-Last verified: 2026-10-09 · commit `30be19d` · branch `feature/phase7-m5`
+Last verified: 2026-10-09 · commit `4b24ad6` · branch `feature/phase7-m5`
