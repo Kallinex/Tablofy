@@ -27,11 +27,12 @@ export class HealthController {
     private paymentHealth: PaymentHealthIndicator,
   ) {}
 
-  // An absolute RSS ceiling hardcoded at 300MB makes a healthy instance report
+  // An absolute RSS ceiling hardcoded too low makes a healthy instance report
   // itself unhealthy during normal traffic peaks, which takes it out of the load
-  // balancer. Size this to the container limit (HEALTH_MEMORY_RSS_LIMIT_MB).
+  // balancer. Measured peak is ~490MB RSS at 64 concurrent clients / ~266 req/s,
+  // so size this to the container limit (HEALTH_MEMORY_RSS_LIMIT_MB), not below.
   private memoryRssLimitBytes(): number {
-    const limitMb = this.configService.get<number>('app.healthMemoryRssLimitMb') ?? 300;
+    const limitMb = this.configService.get<number>('app.healthMemoryRssLimitMb') ?? 768;
     return limitMb * 1024 * 1024;
   }
 

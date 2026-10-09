@@ -143,7 +143,7 @@ describe('appConfig', () => {
       corsCredentials: true,
       shutdownTimeoutMs: 15000,
       trustProxy: '',
-      healthMemoryRssLimitMb: 300,
+      healthMemoryRssLimitMb: 768,
       swaggerEnabled: '',
       swaggerAuthUser: '',
       swaggerAuthPassword: '',

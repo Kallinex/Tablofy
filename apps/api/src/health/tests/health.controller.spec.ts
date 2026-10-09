@@ -115,13 +115,13 @@ describe('HealthController', () => {
     expect(checkCall).toHaveLength(5);
   });
 
-  it('should fall back to a 300MB RSS limit when the config value is missing', async () => {
+  it('should fall back to a 768MB RSS limit when the config value is missing', async () => {
     const checkRSS = jest.fn().mockResolvedValue({ memory_rss: { status: 'up' } });
     const ctrl = buildController(checkRSS, undefined);
 
     await ctrl.ready();
 
-    expect(checkRSS).toHaveBeenCalledWith('memory_rss', 300 * 1024 * 1024);
+    expect(checkRSS).toHaveBeenCalledWith('memory_rss', 768 * 1024 * 1024);
   });
 
   it('should size the RSS limit from HEALTH_MEMORY_RSS_LIMIT_MB', async () => {
@@ -184,7 +184,7 @@ describe('HealthController aggregate handlers', () => {
     expect(ctx.redisHealth.isHealthy).toHaveBeenCalledWith('redis');
     expect(ctx.bullHealth.isHealthy).toHaveBeenCalledWith('bullmq');
     expect(ctx.diskHealth.isHealthy).toHaveBeenCalledWith('disk');
-    expect(ctx.checkRSS).toHaveBeenCalledWith('memory_rss', 300 * 1024 * 1024);
+    expect(ctx.checkRSS).toHaveBeenCalledWith('memory_rss', 768 * 1024 * 1024);
   });
 
   it('runs only the database and redis indicators for the liveness probe', async () => {

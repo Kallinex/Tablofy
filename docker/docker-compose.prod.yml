@@ -86,7 +86,12 @@ services:
       AUDIT_LOG_RETENTION_DAYS: ${AUDIT_LOG_RETENTION_DAYS:-365}
       HEALTH_DISK_PATH: ${HEALTH_DISK_PATH:-/}
       HEALTH_DISK_THRESHOLD_MB: ${HEALTH_DISK_THRESHOLD_MB:-200}
-      HEALTH_MEMORY_RSS_LIMIT_MB: ${HEALTH_MEMORY_RSS_LIMIT_MB:-512}
+      # Absolute RSS ceiling for the memory health indicator. The API measured
+      # ~490MB RSS at 64 concurrent clients / ~266 req/s, so 512 tripped this
+      # probe under normal load and flapped the healthcheck. Keep this at least
+      # ~1.5x measured steady-state peak; size it together with the container
+      # memory limit if you enforce one.
+      HEALTH_MEMORY_RSS_LIMIT_MB: ${HEALTH_MEMORY_RSS_LIMIT_MB:-768}
       # Trust the reverse proxy (nginx/ALB) so X-Forwarded-For drives the per-IP
       # rate limiter. Use the hop count (1 for a single proxy).
       TRUST_PROXY: ${TRUST_PROXY:-1}
@@ -168,7 +173,15 @@ services:
     networks:
       - tablofy-network
     healthcheck:
-      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:3000/api/v1/health']
+      test:
+        [
+          'CMD',
+          'wget',
+          '--no-verbose',
+          '--tries=1',
+          '--spider',
+          'http://localhost:3000/api/v1/health',
+        ]
       interval: 30s
       timeout: 10s
       start_period: 15s

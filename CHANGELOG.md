@@ -39,6 +39,16 @@ item-by-item record and the caveats that remain open.
 - **Startup configuration warnings** - production boot now warns when error
   tracking, metrics, structured JSON logging or distributed tracing is disabled,
   or when the Redis topology is incomplete.
+- **Load / soak harness** - `scripts/load-test.js` drives concurrent workers at a
+  target endpoint, records per-endpoint status breakdowns and latency percentiles,
+  probes `/health` throughout, and exits non-zero if any request fails or any 5xx
+  is returned. A five-minute, 64-worker run against the containerised image made
+  **87,287 requests with 0 failures (100% 200, ~291 req/s, p50 169 ms / p95 564 ms
+  / p99 727 ms, 0 dead-letter jobs)**.
+- **Backup-verification harness** - `scripts/backup-drill-verify.sh` fingerprints a
+  live database (table/index/FK/CHECK/sequence/view/trigger counts, per-table row
+  counts, a data fingerprint and a schema fingerprint) so a `pg_dump` can be proven
+  equivalent to the database it was restored into.
 
 ### Fixed
 
@@ -74,6 +84,15 @@ item-by-item record and the caveats that remain open.
   `webhook.config.ts` refuses to boot without it in every environment, so
   development and staging died inside the DI container with a stack trace instead
   of a clear message. Validation now matches the runtime rule.
+- **Healthy instances served 503s when busy** - the health endpoints return 503
+  once process RSS exceeds `HEALTH_MEMORY_RSS_LIMIT_MB`, signalled via the wrong
+  default. It was 512 in the compose env and 300 in the config fallback, while a
+  normal NestJS process under load peaked at **~490 MiB** during the soak test. A
+  load balancer gating traffic on `/health` would therefore have drained a
+  perfectly healthy instance under high load. The default is now **768 MiB**
+  (documented against the measured peak) in `docker/docker-compose.prod.yml`,
+  `docker/.env.prod.example`, `apps/api/src/config/app.config.ts` and the
+  controller fallback, with tests updated.
 
 ### Changed
 
@@ -132,6 +151,10 @@ item-by-item record and the caveats that remain open.
   `postcss-selector-parser` and `undici` to their patched releases, and raised the
   Nx family 23.1.1 → 23.3.0, which took the count from 39 to 31 and from 15 high
   to 7.
+- Fixed a second critical: `handlebars` template injection
+  (GHSA-q2c6-c6pm-g3gh) pinned forward to `^4.7.10` via an `overrides` entry. It
+  was transitive and dev-only, but the fix is a patch bump with no API change. The
+  tree is now **0 critical / 7 high / 24 moderate (31 total)**.
 - npm itself is no longer installed in the runtime image. A Trivy scan found 11
   HIGH findings and every one of them traced to npm's own bundled dependencies
   (`pacote`, `sigstore`, `ip-address`, `picomatch`, `http-cache-semantics`, one
@@ -162,11 +185,13 @@ proven versus mock-only.
 - No live third-party credentials, so Stripe/Paymob, SMTP and the real
   OIDC/SAML provider flows are verified against mocks only.
 - No production PostgreSQL or Redis deployment, so migration replay and Redis
-  failover have not been exercised end to end.
+  failover have not been exercised end to end. Backup/restore and a 5-minute
+  64-worker soak _have_ now been proven against local Postgres 16 and Redis 7, but
+  not at production data size or across a real Redis failover.
 - No OTLP collector is deployed, so span export is unverified.
-- The container image could not be built locally because the Docker daemon is
-  unavailable in the development environment; the build and scan steps are wired
-  but have not run here.
+- The image now builds, boots, scans 0 HIGH/CRITICAL and passes the soak locally,
+  so that limitation is closed; what remains open is a registry push, which CI
+  performs only from `main`.
 
 ## [7.5.0] - 2026-08-03
 
